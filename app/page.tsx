@@ -11,7 +11,7 @@ type PreferredLanguage = 'English' | 'Português' | 'Español'
 type LoanOfficerId = 'finley' | 'sandro' | 'warren'
 
 type LeadForm = {
-  firstName: string
+  fullName: string
   email: string
   phone: string
   preferredLanguage: PreferredLanguage
@@ -23,7 +23,7 @@ type TranslationSet = {
   heroSubtitle: string
   stayConnectedTitle: string
   stayConnectedSubtitle: string
-  firstNamePlaceholder: string
+  fullNamePlaceholder: string
   emailPlaceholder: string
   phonePlaceholder: string
   languageLabel: string
@@ -86,7 +86,7 @@ const translations: Record<PreferredLanguage, TranslationSet> = {
     stayConnectedTitle: 'Stay Connected',
     stayConnectedSubtitle:
       'Enter your contact details to unlock the advisor experience.',
-    firstNamePlaceholder: 'First Name',
+    fullNamePlaceholder: 'Full Name',
     emailPlaceholder: 'Email',
     phonePlaceholder: 'Phone Number',
     languageLabel: 'Preferred Language',
@@ -98,7 +98,7 @@ const translations: Record<PreferredLanguage, TranslationSet> = {
     loanOfficerSandro: 'Sandro Pansini Souza',
     loanOfficerWarren: 'Warren Wendt',
     leadError:
-      'Please complete First Name, Email, Phone Number, Language, and Loan Officer to continue.',
+      'Please complete Full Name, Email, Phone Number, Language, and Loan Officer to continue.',
     unlockButton: 'Unlock Your Mortgage AI Advisor',
     savingButton: 'Saving...',
     unlockedMessage:
@@ -137,7 +137,7 @@ const translations: Record<PreferredLanguage, TranslationSet> = {
     stayConnectedTitle: 'Mantenha-se Conectado',
     stayConnectedSubtitle:
       'Informe seus dados de contato para desbloquear a experiência com o advisor.',
-    firstNamePlaceholder: 'Primeiro Nome',
+    fullNamePlaceholder: 'Nome Completo',
     emailPlaceholder: 'Email',
     phonePlaceholder: 'Telefone',
     languageLabel: 'Idioma Preferido',
@@ -149,7 +149,7 @@ const translations: Record<PreferredLanguage, TranslationSet> = {
     loanOfficerSandro: 'Sandro Pansini Souza',
     loanOfficerWarren: 'Warren Wendt',
     leadError:
-      'Por favor, preencha Primeiro Nome, Email, Telefone, Idioma e Loan Officer para continuar.',
+      'Por favor, preencha Nome Completo, Email, Telefone, Idioma e Loan Officer para continuar.',
     unlockButton: 'Desbloquear seu Mortgage AI Advisor',
     savingButton: 'Salvando...',
     unlockedMessage:
@@ -189,7 +189,7 @@ const translations: Record<PreferredLanguage, TranslationSet> = {
     stayConnectedTitle: 'Manténgase Conectado',
     stayConnectedSubtitle:
       'Ingrese sus datos de contacto para desbloquear la experiencia con el advisor.',
-    firstNamePlaceholder: 'Nombre',
+    fullNamePlaceholder: 'Nombre Completo',
     emailPlaceholder: 'Correo Electrónico',
     phonePlaceholder: 'Número de Teléfono',
     languageLabel: 'Idioma Preferido',
@@ -201,7 +201,7 @@ const translations: Record<PreferredLanguage, TranslationSet> = {
     loanOfficerSandro: 'Sandro Pansini Souza',
     loanOfficerWarren: 'Warren Wendt',
     leadError:
-      'Por favor complete Nombre, Correo Electrónico, Número de Teléfono, Idioma y Loan Officer para continuar.',
+      'Por favor complete Nombre Completo, Correo Electrónico, Número de Teléfono, Idioma y Loan Officer para continuar.',
     unlockButton: 'Desbloquee su Mortgage AI Advisor',
     savingButton: 'Guardando...',
     unlockedMessage:
@@ -246,7 +246,7 @@ export default function Home() {
   const [leadSubmitting, setLeadSubmitting] = useState<boolean>(false)
   const [leadError, setLeadError] = useState<string>('')
   const [leadForm, setLeadForm] = useState<LeadForm>({
-    firstName: '',
+    fullName: '',
     email: '',
     phone: '',
     preferredLanguage: 'English',
@@ -275,10 +275,10 @@ export default function Home() {
   }
 
   const handleLeadUnlock = async (): Promise<void> => {
-    const { firstName, email, phone, preferredLanguage, loanOfficer } = leadForm
+    const { fullName, email, phone, preferredLanguage, loanOfficer } = leadForm
 
     if (
-      !firstName.trim() ||
+      !fullName.trim() ||
       !email.trim() ||
       !phone.trim() ||
       !preferredLanguage.trim() ||
@@ -390,9 +390,9 @@ export default function Home() {
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input
               type="text"
-              placeholder={t.firstNamePlaceholder}
-              value={leadForm.firstName}
-              onChange={(e) => handleLeadChange('firstName', e.target.value)}
+              placeholder={t.fullNamePlaceholder}
+              value={leadForm.fullName}
+              onChange={(e) => handleLeadChange('fullName', e.target.value)}
               className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
             />
 
@@ -611,7 +611,9 @@ export default function Home() {
             </a>
 
             <a
-              href="mailto:pansini@beyondfinancing.com"
+              href="https://www.beyondfinancing.com"
+              target="_blank"
+              rel="noreferrer"
               className="rounded-xl border border-[#263366]/20 bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#263366] transition hover:bg-[#EEF2F7] sm:col-span-2 lg:col-span-1"
             >
               {t.talkToBeyond}
