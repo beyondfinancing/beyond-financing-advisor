@@ -7,10 +7,25 @@ type ChatMessage = {
   content: string
 }
 
+type LeadForm = {
+  firstName: string
+  email: string
+  phone: string
+  preferredLanguage: string
+}
+
 export default function Home() {
   const [input, setInput] = useState<string>('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState<boolean>(false)
+  const [leadSaved, setLeadSaved] = useState<boolean>(false)
+  const [leadForm, setLeadForm] = useState<LeadForm>({
+    firstName: '',
+    email: '',
+    phone: '',
+    preferredLanguage: 'English',
+  })
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -39,6 +54,7 @@ export default function Home() {
         body: JSON.stringify({
           message: currentInput,
           messages: updatedMessages,
+          lead: leadForm,
         }),
       })
 
@@ -62,6 +78,20 @@ export default function Home() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleLeadChange = (
+    field: keyof LeadForm,
+    value: string
+  ): void => {
+    setLeadForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  const handleLeadSave = (): void => {
+    setLeadSaved(true)
   }
 
   return (
@@ -179,6 +209,71 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mt-6 sm:p-5">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
+              Stay Connected
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#263366]/70">
+              Leave your details so Beyond Financing can help you move forward faster.
+            </p>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <input
+              type="text"
+              placeholder="First Name"
+              value={leadForm.firstName}
+              onChange={(e) => handleLeadChange('firstName', e.target.value)}
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            />
+
+            <input
+              type="email"
+              placeholder="Email"
+              value={leadForm.email}
+              onChange={(e) => handleLeadChange('email', e.target.value)}
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            />
+
+            <input
+              type="text"
+              placeholder="Phone Number"
+              value={leadForm.phone}
+              onChange={(e) => handleLeadChange('phone', e.target.value)}
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            />
+
+            <select
+              value={leadForm.preferredLanguage}
+              onChange={(e) =>
+                handleLeadChange('preferredLanguage', e.target.value)
+              }
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            >
+              <option>English</option>
+              <option>Português</option>
+              <option>Español</option>
+            </select>
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={handleLeadSave}
+              className="w-full rounded-xl bg-[#263366] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 sm:w-auto"
+            >
+              Save My Contact Details
+            </button>
+          </div>
+
+          {leadSaved && (
+            <div className="mt-3 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm text-[#263366]/75">
+              Your contact details have been added to this session.
+            </div>
+          )}
         </div>
 
         <div className="mt-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mt-6 sm:p-5">
