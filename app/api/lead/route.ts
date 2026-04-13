@@ -10,9 +10,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
 
-    const { firstName, email, phone, preferredLanguage, loanOfficer } = body
+    const { fullName, email, phone, preferredLanguage, loanOfficer } = body
 
-    if (!firstName || !email || !phone || !preferredLanguage || !loanOfficer) {
+    if (!fullName || !email || !phone || !preferredLanguage || !loanOfficer) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields.' },
         { status: 400 }
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
     const html = `
       <h2>New Lead - Finley Beyond Advisor</h2>
-      <p><strong>Name:</strong> ${firstName}</p>
+      <p><strong>Full Name:</strong> ${fullName}</p>
       <p><strong>Email:</strong> ${email}</p>
       <p><strong>Phone:</strong> ${phone}</p>
       <p><strong>Language:</strong> ${preferredLanguage}</p>
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
         from: 'Finley Beyond <finley@beyondfinancing.com>',
         to: [selectedEmail],
         reply_to: email,
-        subject: `New Lead: ${firstName}`,
+        subject: `New Lead: ${fullName}`,
         html,
       }),
     })
