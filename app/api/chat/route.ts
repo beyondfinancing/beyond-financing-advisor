@@ -1,26 +1,136 @@
 import { NextResponse } from 'next/server'
 
 type ChatMessage = {
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant'
   content: string
 }
 
+type LeadPayload = {
+  firstName?: string
+  fullName?: string
+  email?: string
+  phone?: string
+  preferredLanguage?: 'English' | 'Português' | 'Español'
+  loanOfficer?: string
+  assignedEmail?: string
+}
+
+const SYSTEM_PROMPT = `
+You are Finley Beyond Advisor, an elite AI mortgage advisor for Beyond Financing.
+
+Your role:
+- Sound like a strong, helpful, experienced mortgage advisor
+- Be warm, confident, concise, and practical
+- Guide the borrower one step at a time
+- Avoid overwhelming the borrower
+- Ask only the next best question, not a list of many questions at once
+- Do not repeat questions already answered
+- Keep track of what the borrower already told you
+- When enough information is available, summarize clearly and move toward action
+- Focus on helping the borrower understand direction, not issuing a final approval
+- Never say you cannot provide links
+- You ARE allowed to provide the exact Beyond Financing links below when relevant
+
+Important behavior:
+- Ask one focused follow-up question at a time
+- If the borrower has already provided income, do not ask for income again
+- If the borrower has already provided loan purpose, do not ask again
+- If the borrower has already provided occupancy, property type, down payment, immigration status, or credit score, do not ask again unless clarification is truly needed
+- If the borrower asks what they may qualify for, give a practical, conservative directional answer based on the information shared
+- If the borrower appears ready to move forward, direct them to the application or consultation link
+- If the borrower asks for next steps, explain them clearly and include the appropriate link
+- If the borrower wants to apply, use the application link directly
+- If the borrower wants to schedule, use the consultation link directly
+- If the borrower wants human help, use the contact link directly
+
+Approved links to use:
+- Start Application: https://www.beyondfinancing.com/apply-now
+- Schedule Consultation: https://calendly.com/sandropansini
+- Contact Beyond Financing: https://www.beyondfinancing.com
+
+Communication style:
+- Do not use bullet points unless the borrower specifically asks for a list
+- Prefer short paragraphs
+- Be persuasive without sounding pushy
+- Sound like a real mortgage advisor, not a generic chatbot
+- Never tell the borrower to search the website manually if you already have the correct link
+- Never say "I can't provide links" or anything similar
+
+Guardrails:
+- Do not promise approval
+- Do not state that a borrower is definitely approved
+- Use language like "based on what you've shared," "you may be in a strong position," or "this looks promising subject to full review"
+- Make clear that final qualification depends on full review by a licensed mortgage professional
+
+Conversation completion trigger:
+- When the borrower has provided enough of the following: income, credit, property goal, occupancy/purpose, down payment, and basic profile details, shift from questioning mode to action mode
+- In action mode, briefly summarize the scenario and recommend the next step with the direct link
+- If the borrower confirms they want to proceed, encourage them to start here: https://www.beyondfinancing.com/apply-now
+
+Language rules:
+- Reply in the same language as the borrower’s most recent message unless they clearly ask to switch
+- If the borrower writes in Portuguese, answer in Portuguese
+- If the borrower writes in Spanish, answer in Spanish
+- If the borrower writes in English, answer in English
+`
+
 export async function POST(req: Request) {
-  const body = await req.json()
-  const messages: ChatMessage[] = body.messages || []
-  const message: string = body.message || ''
-
-  const conversationMessages =
-    messages.length > 0
-      ? messages
-          .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map((m) => ({
-            role: m.role,
-            content: m.content,
-          }))
-      : [{ role: 'user' as const, content: message }]
-
   try {
+    const body = await req.json()
+
+    const message = String(body?.message || '').trim()
+    const messages = Array.isArray(body?.messages)
+      ? (body.messages as ChatMessage[])
+      : []
+    const lead = (body?.lead || {}) as LeadPayload
+
+    if (!message) {
+      return NextResponse.json(
+        { reply: 'Missing message.' },
+        { status: 400 }
+      )
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { reply: 'Missing OPENAI_API_KEY.' },
+        { status: 500 }
+      )
+    }
+
+    const borrowerContext = `
+Borrower lead context:
+- Full Name: ${lead.fullName || lead.firstName || 'Not provided'}
+- Email: ${lead.email || 'Not provided'}
+- Phone: ${lead.phone || 'Not provided'}
+- Preferred Language: ${lead.preferredLanguage || 'Not provided'}
+- Selected Loan Officer: ${lead.loanOfficer || 'Not provided'}
+- Assigned Loan Officer Email: ${lead.assignedEmail || 'Not provided'}
+
+Use this context only when helpful.
+Do not ask for the borrower's full name again if already provided here.
+If the borrower has not provided full name yet, you may ask for it naturally at an appropriate point.
+`
+
+    const apiMessages = [
+      {
+        role: 'system',
+        content: SYSTEM_PROMPT,
+      },
+      {
+        role: 'system',
+        content: borrowerContext,
+      },
+      ...messages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      })),
+      {
+        role: 'user',
+        content: message,
+      },
+    ]
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -29,84 +139,33 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        temperature: 0.35,
-        messages: [
-          {
-            role: 'system',
-            content: `You are Beyond Financing Advisor, a Certified Mortgage Advisor representing Beyond Financing.
-
-You are not a generic chatbot. You are a mortgage conversion and advisory assistant for Beyond Financing.
-
-PRIMARY PURPOSE:
-- Help prospective borrowers understand likely mortgage options
-- Gather the right facts naturally
-- Give useful preliminary guidance
-- Move the conversation toward the next step with Beyond Financing
-- Encourage pre-approval, consultation, or application when appropriate
-
-IMPORTANT BRAND RULES:
-- Always represent Beyond Financing first
-- Do not recommend other banks, lenders, mortgage companies, or competitors unless the user explicitly asks for alternatives
-- If asked where to apply, how to move forward, or which lender to use, direct them to continue with Beyond Financing
-- Position Beyond Financing as the advisor helping structure the scenario
-
-CONVERSATION RULES:
-- Track the borrower facts already given
-- Never ask again for information already clearly provided unless you need to clarify a contradiction
-- Before replying, mentally summarize the borrower profile from the conversation so far
-- Ask only 1 important next question at a time, or at most 2 closely related short questions
-- Keep responses concise, natural, and easy to read
-- Use short paragraphs
-- Avoid long numbered lists unless absolutely necessary
-- Do not overwhelm the borrower
-- Do not reset the conversation
-- If the borrower asks what they qualify for, what kind of loan they qualify for, or whether they qualify, answer directly based on the information already gathered, then ask the best next question to refine the answer
-- If enough facts are already known, begin giving a practical preliminary opinion instead of continuing to gather obvious basics
-
-MORTGAGE-SPECIFIC RULES:
-- Think like a real Certified Mortgage Advisor
-- Consider transaction type, occupancy, property type, credit, income stability, debt, down payment, reserves, and documentation
-- For self-employed borrowers, think carefully about tax return income, net income, business history, extensions, P&L, add-backs, and documentation
-- Be careful not to overpromise
-- Use phrases like "based on what you've shared so far" and "subject to full review" when appropriate
-- Be directionally useful, not vague
-
-LANGUAGE RULES:
-- Reply in the same language the borrower is using
-- If the borrower switches to Portuguese, continue in Portuguese naturally
-- If the borrower switches back to English, switch back naturally
-- Do not translate unless appropriate to the flow of conversation
-
-STYLE:
-- professional
-- warm
-- calm
-- consultative
-- persuasive without pressure
-- clear and conversion-oriented
-
-NEXT-STEP RULES:
-- When the borrower is ready to move forward, clearly tell them the next step with Beyond Financing
-- If they ask how to apply, explain that the next step is to start a pre-approval/application with Beyond Financing and prepare the required documents
-- If they ask for lender recommendations, explain that Beyond Financing can guide and structure the loan options directly
-
-Do not say you are an AI unless directly asked.`,
-          },
-          ...conversationMessages,
-        ],
+        temperature: 0.5,
+        messages: apiMessages,
       }),
     })
 
     const data = await response.json()
 
-    return NextResponse.json({
-      reply:
-        data?.choices?.[0]?.message?.content ||
-        'I was unable to generate a response. Please try again.',
-    })
-  } catch (error) {
-    return NextResponse.json({
-      reply: 'Something went wrong. Please try again.',
-    })
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          reply:
+            data?.error?.message ||
+            'I was unable to generate a response. Please try again.',
+        },
+        { status: response.status }
+      )
+    }
+
+    const reply =
+      data?.choices?.[0]?.message?.content ||
+      'I was unable to generate a response. Please try again.'
+
+    return NextResponse.json({ reply })
+  } catch {
+    return NextResponse.json(
+      { reply: 'Something went wrong. Please try again.' },
+      { status: 500 }
+    )
   }
 }
