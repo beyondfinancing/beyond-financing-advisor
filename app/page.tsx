@@ -2,25 +2,58 @@
 
 import { useState } from 'react'
 
+type ChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export default function Home() {
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [loading, setLoading] = useState(false)
 
   const handleSend = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || loading) return
 
-    const userMessage = { role: 'user', content: input }
+    const currentInput = input.trim()
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: currentInput,
+    }
+
     setMessages((prev) => [...prev, userMessage])
     setInput('')
+    setLoading(true)
 
-    // Temporary fake AI response (next step we connect OpenAI)
-    setTimeout(() => {
-      const aiMessage = {
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: currentInput }),
+      })
+
+      const data = await res.json()
+
+      const aiMessage: ChatMessage = {
         role: 'assistant',
-        content: 'Thanks for sharing. Let me ask you a couple quick questions so I can guide you properly.',
+        content:
+          data?.reply || 'I was unable to generate a response. Please try again.',
       }
+
       setMessages((prev) => [...prev, aiMessage])
-    }, 500)
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Error connecting to AI.',
+        },
+      ])
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -43,18 +76,30 @@ export default function Home() {
               {msg.content}
             </div>
           ))}
+
+          {loading && (
+            <div className="p-2 rounded bg-gray-200 text-left">
+              Thinking...
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSend()
+              }
+            }}
             placeholder="Describe your situation..."
             className="flex-1 border rounded px-3 py-2"
           />
           <button
             onClick={handleSend}
-            className="bg-[#263366] text-white px-4 py-2 rounded"
+            disabled={loading}
+            className="bg-[#263366] text-white px-4 py-2 rounded disabled:opacity-50"
           >
             Send
           </button>
@@ -62,7 +107,9 @@ export default function Home() {
       </div>
 
       <p className="mt-6 text-xs text-center text-gray-500 max-w-xl">
-        This tool provides general information and does not constitute a loan approval or commitment to lend. All mortgage applications are subject to review by a licensed Mortgage Loan Originator.
+        This tool provides general information and does not constitute a loan
+        approval or commitment to lend. All mortgage applications are subject to
+        review by a licensed Mortgage Loan Originator.
       </p>
     </main>
   )
