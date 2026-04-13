@@ -7,11 +7,15 @@ type ChatMessage = {
   content: string
 }
 
+type PreferredLanguage = 'English' | 'Português' | 'Español'
+type LoanOfficerId = 'finley' | 'sandro' | 'warren'
+
 type LeadForm = {
   firstName: string
   email: string
   phone: string
-  preferredLanguage: 'English' | 'Português' | 'Español'
+  preferredLanguage: PreferredLanguage
+  loanOfficer: LoanOfficerId
 }
 
 type TranslationSet = {
@@ -22,9 +26,14 @@ type TranslationSet = {
   firstNamePlaceholder: string
   emailPlaceholder: string
   phonePlaceholder: string
+  languageLabel: string
+  loanOfficerLabel: string
   languageEnglish: string
   languagePortuguese: string
   languageSpanish: string
+  loanOfficerFinley: string
+  loanOfficerSandro: string
+  loanOfficerWarren: string
   leadError: string
   unlockButton: string
   savingButton: string
@@ -49,9 +58,28 @@ type TranslationSet = {
   disclaimer: string
   genericLeadFailure: string
   genericConnectionFailure: string
+  genericAiFailure: string
+  genericAiConnectionFailure: string
 }
 
-const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
+const loanOfficerOptions: Record<
+  LoanOfficerId,
+  {
+    email: string
+  }
+> = {
+  finley: {
+    email: 'finley@beyondfinancing.com',
+  },
+  sandro: {
+    email: 'pansini@beyondfinancing.com',
+  },
+  warren: {
+    email: 'warren@beyondfinancing.com',
+  },
+}
+
+const translations: Record<PreferredLanguage, TranslationSet> = {
   English: {
     heroTitle: 'Connect With Finley Beyond Advisor — Instantly',
     heroSubtitle: 'Clear guidance. Real scenarios. One step at a time.',
@@ -61,17 +89,23 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
     firstNamePlaceholder: 'First Name',
     emailPlaceholder: 'Email',
     phonePlaceholder: 'Phone Number',
+    languageLabel: 'Preferred Language',
+    loanOfficerLabel: 'Select Your Loan Officer',
     languageEnglish: 'English',
     languagePortuguese: 'Português',
     languageSpanish: 'Español',
+    loanOfficerFinley: 'Finley Beyond (If None Below)',
+    loanOfficerSandro: 'Sandro Pansini Souza',
+    loanOfficerWarren: 'Warren Wendt',
     leadError:
-      'Please complete First Name, Email, Phone Number, and Language to continue.',
+      'Please complete First Name, Email, Phone Number, Language, and Loan Officer to continue.',
     unlockButton: 'Unlock Your Mortgage AI Advisor',
     savingButton: 'Saving...',
     unlockedMessage:
       'Thank you. Your information has been recorded for this session. You may now chat with Finley Beyond Advisor below.',
     chatLockedTitle: 'Unlock Your Mortgage Guidance',
-    chatLockedSubtitle: 'Complete your contact details above to continue.',
+    chatLockedSubtitle:
+      'Complete your contact details above to continue.',
     advisorName: 'Connect with Finley Beyond Advisor',
     advisorSubtitle:
       'Ask a mortgage question and get guided step by step.',
@@ -93,6 +127,9 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
       'This tool provides general information and does not constitute a loan approval or commitment to lend. All mortgage applications are subject to review by a licensed Mortgage Loan Originator.',
     genericLeadFailure: 'Unable to submit your information right now.',
     genericConnectionFailure: 'Unable to connect right now. Please try again.',
+    genericAiFailure:
+      'I was unable to generate a response. Please try again.',
+    genericAiConnectionFailure: 'Error connecting to AI.',
   },
   Português: {
     heroTitle: 'Conecte-se com o Finley Beyond Advisor — Instantaneamente',
@@ -103,11 +140,16 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
     firstNamePlaceholder: 'Primeiro Nome',
     emailPlaceholder: 'Email',
     phonePlaceholder: 'Telefone',
+    languageLabel: 'Idioma Preferido',
+    loanOfficerLabel: 'Selecione Seu Loan Officer',
     languageEnglish: 'English',
     languagePortuguese: 'Português',
     languageSpanish: 'Español',
+    loanOfficerFinley: 'Finley Beyond (Se Nenhum Abaixo)',
+    loanOfficerSandro: 'Sandro Pansini Souza',
+    loanOfficerWarren: 'Warren Wendt',
     leadError:
-      'Por favor, preencha Primeiro Nome, Email, Telefone e Idioma para continuar.',
+      'Por favor, preencha Primeiro Nome, Email, Telefone, Idioma e Loan Officer para continuar.',
     unlockButton: 'Desbloquear seu Mortgage AI Advisor',
     savingButton: 'Salvando...',
     unlockedMessage:
@@ -137,6 +179,9 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
     genericLeadFailure: 'Não foi possível enviar suas informações agora.',
     genericConnectionFailure:
       'Não foi possível conectar agora. Tente novamente.',
+    genericAiFailure:
+      'Não consegui gerar uma resposta agora. Tente novamente.',
+    genericAiConnectionFailure: 'Erro ao conectar com a IA.',
   },
   Español: {
     heroTitle: 'Conéctese con Finley Beyond Advisor — Al Instante',
@@ -147,11 +192,16 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
     firstNamePlaceholder: 'Nombre',
     emailPlaceholder: 'Correo Electrónico',
     phonePlaceholder: 'Número de Teléfono',
+    languageLabel: 'Idioma Preferido',
+    loanOfficerLabel: 'Seleccione Su Loan Officer',
     languageEnglish: 'English',
     languagePortuguese: 'Português',
     languageSpanish: 'Español',
+    loanOfficerFinley: 'Finley Beyond (Si Ninguno Abajo)',
+    loanOfficerSandro: 'Sandro Pansini Souza',
+    loanOfficerWarren: 'Warren Wendt',
     leadError:
-      'Por favor complete Nombre, Correo Electrónico, Número de Teléfono e Idioma para continuar.',
+      'Por favor complete Nombre, Correo Electrónico, Número de Teléfono, Idioma y Loan Officer para continuar.',
     unlockButton: 'Desbloquee su Mortgage AI Advisor',
     savingButton: 'Guardando...',
     unlockedMessage:
@@ -182,6 +232,9 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
       'No fue posible enviar su información en este momento.',
     genericConnectionFailure:
       'No fue posible conectarse en este momento. Inténtelo de nuevo.',
+    genericAiFailure:
+      'No pude generar una respuesta en este momento. Inténtelo de nuevo.',
+    genericAiConnectionFailure: 'Error al conectar con la IA.',
   },
 }
 
@@ -197,6 +250,7 @@ export default function Home() {
     email: '',
     phone: '',
     preferredLanguage: 'English',
+    loanOfficer: 'finley',
   })
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
@@ -221,13 +275,14 @@ export default function Home() {
   }
 
   const handleLeadUnlock = async (): Promise<void> => {
-    const { firstName, email, phone, preferredLanguage } = leadForm
+    const { firstName, email, phone, preferredLanguage, loanOfficer } = leadForm
 
     if (
       !firstName.trim() ||
       !email.trim() ||
       !phone.trim() ||
-      !preferredLanguage.trim()
+      !preferredLanguage.trim() ||
+      !loanOfficer.trim()
     ) {
       setLeadError(t.leadError)
       return
@@ -282,7 +337,10 @@ export default function Home() {
         body: JSON.stringify({
           message: currentInput,
           messages: updatedMessages,
-          lead: leadForm,
+          lead: {
+            ...leadForm,
+            assignedEmail: loanOfficerOptions[leadForm.loanOfficer].email,
+          },
         }),
       })
 
@@ -290,8 +348,7 @@ export default function Home() {
 
       const aiMessage: ChatMessage = {
         role: 'assistant',
-        content:
-          data?.reply || 'I was unable to generate a response. Please try again.',
+        content: data?.reply || t.genericAiFailure,
       }
 
       setMessages((prev) => [...prev, aiMessage])
@@ -300,7 +357,7 @@ export default function Home() {
         ...prev,
         {
           role: 'assistant',
-          content: 'Error connecting to AI.',
+          content: t.genericAiConnectionFailure,
         },
       ])
     } finally {
@@ -360,14 +417,31 @@ export default function Home() {
               onChange={(e) =>
                 handleLeadChange(
                   'preferredLanguage',
-                  e.target.value as LeadForm['preferredLanguage']
+                  e.target.value as PreferredLanguage
                 )
               }
+              aria-label={t.languageLabel}
               className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
             >
               <option value="English">{t.languageEnglish}</option>
               <option value="Português">{t.languagePortuguese}</option>
               <option value="Español">{t.languageSpanish}</option>
+            </select>
+
+            <select
+              value={leadForm.loanOfficer}
+              onChange={(e) =>
+                handleLeadChange(
+                  'loanOfficer',
+                  e.target.value as LoanOfficerId
+                )
+              }
+              aria-label={t.loanOfficerLabel}
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40 sm:col-span-2"
+            >
+              <option value="finley">{t.loanOfficerFinley}</option>
+              <option value="sandro">{t.loanOfficerSandro}</option>
+              <option value="warren">{t.loanOfficerWarren}</option>
             </select>
           </div>
 
