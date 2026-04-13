@@ -65,32 +65,61 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F1F3F8] text-[#263366] px-4 py-8">
-      <div className="mx-auto w-full max-w-4xl">
-        <div className="mb-6 text-center">
-          <h1 className="text-4xl font-bold tracking-tight">
+    <main className="min-h-screen bg-[#F1F3F8] text-[#263366] px-3 py-5 sm:px-4 sm:py-8">
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="mb-5 text-center sm:mb-6">
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
             Connect With a Mortgage Advisor — Instantly
           </h1>
-          <p className="mt-3 text-base text-[#263366]/75">
+          <p className="mt-2 text-sm text-[#263366]/75 sm:mt-3 sm:text-base">
             Clear guidance. Real scenarios. One step at a time.
           </p>
         </div>
 
-        <div className="rounded-2xl border border-[#263366]/20 bg-white shadow-sm">
-          <div className="border-b border-[#263366]/10 px-5 py-4">
-            <div className="text-sm font-semibold text-[#263366]">
+        <div className="overflow-hidden rounded-2xl border border-[#263366]/20 bg-white shadow-sm">
+          <div className="border-b border-[#263366]/10 px-4 py-4 sm:px-5">
+            <div className="text-sm font-semibold text-[#263366] sm:text-base">
               Beyond Financing Advisor
             </div>
-            <div className="mt-1 text-sm text-[#263366]/65">
+            <div className="mt-1 text-xs text-[#263366]/65 sm:text-sm">
               Ask a mortgage question and get guided step by step.
             </div>
           </div>
 
-          <div className="h-[460px] overflow-y-auto px-4 py-4 sm:px-5">
-            <div className="space-y-4">
+          <div className="h-[360px] overflow-y-auto px-3 py-3 sm:h-[430px] sm:px-4 sm:py-4 lg:h-[500px] lg:px-5">
+            <div className="space-y-3 sm:space-y-4">
               {messages.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-[#263366]/20 bg-[#F8FAFC] p-5 text-sm text-[#263366]/70">
-                  Try asking something like:
+                <div className="rounded-2xl border border-dashed border-[#263366]/20 bg-[#F8FAFC] p-4 text-sm text-[#263366]/70 sm:p-5">
+                  <div className="font-medium">Try asking something like:</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInput("I'm self-employed. Can I qualify for a home loan?")
+                      }
+                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
+                    >
+                      I&apos;m self-employed. Can I qualify?
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInput('I had a recent credit issue. What are my options?')
+                      }
+                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
+                    >
+                      I had a recent credit issue
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInput('I want to buy with 10% down. Where should I start?')
+                      }
+                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
+                    >
+                      I want to buy with 10% down
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -102,10 +131,10 @@ export default function Home() {
                   }`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-[15px] leading-7 whitespace-pre-wrap shadow-sm ${
+                    className={`max-w-[92%] rounded-2xl px-3 py-2.5 text-sm leading-6 whitespace-pre-wrap shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-[15px] sm:leading-7 ${
                       msg.role === 'user'
-                        ? 'bg-[#DCEAFE] text-right'
-                        : 'bg-[#F3F4F6] text-left'
+                        ? 'bg-[#DCEAFE] text-right text-[#263366]'
+                        : 'bg-[#F3F4F6] text-left text-[#263366]'
                     }`}
                   >
                     {msg.content}
@@ -115,7 +144,7 @@ export default function Home() {
 
               {loading && (
                 <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl bg-[#F3F4F6] px-4 py-3 text-[15px]">
+                  <div className="max-w-[92%] rounded-2xl bg-[#F3F4F6] px-3 py-2.5 text-sm leading-6 text-[#263366] shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-[15px] sm:leading-7">
                     Thinking...
                   </div>
                 </div>
@@ -125,8 +154,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="border-t border-[#263366]/10 px-4 py-4 sm:px-5">
-            <div className="flex items-end gap-3">
+          <div className="border-t border-[#263366]/10 px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -138,13 +167,13 @@ export default function Home() {
                 }}
                 placeholder="Describe your situation..."
                 rows={3}
-                className="min-h-[88px] flex-1 resize-none rounded-xl border border-[#263366]/20 px-4 py-3 outline-none"
+                className="min-h-[88px] w-full resize-none rounded-xl border border-[#263366]/20 px-4 py-3 text-sm text-[#263366] outline-none placeholder:text-[#263366]/45 focus:border-[#263366]/40 sm:flex-1 sm:text-[15px]"
               />
               <button
                 type="button"
                 onClick={() => void handleSend()}
                 disabled={loading}
-                className="rounded-xl bg-[#263366] px-5 py-3 text-white"
+                className="w-full rounded-xl bg-[#263366] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 Send
               </button>
@@ -152,22 +181,22 @@ export default function Home() {
           </div>
         </div>
 
-        {/* CTA SECTION */}
-        <div className="mt-6 rounded-2xl border border-[#263366]/15 bg-white p-5 shadow-sm">
+        <div className="mt-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mt-6 sm:p-5">
           <div className="text-center">
-            <h2 className="text-xl font-semibold text-[#263366]">
+            <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
               Ready to Move Forward?
             </h2>
-            <p className="mt-2 text-sm text-[#263366]/70">
+            <p className="mt-2 text-sm leading-6 text-[#263366]/70">
               Take the next step with Beyond Financing.
             </p>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <a
               href="https://www.beyondfinancing.com/apply-now"
               target="_blank"
-              className="rounded-xl bg-[#263366] px-4 py-3 text-center text-sm font-semibold text-white hover:opacity-90"
+              rel="noreferrer"
+              className="rounded-xl bg-[#263366] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
             >
               Start Application
             </a>
@@ -175,21 +204,28 @@ export default function Home() {
             <a
               href="https://calendly.com/sandropansini"
               target="_blank"
-              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-center text-sm font-semibold hover:bg-[#F1F3F8]"
+              rel="noreferrer"
+              className="rounded-xl border border-[#263366]/20 bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#263366] transition hover:bg-[#EEF2F7]"
             >
               Schedule Consultation
             </a>
 
             <a
               href="mailto:pansini@beyondfinancing.com"
-              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-center text-sm font-semibold hover:bg-[#F1F3F8]"
+              className="rounded-xl border border-[#263366]/20 bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#263366] transition hover:bg-[#EEF2F7] sm:col-span-2 lg:col-span-1"
             >
               Talk to Beyond Financing
             </a>
           </div>
+
+          <div className="mt-4 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm leading-6 text-[#263366]/75">
+            A pre-approval review typically starts with income, asset, and credit
+            evaluation. If you are self-employed, tax returns and supporting
+            documentation may be required.
+          </div>
         </div>
 
-        <p className="mx-auto mt-5 max-w-2xl text-center text-xs text-[#263366]/60">
+        <p className="mx-auto mt-5 max-w-2xl text-center text-[11px] leading-5 text-[#263366]/60 sm:text-xs sm:leading-6">
           This tool provides general information and does not constitute a loan
           approval or commitment to lend. All mortgage applications are subject to
           review by a licensed Mortgage Loan Originator.
