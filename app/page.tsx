@@ -1,60 +1,69 @@
+'use client'
+
+import { useState } from 'react'
+
 export default function Home() {
+  const [input, setInput] = useState('')
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([])
+
+  const handleSend = async () => {
+    if (!input.trim()) return
+
+    const userMessage = { role: 'user', content: input }
+    setMessages((prev) => [...prev, userMessage])
+    setInput('')
+
+    // Temporary fake AI response (next step we connect OpenAI)
+    setTimeout(() => {
+      const aiMessage = {
+        role: 'assistant',
+        content: 'Thanks for sharing. Let me ask you a couple quick questions so I can guide you properly.',
+      }
+      setMessages((prev) => [...prev, aiMessage])
+    }, 500)
+  }
+
   return (
-    <main className="min-h-screen bg-white text-[#263366]">
-      <section className="mx-auto flex min-h-screen w-full max-w-4xl flex-col items-center justify-center px-6 py-16 text-center">
-        <div className="mb-4 inline-flex items-center rounded-full border border-[#263366]/15 bg-[#F1F3F8] px-4 py-2 text-sm font-medium text-[#263366]">
-          Beyond Financing • Mortgage Advisor
+    <main className="min-h-screen bg-white text-[#263366] flex flex-col items-center px-4 py-10">
+      <h1 className="text-3xl font-bold text-center">
+        Connect With a Mortgage Advisor — Instantly
+      </h1>
+
+      <div className="mt-6 w-full max-w-2xl border rounded-xl p-4 bg-gray-50">
+        <div className="h-64 overflow-y-auto mb-4 space-y-2">
+          {messages.map((msg, index) => (
+            <div
+              key={index}
+              className={`p-2 rounded ${
+                msg.role === 'user'
+                  ? 'bg-blue-100 text-right'
+                  : 'bg-gray-200 text-left'
+              }`}
+            >
+              {msg.content}
+            </div>
+          ))}
         </div>
 
-        <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
-          Connect With a Mortgage Advisor — Instantly
-        </h1>
-
-        <p className="mt-5 max-w-2xl text-lg leading-8 text-[#263366]/80">
-          Get personalized mortgage guidance in minutes. Powered by smart technology and reviewed by a licensed professional.
-        </p>
-
-        <p className="mt-3 text-sm text-[#263366]/70">
-          English • Português • Español
-        </p>
-
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-sm">
-          <span className="rounded-full bg-[#F1F3F8] px-4 py-2">No commitment</span>
-          <span className="rounded-full bg-[#F1F3F8] px-4 py-2">Real advisor</span>
-          <span className="rounded-full bg-[#F1F3F8] px-4 py-2">100% confidential</span>
-        </div>
-
-        <div className="mt-10 w-full max-w-2xl rounded-2xl border border-[#263366]/10 bg-white p-4 shadow-sm">
-          <div className="rounded-xl border border-[#263366]/10 bg-[#F8FAFC] p-4 text-left text-sm text-[#263366]/75">
-            Describe your situation here. In the next step, we’ll turn this into a real chat experience.
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button className="rounded-full border border-[#263366]/15 px-4 py-2 text-sm hover:bg-[#F1F3F8]">
-              I’m self-employed — can I buy a home?
-            </button>
-            <button className="rounded-full border border-[#263366]/15 px-4 py-2 text-sm hover:bg-[#F1F3F8]">
-              First-time buyer — where do I start?
-            </button>
-            <button className="rounded-full border border-[#263366]/15 px-4 py-2 text-sm hover:bg-[#F1F3F8]">
-              I want to get pre-approved
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-8">
-          <a
-            href="#"
-            className="inline-flex rounded-xl border border-[#263366] px-6 py-3 text-sm font-semibold text-[#263366] transition hover:bg-[#263366] hover:text-white"
+        <div className="flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Describe your situation..."
+            className="flex-1 border rounded px-3 py-2"
+          />
+          <button
+            onClick={handleSend}
+            className="bg-[#263366] text-white px-4 py-2 rounded"
           >
-            Start Pre-Approval
-          </a>
+            Send
+          </button>
         </div>
+      </div>
 
-        <p className="mt-6 max-w-2xl text-xs leading-6 text-[#263366]/60">
-          This tool provides general information and does not constitute a loan approval or commitment to lend. All mortgage applications are subject to review and approval by a licensed Mortgage Loan Originator.
-        </p>
-      </section>
+      <p className="mt-6 text-xs text-center text-gray-500 max-w-xl">
+        This tool provides general information and does not constitute a loan approval or commitment to lend. All mortgage applications are subject to review by a licensed Mortgage Loan Originator.
+      </p>
     </main>
-  );
+  )
 }
