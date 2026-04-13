@@ -18,7 +18,8 @@ export default function Home() {
   const [input, setInput] = useState<string>('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState<boolean>(false)
-  const [leadSaved, setLeadSaved] = useState<boolean>(false)
+  const [chatEnabled, setChatEnabled] = useState<boolean>(false)
+  const [leadError, setLeadError] = useState<string>('')
   const [leadForm, setLeadForm] = useState<LeadForm>({
     firstName: '',
     email: '',
@@ -32,8 +33,27 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
+  const handleLeadChange = (field: keyof LeadForm, value: string): void => {
+    setLeadForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  const handleLeadUnlock = (): void => {
+    const { firstName, email, phone, preferredLanguage } = leadForm
+
+    if (!firstName.trim() || !email.trim() || !phone.trim() || !preferredLanguage.trim()) {
+      setLeadError('Please complete First Name, Email, Phone Number, and Language to continue.')
+      return
+    }
+
+    setLeadError('')
+    setChatEnabled(true)
+  }
+
   const handleSend = async (): Promise<void> => {
-    if (!input.trim() || loading) return
+    if (!input.trim() || loading || !chatEnabled) return
 
     const currentInput = input.trim()
     const updatedMessages: ChatMessage[] = [
@@ -80,17 +100,6 @@ export default function Home() {
     }
   }
 
-  const handleLeadChange = (field: keyof LeadForm, value: string): void => {
-    setLeadForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
-
-  const handleLeadSave = (): void => {
-    setLeadSaved(true)
-  }
-
   return (
     <main className="min-h-screen bg-[#F1F3F8] text-[#263366] px-3 py-5 sm:px-4 sm:py-8">
       <div className="mx-auto w-full max-w-5xl">
@@ -103,14 +112,13 @@ export default function Home() {
           </p>
         </div>
 
-        {/* STAY CONNECTED FIRST */}
         <div className="mb-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mb-6 sm:p-5">
           <div className="text-center">
             <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
               Stay Connected
             </h2>
             <p className="mt-2 text-sm leading-6 text-[#263366]/70">
-              Leave your details so Beyond Financing can help you move forward faster.
+              Enter your contact details to unlock the advisor experience.
             </p>
           </div>
 
@@ -141,145 +149,156 @@ export default function Home() {
 
             <select
               value={leadForm.preferredLanguage}
-              onChange={(e) =>
-                handleLeadChange('preferredLanguage', e.target.value)
-              }
+              onChange={(e) => handleLeadChange('preferredLanguage', e.target.value)}
               className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
             >
-              <option>English</option>
-              <option>Português</option>
-              <option>Español</option>
+              <option value="English">English</option>
+              <option value="Português">Português</option>
+              <option value="Español">Español</option>
             </select>
           </div>
 
-          <div className="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          {leadError && (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {leadError}
+            </div>
+          )}
+
+          <div className="mt-4 flex justify-center">
             <button
               type="button"
-              onClick={handleLeadSave}
+              onClick={handleLeadUnlock}
               className="w-full rounded-xl bg-[#263366] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 sm:w-auto"
             >
-              Save My Contact Details
+              Unlock Advisor Chat
             </button>
-
-            <p className="text-xs leading-5 text-[#263366]/60">
-              You can still chat with the advisor even if you skip this step.
-            </p>
           </div>
 
-          {leadSaved && (
-            <div className="mt-3 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm text-[#263366]/75">
-              Your contact details have been added to this session.
+          {chatEnabled && (
+            <div className="mt-4 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm text-[#263366]/75">
+              Thank you. Your information has been recorded for this session. You may now chat with the advisor below.
             </div>
           )}
         </div>
 
-        {/* CHAT */}
-        <div className="overflow-hidden rounded-2xl border border-[#263366]/20 bg-white shadow-sm">
-          <div className="border-b border-[#263366]/10 px-4 py-4 sm:px-5">
-            <div className="text-sm font-semibold text-[#263366] sm:text-base">
-              Beyond Financing Advisor
+        {chatEnabled && (
+          <div className="overflow-hidden rounded-2xl border border-[#263366]/20 bg-white shadow-sm">
+            <div className="border-b border-[#263366]/10 px-4 py-4 sm:px-5">
+              <div className="text-sm font-semibold text-[#263366] sm:text-base">
+                Beyond Financing Advisor
+              </div>
+              <div className="mt-1 text-xs text-[#263366]/65 sm:text-sm">
+                Ask a mortgage question and get guided step by step.
+              </div>
             </div>
-            <div className="mt-1 text-xs text-[#263366]/65 sm:text-sm">
-              Ask a mortgage question and get guided step by step.
-            </div>
-          </div>
 
-          <div className="h-[360px] overflow-y-auto px-3 py-3 sm:h-[430px] sm:px-4 sm:py-4 lg:h-[500px] lg:px-5">
-            <div className="space-y-3 sm:space-y-4">
-              {messages.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-[#263366]/20 bg-[#F8FAFC] p-4 text-sm text-[#263366]/70 sm:p-5">
-                  <div className="font-medium">Try asking something like:</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInput("I'm self-employed. Can I qualify for a home loan?")
-                      }
-                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
-                    >
-                      I&apos;m self-employed. Can I qualify?
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInput('I had a recent credit issue. What are my options?')
-                      }
-                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
-                    >
-                      I had a recent credit issue
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInput('I want to buy with 10% down. Where should I start?')
-                      }
-                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
-                    >
-                      I want to buy with 10% down
-                    </button>
+            <div className="h-[360px] overflow-y-auto px-3 py-3 sm:h-[430px] sm:px-4 sm:py-4 lg:h-[500px] lg:px-5">
+              <div className="space-y-3 sm:space-y-4">
+                {messages.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-[#263366]/20 bg-[#F8FAFC] p-4 text-sm text-[#263366]/70 sm:p-5">
+                    <div className="font-medium">Try asking something like:</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setInput("I'm self-employed. Can I qualify for a home loan?")
+                        }
+                        className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
+                      >
+                        I&apos;m self-employed. Can I qualify?
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setInput('I had a recent credit issue. What are my options?')
+                        }
+                        className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
+                      >
+                        I had a recent credit issue
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setInput('I want to buy with 10% down. Where should I start?')
+                        }
+                        className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
+                      >
+                        I want to buy with 10% down
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`flex ${
-                    msg.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
-                >
+                {messages.map((msg, index) => (
                   <div
-                    className={`max-w-[92%] rounded-2xl px-3 py-2.5 text-sm leading-6 whitespace-pre-wrap shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-[15px] sm:leading-7 ${
-                      msg.role === 'user'
-                        ? 'bg-[#DCEAFE] text-right text-[#263366]'
-                        : 'bg-[#F3F4F6] text-left text-[#263366]'
+                    key={index}
+                    className={`flex ${
+                      msg.role === 'user' ? 'justify-end' : 'justify-start'
                     }`}
                   >
-                    {msg.content}
+                    <div
+                      className={`max-w-[92%] rounded-2xl px-3 py-2.5 text-sm leading-6 whitespace-pre-wrap shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-[15px] sm:leading-7 ${
+                        msg.role === 'user'
+                          ? 'bg-[#DCEAFE] text-right text-[#263366]'
+                          : 'bg-[#F3F4F6] text-left text-[#263366]'
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
 
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="max-w-[92%] rounded-2xl bg-[#F3F4F6] px-3 py-2.5 text-sm leading-6 text-[#263366] shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-[15px] sm:leading-7">
-                    Thinking...
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[92%] rounded-2xl bg-[#F3F4F6] px-3 py-2.5 text-sm leading-6 text-[#263366] shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-[15px] sm:leading-7">
+                      Thinking...
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div ref={messagesEndRef} />
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+
+            <div className="border-t border-[#263366]/10 px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      void handleSend()
+                    }
+                  }}
+                  placeholder="Describe your situation..."
+                  rows={3}
+                  className="min-h-[88px] w-full resize-none rounded-xl border border-[#263366]/20 px-4 py-3 text-sm text-[#263366] outline-none placeholder:text-[#263366]/45 focus:border-[#263366]/40 sm:flex-1 sm:text-[15px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSend()}
+                  disabled={loading}
+                  className="w-full rounded-xl bg-[#263366] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  Send
+                </button>
+              </div>
             </div>
           </div>
+        )}
 
-          <div className="border-t border-[#263366]/10 px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void handleSend()
-                  }
-                }}
-                placeholder="Describe your situation..."
-                rows={3}
-                className="min-h-[88px] w-full resize-none rounded-xl border border-[#263366]/20 px-4 py-3 text-sm text-[#263366] outline-none placeholder:text-[#263366]/45 focus:border-[#263366]/40 sm:flex-1 sm:text-[15px]"
-              />
-              <button
-                type="button"
-                onClick={() => void handleSend()}
-                disabled={loading}
-                className="w-full rounded-xl bg-[#263366] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-              >
-                Send
-              </button>
-            </div>
+        {!chatEnabled && (
+          <div className="rounded-2xl border border-[#263366]/15 bg-white p-6 text-center shadow-sm">
+            <h2 className="text-lg font-semibold text-[#263366]">
+              Advisor Chat Locked
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#263366]/70">
+              Complete your contact details above to unlock the conversation.
+            </p>
           </div>
-        </div>
+        )}
 
-        {/* CTA */}
         <div className="mt-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mt-6 sm:p-5">
           <div className="text-center">
             <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
