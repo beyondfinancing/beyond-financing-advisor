@@ -90,36 +90,7 @@ export default function Home() {
             <div className="space-y-4">
               {messages.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-[#263366]/20 bg-[#F8FAFC] p-5 text-sm text-[#263366]/70">
-                  Examples:
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInput("I'm self-employed. Can I qualify for a home loan?")
-                      }
-                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-sm hover:bg-[#F1F3F8]"
-                    >
-                      I&apos;m self-employed. Can I qualify?
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInput('I had a recent credit issue. What are my options?')
-                      }
-                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-sm hover:bg-[#F1F3F8]"
-                    >
-                      I had a recent credit issue
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInput('I want to buy with 10% down. Where should I start?')
-                      }
-                      className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-sm hover:bg-[#F1F3F8]"
-                    >
-                      I want to buy with 10% down
-                    </button>
-                  </div>
+                  Try asking something like:
                 </div>
               )}
 
@@ -133,8 +104,8 @@ export default function Home() {
                   <div
                     className={`max-w-[85%] rounded-2xl px-4 py-3 text-[15px] leading-7 whitespace-pre-wrap shadow-sm ${
                       msg.role === 'user'
-                        ? 'bg-[#DCEAFE] text-right text-[#263366]'
-                        : 'bg-[#F3F4F6] text-left text-[#263366]'
+                        ? 'bg-[#DCEAFE] text-right'
+                        : 'bg-[#F3F4F6] text-left'
                     }`}
                   >
                     {msg.content}
@@ -144,7 +115,7 @@ export default function Home() {
 
               {loading && (
                 <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl bg-[#F3F4F6] px-4 py-3 text-[15px] leading-7 text-[#263366] shadow-sm">
+                  <div className="max-w-[85%] rounded-2xl bg-[#F3F4F6] px-4 py-3 text-[15px]">
                     Thinking...
                   </div>
                 </div>
@@ -167,13 +138,13 @@ export default function Home() {
                 }}
                 placeholder="Describe your situation..."
                 rows={3}
-                className="min-h-[88px] flex-1 resize-none rounded-xl border border-[#263366]/20 px-4 py-3 text-[15px] text-[#263366] outline-none placeholder:text-[#263366]/45 focus:border-[#263366]/40"
+                className="min-h-[88px] flex-1 resize-none rounded-xl border border-[#263366]/20 px-4 py-3 outline-none"
               />
               <button
                 type="button"
                 onClick={() => void handleSend()}
                 disabled={loading}
-                className="rounded-xl bg-[#263366] px-5 py-3 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-xl bg-[#263366] px-5 py-3 text-white"
               >
                 Send
               </button>
@@ -181,7 +152,44 @@ export default function Home() {
           </div>
         </div>
 
-        <p className="mx-auto mt-5 max-w-2xl text-center text-xs leading-6 text-[#263366]/60">
+        {/* CTA SECTION */}
+        <div className="mt-6 rounded-2xl border border-[#263366]/15 bg-white p-5 shadow-sm">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-[#263366]">
+              Ready to Move Forward?
+            </h2>
+            <p className="mt-2 text-sm text-[#263366]/70">
+              Take the next step with Beyond Financing.
+            </p>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <a
+              href="https://www.beyondfinancing.com/apply-now"
+              target="_blank"
+              className="rounded-xl bg-[#263366] px-4 py-3 text-center text-sm font-semibold text-white hover:opacity-90"
+            >
+              Start Application
+            </a>
+
+            <a
+              href="https://calendly.com/sandropansini"
+              target="_blank"
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-center text-sm font-semibold hover:bg-[#F1F3F8]"
+            >
+              Schedule Consultation
+            </a>
+
+            <a
+              href="mailto:pansini@beyondfinancing.com"
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-center text-sm font-semibold hover:bg-[#F1F3F8]"
+            >
+              Talk to Beyond Financing
+            </a>
+          </div>
+        </div>
+
+        <p className="mx-auto mt-5 max-w-2xl text-center text-xs text-[#263366]/60">
           This tool provides general information and does not constitute a loan
           approval or commitment to lend. All mortgage applications are subject to
           review by a licensed Mortgage Loan Originator.
