@@ -80,10 +80,7 @@ export default function Home() {
     }
   }
 
-  const handleLeadChange = (
-    field: keyof LeadForm,
-    value: string
-  ): void => {
+  const handleLeadChange = (field: keyof LeadForm, value: string): void => {
     setLeadForm((prev) => ({
       ...prev,
       [field]: value,
@@ -106,6 +103,77 @@ export default function Home() {
           </p>
         </div>
 
+        {/* STAY CONNECTED FIRST */}
+        <div className="mb-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mb-6 sm:p-5">
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
+              Stay Connected
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#263366]/70">
+              Leave your details so Beyond Financing can help you move forward faster.
+            </p>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <input
+              type="text"
+              placeholder="First Name"
+              value={leadForm.firstName}
+              onChange={(e) => handleLeadChange('firstName', e.target.value)}
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            />
+
+            <input
+              type="email"
+              placeholder="Email"
+              value={leadForm.email}
+              onChange={(e) => handleLeadChange('email', e.target.value)}
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            />
+
+            <input
+              type="text"
+              placeholder="Phone Number"
+              value={leadForm.phone}
+              onChange={(e) => handleLeadChange('phone', e.target.value)}
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            />
+
+            <select
+              value={leadForm.preferredLanguage}
+              onChange={(e) =>
+                handleLeadChange('preferredLanguage', e.target.value)
+              }
+              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
+            >
+              <option>English</option>
+              <option>Português</option>
+              <option>Español</option>
+            </select>
+          </div>
+
+          <div className="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <button
+              type="button"
+              onClick={handleLeadSave}
+              className="w-full rounded-xl bg-[#263366] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 sm:w-auto"
+            >
+              Save My Contact Details
+            </button>
+
+            <p className="text-xs leading-5 text-[#263366]/60">
+              You can still chat with the advisor even if you skip this step.
+            </p>
+          </div>
+
+          {leadSaved && (
+            <div className="mt-3 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm text-[#263366]/75">
+              Your contact details have been added to this session.
+            </div>
+          )}
+        </div>
+
+        {/* CHAT */}
         <div className="overflow-hidden rounded-2xl border border-[#263366]/20 bg-white shadow-sm">
           <div className="border-b border-[#263366]/10 px-4 py-4 sm:px-5">
             <div className="text-sm font-semibold text-[#263366] sm:text-base">
@@ -211,71 +279,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mt-6 sm:p-5">
-          <div className="text-center">
-            <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
-              Stay Connected
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-[#263366]/70">
-              Leave your details so Beyond Financing can help you move forward faster.
-            </p>
-          </div>
-
-          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <input
-              type="text"
-              placeholder="First Name"
-              value={leadForm.firstName}
-              onChange={(e) => handleLeadChange('firstName', e.target.value)}
-              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
-            />
-
-            <input
-              type="email"
-              placeholder="Email"
-              value={leadForm.email}
-              onChange={(e) => handleLeadChange('email', e.target.value)}
-              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
-            />
-
-            <input
-              type="text"
-              placeholder="Phone Number"
-              value={leadForm.phone}
-              onChange={(e) => handleLeadChange('phone', e.target.value)}
-              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
-            />
-
-            <select
-              value={leadForm.preferredLanguage}
-              onChange={(e) =>
-                handleLeadChange('preferredLanguage', e.target.value)
-              }
-              className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
-            >
-              <option>English</option>
-              <option>Português</option>
-              <option>Español</option>
-            </select>
-          </div>
-
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={handleLeadSave}
-              className="w-full rounded-xl bg-[#263366] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 sm:w-auto"
-            >
-              Save My Contact Details
-            </button>
-          </div>
-
-          {leadSaved && (
-            <div className="mt-3 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm text-[#263366]/75">
-              Your contact details have been added to this session.
-            </div>
-          )}
-        </div>
-
+        {/* CTA */}
         <div className="mt-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mt-6 sm:p-5">
           <div className="text-center">
             <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
