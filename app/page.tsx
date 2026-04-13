@@ -47,6 +47,8 @@ type TranslationSet = {
   talkToBeyond: string
   preapprovalNote: string
   disclaimer: string
+  genericLeadFailure: string
+  genericConnectionFailure: string
 }
 
 const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
@@ -69,8 +71,7 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
     unlockedMessage:
       'Thank you. Your information has been recorded for this session. You may now chat with Finley Beyond Advisor below.',
     chatLockedTitle: 'Unlock Your Mortgage Guidance',
-    chatLockedSubtitle:
-      'Complete your contact details above to continue.',
+    chatLockedSubtitle: 'Complete your contact details above to continue.',
     advisorName: 'Connect with Finley Beyond Advisor',
     advisorSubtitle:
       'Ask a mortgage question and get guided step by step.',
@@ -90,6 +91,8 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
       'A pre-approval review typically starts with income, asset, and credit evaluation. If you are self-employed, tax returns and supporting documentation may be required.',
     disclaimer:
       'This tool provides general information and does not constitute a loan approval or commitment to lend. All mortgage applications are subject to review by a licensed Mortgage Loan Originator.',
+    genericLeadFailure: 'Unable to submit your information right now.',
+    genericConnectionFailure: 'Unable to connect right now. Please try again.',
   },
   Português: {
     heroTitle: 'Conecte-se com o Finley Beyond Advisor — Instantaneamente',
@@ -131,6 +134,9 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
       'Uma análise de pré-aprovação normalmente começa com avaliação de renda, ativos e crédito. Se você é autônomo, declarações de imposto e documentação de suporte podem ser necessárias.',
     disclaimer:
       'Esta ferramenta fornece informações gerais e não constitui aprovação de empréstimo nem compromisso de conceder crédito. Todas as aplicações de hipoteca estão sujeitas à análise e aprovação por um Mortgage Loan Originator licenciado.',
+    genericLeadFailure: 'Não foi possível enviar suas informações agora.',
+    genericConnectionFailure:
+      'Não foi possível conectar agora. Tente novamente.',
   },
   Español: {
     heroTitle: 'Conéctese con Finley Beyond Advisor — Al Instante',
@@ -172,6 +178,10 @@ const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
       'Una revisión de preaprobación normalmente comienza con la evaluación de ingresos, activos y crédito. Si trabaja por cuenta propia, pueden requerirse declaraciones de impuestos y documentación de respaldo.',
     disclaimer:
       'Esta herramienta proporciona información general y no constituye una aprobación de préstamo ni un compromiso de otorgarlo. Todas las solicitudes hipotecarias están sujetas a revisión y aprobación por un Mortgage Loan Originator autorizado.',
+    genericLeadFailure:
+      'No fue posible enviar su información en este momento.',
+    genericConnectionFailure:
+      'No fue posible conectarse en este momento. Inténtelo de nuevo.',
   },
 }
 
@@ -200,17 +210,25 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  const handleLeadChange = (field: keyof LeadForm, value: string): void => {
+  const handleLeadChange = <K extends keyof LeadForm>(
+    field: K,
+    value: LeadForm[K]
+  ): void => {
     setLeadForm((prev) => ({
       ...prev,
-      [field]: value as LeadForm['preferredLanguage'],
+      [field]: value,
     }))
   }
 
   const handleLeadUnlock = async (): Promise<void> => {
     const { firstName, email, phone, preferredLanguage } = leadForm
 
-    if (!firstName.trim() || !email.trim() || !phone.trim() || !preferredLanguage.trim()) {
+    if (
+      !firstName.trim() ||
+      !email.trim() ||
+      !phone.trim() ||
+      !preferredLanguage.trim()
+    ) {
       setLeadError(t.leadError)
       return
     }
@@ -229,14 +247,14 @@ export default function Home() {
 
       const data: { success?: boolean; error?: string } = await res.json()
 
-      if (!res.ok || !data.success) {
-        setLeadError(data.error || t.leadError)
+      if (!res.ok) {
+        setLeadError(data.error || t.genericLeadFailure)
         return
       }
 
       setChatEnabled(true)
     } catch {
-      setLeadError(t.leadError)
+      setLeadError(t.genericConnectionFailure)
     } finally {
       setLeadSubmitting(false)
     }
