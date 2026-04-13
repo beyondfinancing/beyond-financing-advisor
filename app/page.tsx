@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -9,6 +9,7 @@ type ChatMessage = {
 
 type PreferredLanguage = 'English' | 'Português' | 'Español'
 type LoanOfficerId = 'finley' | 'sandro' | 'warren'
+type SummaryTrigger = 'ai' | 'apply' | 'schedule' | 'contact'
 
 type LeadForm = {
   fullName: string
@@ -62,20 +63,41 @@ type TranslationSet = {
   genericAiConnectionFailure: string
 }
 
+const START_APPLICATION_URL = 'https://www.beyondfinancing.com/apply-now'
+const SCHEDULE_CONSULTATION_URL = 'https://calendly.com/sandropansini'
+const TALK_TO_BEYOND_URL = 'https://www.beyondfinancing.com'
+const SUMMARY_TRIGGER_MARKER = '[[FINLEY_SEND_SUMMARY]]'
+
 const loanOfficerOptions: Record<
   LoanOfficerId,
   {
     email: string
+    label: Record<PreferredLanguage, string>
   }
 > = {
   finley: {
     email: 'finley@beyondfinancing.com',
+    label: {
+      English: 'Finley Beyond (If None Below)',
+      Português: 'Finley Beyond (Se Nenhum Abaixo)',
+      Español: 'Finley Beyond (Si Ninguno Abajo)',
+    },
   },
   sandro: {
     email: 'pansini@beyondfinancing.com',
+    label: {
+      English: 'Sandro Pansini Souza',
+      Português: 'Sandro Pansini Souza',
+      Español: 'Sandro Pansini Souza',
+    },
   },
   warren: {
     email: 'warren@beyondfinancing.com',
+    label: {
+      English: 'Warren Wendt',
+      Português: 'Warren Wendt',
+      Español: 'Warren Wendt',
+    },
   },
 }
 
@@ -238,6 +260,45 @@ const translations: Record<PreferredLanguage, TranslationSet> = {
   },
 }
 
+function stripSummaryMarker(content: string): string {
+  return content.replace(SUMMARY_TRIGGER_MARKER, '').trim()
+}
+
+function renderMessageContent(content: string) {
+  const parts = content.split(/(https?:\/\/[^\s]+)/g)
+
+  return parts.map((part, index) => {
+    const isLink = /^https?:\/\/[^\s]+$/.test(part)
+
+    if (isLink) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noreferrer"
+          className="break-all font-medium underline"
+        >
+          {part}
+        </a>
+      )
+    }
+
+    const lines = part.split('\n')
+
+    return (
+      <Fragment key={index}>
+        {lines.map((line, lineIndex) => (
+          <Fragment key={`${index}-${lineIndex}`}>
+            {line}
+            {lineIndex < lines.length - 1 ? <br /> : null}
+          </Fragment>
+        ))}
+      </Fragment>
+    )
+  })
+}
+
 export default function Home() {
   const [input, setInput] = useState<string>('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -245,6 +306,7 @@ export default function Home() {
   const [chatEnabled, setChatEnabled] = useState<boolean>(false)
   const [leadSubmitting, setLeadSubmitting] = useState<boolean>(false)
   const [leadError, setLeadError] = useState<string>('')
+  const [summarySent, setSummarySent] = useState<boolean>(false)
   const [leadForm, setLeadForm] = useState<LeadForm>({
     fullName: '',
     email: '',
@@ -272,6 +334,36 @@ export default function Home() {
       ...prev,
       [field]: value,
     }))
+  }
+
+  const sendConversationSummary = async (
+    transcript: ChatMessage[],
+    trigger: SummaryTrigger
+  ): Promise<void> => {
+    if (summarySent || transcript.length === 0) return
+
+    try {
+      const res = await fetch('/api/chat-summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lead: {
+            ...leadForm,
+            assignedEmail: loanOfficerOptions[leadForm.loanOfficer].email,
+          },
+          messages: transcript,
+          trigger,
+        }),
+      })
+
+      if (res.ok) {
+        setSummarySent(true)
+      }
+    } catch {
+      // Intentionally silent so the borrower experience is not interrupted.
+    }
   }
 
   const handleLeadUnlock = async (): Promise<void> => {
@@ -345,13 +437,21 @@ export default function Home() {
       })
 
       const data: { reply?: string } = await res.json()
+      const rawReply = data?.reply || t.genericAiFailure
+      const shouldSendSummary = rawReply.includes(SUMMARY_TRIGGER_MARKER)
+      const cleanReply = stripSummaryMarker(rawReply)
 
       const aiMessage: ChatMessage = {
         role: 'assistant',
-        content: data?.reply || t.genericAiFailure,
+        content: cleanReply,
       }
 
-      setMessages((prev) => [...prev, aiMessage])
+      const finalTranscript = [...updatedMessages, aiMessage]
+      setMessages(finalTranscript)
+
+      if (shouldSendSummary) {
+        void sendConversationSummary(finalTranscript, 'ai')
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -363,6 +463,17 @@ export default function Home() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleActionClick = async (
+    url: string,
+    trigger: SummaryTrigger
+  ): Promise<void> => {
+    if (chatEnabled && messages.length > 0 && !summarySent) {
+      await sendConversationSummary(messages, trigger)
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -525,7 +636,7 @@ export default function Home() {
                           : 'bg-[#F3F4F6] text-left text-[#263366]'
                       }`}
                     >
-                      {msg.content}
+                      {renderMessageContent(msg.content)}
                     </div>
                   </div>
                 ))}
@@ -592,32 +703,31 @@ export default function Home() {
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <a
-              href="https://www.beyondfinancing.com/apply-now"
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => void handleActionClick(START_APPLICATION_URL, 'apply')}
               className="rounded-xl bg-[#263366] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
             >
               {t.startApplication}
-            </a>
+            </button>
 
-            <a
-              href="https://calendly.com/sandropansini"
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() =>
+                void handleActionClick(SCHEDULE_CONSULTATION_URL, 'schedule')
+              }
               className="rounded-xl border border-[#263366]/20 bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#263366] transition hover:bg-[#EEF2F7]"
             >
               {t.scheduleConsultation}
-            </a>
+            </button>
 
-            <a
-              href="https://www.beyondfinancing.com"
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => void handleActionClick(TALK_TO_BEYOND_URL, 'contact')}
               className="rounded-xl border border-[#263366]/20 bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#263366] transition hover:bg-[#EEF2F7] sm:col-span-2 lg:col-span-1"
             >
               {t.talkToBeyond}
-            </a>
+            </button>
           </div>
 
           <div className="mt-4 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm leading-6 text-[#263366]/75">
