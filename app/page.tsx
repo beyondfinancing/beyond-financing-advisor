@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -11,7 +11,168 @@ type LeadForm = {
   firstName: string
   email: string
   phone: string
-  preferredLanguage: string
+  preferredLanguage: 'English' | 'Português' | 'Español'
+}
+
+type TranslationSet = {
+  heroTitle: string
+  heroSubtitle: string
+  stayConnectedTitle: string
+  stayConnectedSubtitle: string
+  firstNamePlaceholder: string
+  emailPlaceholder: string
+  phonePlaceholder: string
+  languageEnglish: string
+  languagePortuguese: string
+  languageSpanish: string
+  leadError: string
+  unlockButton: string
+  savingButton: string
+  unlockedMessage: string
+  chatLockedTitle: string
+  chatLockedSubtitle: string
+  advisorName: string
+  advisorSubtitle: string
+  tryAsking: string
+  example1: string
+  example2: string
+  example3: string
+  textareaPlaceholder: string
+  sendButton: string
+  thinking: string
+  readyTitle: string
+  readySubtitle: string
+  startApplication: string
+  scheduleConsultation: string
+  talkToBeyond: string
+  preapprovalNote: string
+  disclaimer: string
+}
+
+const translations: Record<LeadForm['preferredLanguage'], TranslationSet> = {
+  English: {
+    heroTitle: 'Connect With Finley Beyond Advisor — Instantly',
+    heroSubtitle: 'Clear guidance. Real scenarios. One step at a time.',
+    stayConnectedTitle: 'Stay Connected',
+    stayConnectedSubtitle:
+      'Enter your contact details to unlock the advisor experience.',
+    firstNamePlaceholder: 'First Name',
+    emailPlaceholder: 'Email',
+    phonePlaceholder: 'Phone Number',
+    languageEnglish: 'English',
+    languagePortuguese: 'Português',
+    languageSpanish: 'Español',
+    leadError:
+      'Please complete First Name, Email, Phone Number, and Language to continue.',
+    unlockButton: 'Unlock Your Mortgage AI Advisor',
+    savingButton: 'Saving...',
+    unlockedMessage:
+      'Thank you. Your information has been recorded for this session. You may now chat with Finley Beyond Advisor below.',
+    chatLockedTitle: 'Unlock Your Mortgage Guidance',
+    chatLockedSubtitle:
+      'Complete your contact details above to continue.',
+    advisorName: 'Connect with Finley Beyond Advisor',
+    advisorSubtitle:
+      'Ask a mortgage question and get guided step by step.',
+    tryAsking: 'Try asking something like:',
+    example1: "I'm self-employed. Can I qualify?",
+    example2: 'I had a recent credit issue',
+    example3: 'I want to buy with 10% down',
+    textareaPlaceholder: 'Describe your situation...',
+    sendButton: 'Send',
+    thinking: 'Thinking...',
+    readyTitle: 'Ready to Move Forward?',
+    readySubtitle: 'Take the next step with Beyond Financing.',
+    startApplication: 'Start Application',
+    scheduleConsultation: 'Schedule Consultation',
+    talkToBeyond: 'Talk to Beyond Financing',
+    preapprovalNote:
+      'A pre-approval review typically starts with income, asset, and credit evaluation. If you are self-employed, tax returns and supporting documentation may be required.',
+    disclaimer:
+      'This tool provides general information and does not constitute a loan approval or commitment to lend. All mortgage applications are subject to review by a licensed Mortgage Loan Originator.',
+  },
+  Português: {
+    heroTitle: 'Conecte-se com o Finley Beyond Advisor — Instantaneamente',
+    heroSubtitle: 'Orientação clara. Cenários reais. Um passo de cada vez.',
+    stayConnectedTitle: 'Mantenha-se Conectado',
+    stayConnectedSubtitle:
+      'Informe seus dados de contato para desbloquear a experiência com o advisor.',
+    firstNamePlaceholder: 'Primeiro Nome',
+    emailPlaceholder: 'Email',
+    phonePlaceholder: 'Telefone',
+    languageEnglish: 'English',
+    languagePortuguese: 'Português',
+    languageSpanish: 'Español',
+    leadError:
+      'Por favor, preencha Primeiro Nome, Email, Telefone e Idioma para continuar.',
+    unlockButton: 'Desbloquear seu Mortgage AI Advisor',
+    savingButton: 'Salvando...',
+    unlockedMessage:
+      'Obrigado. Suas informações foram registradas nesta sessão. Agora você pode conversar com o Finley Beyond Advisor abaixo.',
+    chatLockedTitle: 'Desbloqueie sua Orientação Hipotecária',
+    chatLockedSubtitle:
+      'Complete seus dados de contato acima para continuar.',
+    advisorName: 'Conecte-se com o Finley Beyond Advisor',
+    advisorSubtitle:
+      'Faça uma pergunta sobre hipoteca e receba orientação passo a passo.',
+    tryAsking: 'Tente perguntar algo como:',
+    example1: 'Sou autônomo. Posso me qualificar?',
+    example2: 'Tive um problema recente de crédito',
+    example3: 'Quero comprar com 10% de entrada',
+    textareaPlaceholder: 'Descreva sua situação...',
+    sendButton: 'Enviar',
+    thinking: 'Pensando...',
+    readyTitle: 'Pronto para Seguir em Frente?',
+    readySubtitle: 'Dê o próximo passo com a Beyond Financing.',
+    startApplication: 'Iniciar Aplicação',
+    scheduleConsultation: 'Agendar Consulta',
+    talkToBeyond: 'Falar com a Beyond Financing',
+    preapprovalNote:
+      'Uma análise de pré-aprovação normalmente começa com avaliação de renda, ativos e crédito. Se você é autônomo, declarações de imposto e documentação de suporte podem ser necessárias.',
+    disclaimer:
+      'Esta ferramenta fornece informações gerais e não constitui aprovação de empréstimo nem compromisso de conceder crédito. Todas as aplicações de hipoteca estão sujeitas à análise e aprovação por um Mortgage Loan Originator licenciado.',
+  },
+  Español: {
+    heroTitle: 'Conéctese con Finley Beyond Advisor — Al Instante',
+    heroSubtitle: 'Orientación clara. Escenarios reales. Un paso a la vez.',
+    stayConnectedTitle: 'Manténgase Conectado',
+    stayConnectedSubtitle:
+      'Ingrese sus datos de contacto para desbloquear la experiencia con el advisor.',
+    firstNamePlaceholder: 'Nombre',
+    emailPlaceholder: 'Correo Electrónico',
+    phonePlaceholder: 'Número de Teléfono',
+    languageEnglish: 'English',
+    languagePortuguese: 'Português',
+    languageSpanish: 'Español',
+    leadError:
+      'Por favor complete Nombre, Correo Electrónico, Número de Teléfono e Idioma para continuar.',
+    unlockButton: 'Desbloquee su Mortgage AI Advisor',
+    savingButton: 'Guardando...',
+    unlockedMessage:
+      'Gracias. Su información ha sido registrada para esta sesión. Ahora puede chatear con Finley Beyond Advisor abajo.',
+    chatLockedTitle: 'Desbloquee su Guía Hipotecaria',
+    chatLockedSubtitle:
+      'Complete sus datos de contacto arriba para continuar.',
+    advisorName: 'Conéctese con Finley Beyond Advisor',
+    advisorSubtitle:
+      'Haga una pregunta sobre hipotecas y reciba orientación paso a paso.',
+    tryAsking: 'Pruebe preguntando algo como:',
+    example1: 'Soy trabajador independiente. ¿Puedo calificar?',
+    example2: 'Tuve un problema reciente de crédito',
+    example3: 'Quiero comprar con 10% de entrada',
+    textareaPlaceholder: 'Describa su situación...',
+    sendButton: 'Enviar',
+    thinking: 'Pensando...',
+    readyTitle: '¿Listo para Avanzar?',
+    readySubtitle: 'Dé el siguiente paso con Beyond Financing.',
+    startApplication: 'Comenzar Solicitud',
+    scheduleConsultation: 'Programar Consulta',
+    talkToBeyond: 'Hablar con Beyond Financing',
+    preapprovalNote:
+      'Una revisión de preaprobación normalmente comienza con la evaluación de ingresos, activos y crédito. Si trabaja por cuenta propia, pueden requerirse declaraciones de impuestos y documentación de respaldo.',
+    disclaimer:
+      'Esta herramienta proporciona información general y no constituye una aprobación de préstamo ni un compromiso de otorgarlo. Todas las solicitudes hipotecarias están sujetas a revisión y aprobación por un Mortgage Loan Originator autorizado.',
+  },
 }
 
 export default function Home() {
@@ -19,6 +180,7 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState<boolean>(false)
   const [chatEnabled, setChatEnabled] = useState<boolean>(false)
+  const [leadSubmitting, setLeadSubmitting] = useState<boolean>(false)
   const [leadError, setLeadError] = useState<string>('')
   const [leadForm, setLeadForm] = useState<LeadForm>({
     firstName: '',
@@ -29,6 +191,11 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
+  const t = useMemo(
+    () => translations[leadForm.preferredLanguage],
+    [leadForm.preferredLanguage]
+  )
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
@@ -36,20 +203,43 @@ export default function Home() {
   const handleLeadChange = (field: keyof LeadForm, value: string): void => {
     setLeadForm((prev) => ({
       ...prev,
-      [field]: value,
+      [field]: value as LeadForm['preferredLanguage'],
     }))
   }
 
-  const handleLeadUnlock = (): void => {
+  const handleLeadUnlock = async (): Promise<void> => {
     const { firstName, email, phone, preferredLanguage } = leadForm
 
     if (!firstName.trim() || !email.trim() || !phone.trim() || !preferredLanguage.trim()) {
-      setLeadError('Please complete First Name, Email, Phone Number, and Language to continue.')
+      setLeadError(t.leadError)
       return
     }
 
     setLeadError('')
-    setChatEnabled(true)
+    setLeadSubmitting(true)
+
+    try {
+      const res = await fetch('/api/lead', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(leadForm),
+      })
+
+      const data: { success?: boolean; error?: string } = await res.json()
+
+      if (!res.ok || !data.success) {
+        setLeadError(data.error || t.leadError)
+        return
+      }
+
+      setChatEnabled(true)
+    } catch {
+      setLeadError(t.leadError)
+    } finally {
+      setLeadSubmitting(false)
+    }
   }
 
   const handleSend = async (): Promise<void> => {
@@ -105,27 +295,27 @@ export default function Home() {
       <div className="mx-auto w-full max-w-5xl">
         <div className="mb-5 text-center sm:mb-6">
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
-            Connect With a Mortgage Advisor — Instantly
+            {t.heroTitle}
           </h1>
           <p className="mt-2 text-sm text-[#263366]/75 sm:mt-3 sm:text-base">
-            Clear guidance. Real scenarios. One step at a time.
+            {t.heroSubtitle}
           </p>
         </div>
 
         <div className="mb-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mb-6 sm:p-5">
           <div className="text-center">
             <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
-              Stay Connected
+              {t.stayConnectedTitle}
             </h2>
             <p className="mt-2 text-sm leading-6 text-[#263366]/70">
-              Enter your contact details to unlock the advisor experience.
+              {t.stayConnectedSubtitle}
             </p>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input
               type="text"
-              placeholder="First Name"
+              placeholder={t.firstNamePlaceholder}
               value={leadForm.firstName}
               onChange={(e) => handleLeadChange('firstName', e.target.value)}
               className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
@@ -133,7 +323,7 @@ export default function Home() {
 
             <input
               type="email"
-              placeholder="Email"
+              placeholder={t.emailPlaceholder}
               value={leadForm.email}
               onChange={(e) => handleLeadChange('email', e.target.value)}
               className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
@@ -141,7 +331,7 @@ export default function Home() {
 
             <input
               type="text"
-              placeholder="Phone Number"
+              placeholder={t.phonePlaceholder}
               value={leadForm.phone}
               onChange={(e) => handleLeadChange('phone', e.target.value)}
               className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
@@ -149,12 +339,17 @@ export default function Home() {
 
             <select
               value={leadForm.preferredLanguage}
-              onChange={(e) => handleLeadChange('preferredLanguage', e.target.value)}
+              onChange={(e) =>
+                handleLeadChange(
+                  'preferredLanguage',
+                  e.target.value as LeadForm['preferredLanguage']
+                )
+              }
               className="rounded-xl border border-[#263366]/20 px-4 py-3 text-sm outline-none focus:border-[#263366]/40"
             >
-              <option value="English">English</option>
-              <option value="Português">Português</option>
-              <option value="Español">Español</option>
+              <option value="English">{t.languageEnglish}</option>
+              <option value="Português">{t.languagePortuguese}</option>
+              <option value="Español">{t.languageSpanish}</option>
             </select>
           </div>
 
@@ -167,16 +362,17 @@ export default function Home() {
           <div className="mt-4 flex justify-center">
             <button
               type="button"
-              onClick={handleLeadUnlock}
-              className="w-full rounded-xl bg-[#263366] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 sm:w-auto"
+              onClick={() => void handleLeadUnlock()}
+              disabled={leadSubmitting}
+              className="w-full rounded-xl bg-[#263366] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
-              Unlock Advisor Chat
+              {leadSubmitting ? t.savingButton : t.unlockButton}
             </button>
           </div>
 
           {chatEnabled && (
             <div className="mt-4 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm text-[#263366]/75">
-              Thank you. Your information has been recorded for this session. You may now chat with the advisor below.
+              {t.unlockedMessage}
             </div>
           )}
         </div>
@@ -185,10 +381,10 @@ export default function Home() {
           <div className="overflow-hidden rounded-2xl border border-[#263366]/20 bg-white shadow-sm">
             <div className="border-b border-[#263366]/10 px-4 py-4 sm:px-5">
               <div className="text-sm font-semibold text-[#263366] sm:text-base">
-                Beyond Financing Advisor
+                {t.advisorName}
               </div>
               <div className="mt-1 text-xs text-[#263366]/65 sm:text-sm">
-                Ask a mortgage question and get guided step by step.
+                {t.advisorSubtitle}
               </div>
             </div>
 
@@ -196,34 +392,28 @@ export default function Home() {
               <div className="space-y-3 sm:space-y-4">
                 {messages.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-[#263366]/20 bg-[#F8FAFC] p-4 text-sm text-[#263366]/70 sm:p-5">
-                    <div className="font-medium">Try asking something like:</div>
+                    <div className="font-medium">{t.tryAsking}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() =>
-                          setInput("I'm self-employed. Can I qualify for a home loan?")
-                        }
+                        onClick={() => setInput(t.example1)}
                         className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
                       >
-                        I&apos;m self-employed. Can I qualify?
+                        {t.example1}
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
-                          setInput('I had a recent credit issue. What are my options?')
-                        }
+                        onClick={() => setInput(t.example2)}
                         className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
                       >
-                        I had a recent credit issue
+                        {t.example2}
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
-                          setInput('I want to buy with 10% down. Where should I start?')
-                        }
+                        onClick={() => setInput(t.example3)}
                         className="rounded-full border border-[#263366]/15 bg-white px-3 py-2 text-xs hover:bg-[#F1F3F8] sm:text-sm"
                       >
-                        I want to buy with 10% down
+                        {t.example3}
                       </button>
                     </div>
                   </div>
@@ -251,7 +441,7 @@ export default function Home() {
                 {loading && (
                   <div className="flex justify-start">
                     <div className="max-w-[92%] rounded-2xl bg-[#F3F4F6] px-3 py-2.5 text-sm leading-6 text-[#263366] shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-[15px] sm:leading-7">
-                      Thinking...
+                      {t.thinking}
                     </div>
                   </div>
                 )}
@@ -271,7 +461,7 @@ export default function Home() {
                       void handleSend()
                     }
                   }}
-                  placeholder="Describe your situation..."
+                  placeholder={t.textareaPlaceholder}
                   rows={3}
                   className="min-h-[88px] w-full resize-none rounded-xl border border-[#263366]/20 px-4 py-3 text-sm text-[#263366] outline-none placeholder:text-[#263366]/45 focus:border-[#263366]/40 sm:flex-1 sm:text-[15px]"
                 />
@@ -281,7 +471,7 @@ export default function Home() {
                   disabled={loading}
                   className="w-full rounded-xl bg-[#263366] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
-                  Send
+                  {t.sendButton}
                 </button>
               </div>
             </div>
@@ -291,10 +481,10 @@ export default function Home() {
         {!chatEnabled && (
           <div className="rounded-2xl border border-[#263366]/15 bg-white p-6 text-center shadow-sm">
             <h2 className="text-lg font-semibold text-[#263366]">
-              Advisor Chat Locked
+              {t.chatLockedTitle}
             </h2>
             <p className="mt-2 text-sm leading-6 text-[#263366]/70">
-              Complete your contact details above to unlock the conversation.
+              {t.chatLockedSubtitle}
             </p>
           </div>
         )}
@@ -302,10 +492,10 @@ export default function Home() {
         <div className="mt-5 rounded-2xl border border-[#263366]/15 bg-white p-4 shadow-sm sm:mt-6 sm:p-5">
           <div className="text-center">
             <h2 className="text-lg font-semibold text-[#263366] sm:text-xl">
-              Ready to Move Forward?
+              {t.readyTitle}
             </h2>
             <p className="mt-2 text-sm leading-6 text-[#263366]/70">
-              Take the next step with Beyond Financing.
+              {t.readySubtitle}
             </p>
           </div>
 
@@ -316,7 +506,7 @@ export default function Home() {
               rel="noreferrer"
               className="rounded-xl bg-[#263366] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
             >
-              Start Application
+              {t.startApplication}
             </a>
 
             <a
@@ -325,28 +515,24 @@ export default function Home() {
               rel="noreferrer"
               className="rounded-xl border border-[#263366]/20 bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#263366] transition hover:bg-[#EEF2F7]"
             >
-              Schedule Consultation
+              {t.scheduleConsultation}
             </a>
 
             <a
               href="mailto:pansini@beyondfinancing.com"
               className="rounded-xl border border-[#263366]/20 bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#263366] transition hover:bg-[#EEF2F7] sm:col-span-2 lg:col-span-1"
             >
-              Talk to Beyond Financing
+              {t.talkToBeyond}
             </a>
           </div>
 
           <div className="mt-4 rounded-xl bg-[#F8FAFC] px-4 py-3 text-sm leading-6 text-[#263366]/75">
-            A pre-approval review typically starts with income, asset, and credit
-            evaluation. If you are self-employed, tax returns and supporting
-            documentation may be required.
+            {t.preapprovalNote}
           </div>
         </div>
 
         <p className="mx-auto mt-5 max-w-2xl text-center text-[11px] leading-5 text-[#263366]/60 sm:text-xs sm:leading-6">
-          This tool provides general information and does not constitute a loan
-          approval or commitment to lend. All mortgage applications are subject to
-          review by a licensed Mortgage Loan Originator.
+          {t.disclaimer}
         </p>
       </div>
     </main>
