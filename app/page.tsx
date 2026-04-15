@@ -11,6 +11,11 @@ type FormState = {
   down: string;
 };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 function formatCurrency(value: number) {
   if (!Number.isFinite(value)) return "$0";
   return new Intl.NumberFormat("en-US", {
@@ -51,8 +56,12 @@ export default function Page() {
   const [accepted, setAccepted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [chatInput, setChatInput] = useState("");
+  const [conversation, setConversation] = useState<ChatMessage[]>([]);
 
   const [form, setForm] = useState<FormState>({
     name: "",
@@ -93,13 +102,45 @@ export default function Page() {
     };
   }, [form]);
 
+  const buildBorrowerContext = () => {
+    return `
+Borrower profile for context:
+- Name: ${form.name || "Not provided"}
+- Email: ${form.email || "Not provided"}
+- Estimated Credit Score: ${form.credit}
+- Gross Monthly Income: ${form.income}
+- Monthly Debt: ${form.debt}
+- Down Payment / Equity: ${form.down}
+- Estimated Home Price: ${Math.round(results.estimatedHomePrice)}
+- Estimated Loan Amount: ${Math.round(results.estimatedLoan)}
+- Estimated LTV: ${Math.round(results.ltv * 100)}%
+
+You are Finley Beyond, an AI-powered mortgage decision support assistant supervised by a Certified Mortgage Advisor at Beyond Financing.
+Provide preliminary guidance only.
+Do not present anything as a loan approval, underwriting decision, or commitment to lend.
+Always remind the user that a licensed loan officer must review the scenario against current investor guidelines, overlays, and program requirements.
+    `.trim();
+  };
+
   const runAnalysis = async () => {
     setSubmitted(true);
     setLoading(true);
     setErrorMessage("");
+    setChatError("");
     setAiResponse("Finley Beyond is analyzing this scenario...");
 
     try {
+      const initialPrompt = `
+${buildBorrowerContext()}
+
+Please provide:
+1. Likely loan direction
+2. Main risk flags
+3. Recommended next steps
+
+Keep the answer professional, practical, and easy to understand.
+      `.trim();
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -109,27 +150,7 @@ export default function Page() {
           messages: [
             {
               role: "user",
-              content: `
-Borrower scenario:
-Name: ${form.name || "Not provided"}
-Email: ${form.email || "Not provided"}
-Credit Score: ${form.credit}
-Monthly Income: ${form.income}
-Monthly Debt: ${form.debt}
-Down Payment: ${form.down}
-Estimated Home Price: ${Math.round(results.estimatedHomePrice)}
-Estimated Loan Amount: ${Math.round(results.estimatedLoan)}
-Estimated LTV: ${Math.round(results.ltv * 100)}%
-
-Act as a Certified Mortgage Advisor for Beyond Financing.
-
-Please provide:
-1. Likely loan direction
-2. Main risk flags
-3. Recommended next steps
-
-Keep the answer professional, practical, and easy to understand.
-              `.trim(),
+              content: initialPrompt,
             },
           ],
         }),
@@ -145,7 +166,16 @@ Keep the answer professional, practical, and easy to understand.
       }
 
       const text = extractAiText(data);
-      setAiResponse(text || "No response was returned from the AI system.");
+      const finalText =
+        text || "No response was returned from the AI system.";
+
+      setAiResponse(finalText);
+      setConversation([
+        {
+          role: "assistant",
+          content: finalText,
+        },
+      ]);
     } catch (error: unknown) {
       const message =
         error instanceof Error
@@ -153,8 +183,76 @@ Keep the answer professional, practical, and easy to understand.
           : "There was an error connecting to the AI system.";
       setErrorMessage(message);
       setAiResponse("");
+      setConversation([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const sendChatMessage = async () => {
+    const trimmed = chatInput.trim();
+
+    if (!trimmed || !submitted) return;
+
+    setChatLoading(true);
+    setChatError("");
+
+    const nextConversation: ChatMessage[] = [
+      ...conversation,
+      { role: "user", content: trimmed },
+    ];
+
+    setConversation(nextConversation);
+    setChatInput("");
+
+    try {
+      const systemContext = buildBorrowerContext();
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: `${systemContext}\n\nInitial instruction: Continue the conversation naturally and answer follow-up mortgage questions based on this borrower profile.`,
+            },
+            ...nextConversation.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+          ],
+        }),
+      });
+
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        const extracted = extractAiText(data);
+        throw new Error(
+          extracted || "The chat request did not complete successfully."
+        );
+      }
+
+      const text = extractAiText(data);
+      const finalText =
+        text || "No response was returned from the AI system.";
+
+      setConversation((prev) => [
+        ...prev,
+        { role: "assistant", content: finalText },
+      ]);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "There was an error connecting to Finley Beyond.";
+      setChatError(message);
+      setConversation((prev) => prev.slice(0, -1));
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -170,7 +268,7 @@ Keep the answer professional, practical, and easy to understand.
     >
       <div
         style={{
-          maxWidth: 980,
+          maxWidth: 1040,
           margin: "0 auto",
         }}
       >
@@ -225,8 +323,9 @@ Keep the answer professional, practical, and easy to understand.
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.2fr 0.8fr",
+            gridTemplateColumns: "1.1fr 0.9fr",
             gap: 24,
+            alignItems: "start",
           }}
         >
           <section
@@ -481,8 +580,8 @@ Keep the answer professional, practical, and easy to understand.
                     lineHeight: 1.6,
                   }}
                 >
-                  Complete the intake and run the analysis to see the AI
-                  response.
+                  Complete the intake and run the analysis to begin the Finley
+                  Beyond conversation.
                 </div>
               )}
 
@@ -504,21 +603,139 @@ Keep the answer professional, practical, and easy to understand.
               )}
 
               {submitted && !errorMessage && (
-                <div
-                  style={{
-                    backgroundColor: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    borderRadius: 12,
-                    padding: 16,
-                    whiteSpace: "pre-wrap",
-                    fontSize: 14,
-                    lineHeight: 1.7,
-                    color: "#1e293b",
-                    minHeight: 180,
-                  }}
-                >
-                  {aiResponse}
-                </div>
+                <>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                      marginBottom: 16,
+                      maxHeight: 420,
+                      overflowY: "auto",
+                      paddingRight: 4,
+                    }}
+                  >
+                    {conversation.map((message, index) => (
+                      <div
+                        key={`${message.role}-${index}`}
+                        style={{
+                          alignSelf:
+                            message.role === "user" ? "flex-end" : "stretch",
+                          backgroundColor:
+                            message.role === "user" ? "#263366" : "#f8fbff",
+                          color:
+                            message.role === "user" ? "#ffffff" : "#1e293b",
+                          border:
+                            message.role === "user"
+                              ? "1px solid #263366"
+                              : "1px solid #dbeafe",
+                          borderRadius: 14,
+                          padding: 14,
+                          whiteSpace: "pre-wrap",
+                          fontSize: 14,
+                          lineHeight: 1.7,
+                        }}
+                      >
+                        {message.content}
+                      </div>
+                    ))}
+
+                    {chatLoading && (
+                      <div
+                        style={{
+                          backgroundColor: "#f8fbff",
+                          border: "1px solid #dbeafe",
+                          borderRadius: 14,
+                          padding: 14,
+                          fontSize: 14,
+                          lineHeight: 1.7,
+                          color: "#1e293b",
+                        }}
+                      >
+                        Finley Beyond is responding...
+                      </div>
+                    )}
+                  </div>
+
+                  {chatError && (
+                    <div
+                      style={{
+                        backgroundColor: "#fef2f2",
+                        color: "#991b1b",
+                        border: "1px solid #fecaca",
+                        borderRadius: 12,
+                        padding: 12,
+                        fontSize: 13,
+                        marginBottom: 12,
+                      }}
+                    >
+                      {chatError}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      borderTop: "1px solid #e2e8f0",
+                      paddingTop: 14,
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: 8,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: "#334155",
+                      }}
+                    >
+                      Continue chatting with Finley Beyond
+                    </label>
+
+                    <textarea
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Ask a follow-up question, such as: Would FHA be better here? What documents should I collect first?"
+                      rows={4}
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 12,
+                        padding: "12px 14px",
+                        fontSize: 14,
+                        outline: "none",
+                        backgroundColor: "#ffffff",
+                        color: "#111827",
+                        resize: "vertical",
+                        marginBottom: 12,
+                      }}
+                      disabled={chatLoading}
+                    />
+
+                    <button
+                      onClick={sendChatMessage}
+                      disabled={chatLoading || !chatInput.trim()}
+                      style={{
+                        backgroundColor:
+                          chatLoading || !chatInput.trim()
+                            ? "#7c8aa8"
+                            : "#0096C7",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: 12,
+                        padding: "12px 18px",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        cursor:
+                          chatLoading || !chatInput.trim()
+                            ? "not-allowed"
+                            : "pointer",
+                      }}
+                    >
+                      {chatLoading ? "Sending..." : "Send Message"}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </aside>
