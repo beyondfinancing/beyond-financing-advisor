@@ -17,51 +17,193 @@ function getLatestUserMessage(messages: ChatMessage[]) {
 function buildInitialBorrowerReview(userMessage: string) {
   const lower = userMessage.toLowerCase();
 
-  const highLtv =
-    lower.includes("estimated ltv: 9") ||
-    lower.includes("ltv: 9") ||
-    lower.includes("94%") ||
-    lower.includes("95%");
+  const hasIncome =
+    lower.includes("gross monthly income:") &&
+    !lower.includes("gross monthly income: not provided");
 
-  const strengths = [
-    "- The scenario reflects income being presented up front for review",
-    "- Funds for down payment or equity are being considered early in the process",
-  ];
+  const hasCredit =
+    lower.includes("estimated credit score:") &&
+    !lower.includes("estimated credit score: not provided");
 
-  const cautionItems = [
-    "- Final eligibility cannot be determined from intake alone",
-    "- Income, assets, credit, and occupancy must still be fully documented",
-    "- Pricing, mortgage insurance, and lender-specific requirements may affect the final outcome",
-  ];
+  const hasDebt =
+    lower.includes("monthly debt:") &&
+    !lower.includes("monthly debt: not provided");
 
-  if (highLtv) {
-    cautionItems.push(
-      "- A higher loan-to-value structure may reduce flexibility and increase monthly mortgage insurance"
+  const strengths: string[] = [];
+  const attention: string[] = [];
+
+  if (hasIncome) {
+    strengths.push(
+      "- Income information has been entered, which helps begin the preliminary review"
+    );
+  } else {
+    attention.push(
+      "- Income details still need to be entered clearly for a more useful review"
     );
   }
+
+  if (hasCredit) {
+    strengths.push(
+      "- Estimated credit information has been provided for preliminary context"
+    );
+  } else {
+    attention.push(
+      "- Estimated credit information is still needed for better initial context"
+    );
+  }
+
+  if (hasDebt) {
+    strengths.push(
+      "- Monthly debt has been included, which helps frame the payment discussion"
+    );
+  } else {
+    attention.push(
+      "- Monthly debt details should be included to better understand the overall picture"
+    );
+  }
+
+  attention.push(
+    "- Final eligibility cannot be determined from intake alone"
+  );
+  attention.push(
+    "- Income, assets, credit, and occupancy must still be fully documented"
+  );
+  attention.push(
+    "- Final payment structure and overall options depend on full review by a licensed loan officer"
+  );
 
   return `
 Finley Beyond Preliminary Review
 
 General strengths in this scenario:
-${strengths.join("\n")}
+${strengths.length > 0 ? strengths.join("\n") : "- Basic information can now start the preliminary conversation"}
 
 General areas that may need attention:
-${cautionItems.join("\n")}
+${attention.join("\n")}
 
 Reasonable next steps:
-- Gather income and asset documents as early as possible
-- Be prepared to discuss available funds for closing, reserves, and monthly payment comfort
-- Review the full picture with a licensed loan officer
-- Allow the licensed loan officer to compare available options under current investor guidelines
+- Review the basic borrower profile with a licensed loan officer
+- Enter the target home price and estimated down payment next
+- Prepare to discuss monthly payment comfort, available funds, and documentation
+- Allow the licensed loan officer to review the full scenario under current requirements
 
 Important reminder:
 This is preliminary guidance only. Final direction must come from a licensed loan officer after full review of the scenario and current program requirements.
   `.trim();
 }
 
+function buildScenarioReview(userMessage: string) {
+  const lower = userMessage.toLowerCase();
+
+  const hasHomePrice =
+    lower.includes("estimated home price:") &&
+    !lower.includes("estimated home price: not provided");
+
+  const hasDownPayment =
+    lower.includes("estimated down payment:") &&
+    !lower.includes("estimated down payment: not provided");
+
+  const mentionsHighLtv =
+    lower.includes("estimated ltv: 9") ||
+    lower.includes("94%") ||
+    lower.includes("95%");
+
+  const factors = [
+    "- Overall monthly payment comfort",
+    "- Documented income and monthly obligations",
+    "- Available funds needed for closing and reserves",
+    "- The complete review by a licensed loan officer under current requirements",
+  ];
+
+  if (mentionsHighLtv) {
+    factors.push(
+      "- A higher loan-to-value structure may reduce flexibility and increase payment sensitivity"
+    );
+  }
+
+  return `
+Finley Beyond Scenario Review
+
+What this target scenario means at a high level:
+${
+  hasHomePrice && hasDownPayment
+    ? "You have now provided a target purchase scenario, which helps frame a more realistic preliminary conversation around payment expectations, funds needed to close, and the overall structure of the file."
+    : "The target purchase scenario still needs to be completed so the conversation can be tied to the actual numbers you are considering."
+}
+
+Items to be prepared to discuss with a licensed loan officer:
+- The home price range you are truly targeting
+- The down payment you expect to have available
+- Your preferred monthly payment comfort range
+- Whether you want to preserve additional cash after closing
+- Any income, debt, or asset details that may affect the review
+
+General factors that may influence whether this scenario is workable:
+${factors.join("\n")}
+
+Important reminder:
+This remains preliminary guidance only. Final guidance must come from a licensed loan officer after complete review of the full scenario.
+  `.trim();
+}
+
 function buildFollowUpReply(userMessage: string) {
   const lower = userMessage.toLowerCase();
+
+  if (
+    lower.includes("can i buy a house") ||
+    lower.includes("can i purchase a house") ||
+    lower.includes("can i buy home")
+  ) {
+    return `
+Based on the information entered so far, you may be able to continue exploring homeownership, but that cannot be confirmed from a preliminary conversation alone.
+
+What matters next is:
+- the full review of your income,
+- your monthly obligations,
+- your funds available for closing,
+- the target home price,
+- and the payment range you are comfortable with.
+
+The best next step is to complete the target scenario and then speak with a licensed loan officer for a full review.
+    `.trim();
+  }
+
+  if (
+    lower.includes("how can i apply") ||
+    lower.includes("apply for mortgage") ||
+    lower.includes("how do i apply")
+  ) {
+    return `
+A practical next step is to complete your basic information and target purchase scenario first, then connect with a licensed loan officer to begin the formal mortgage review process.
+
+In general, applying for a mortgage usually involves:
+- providing your contact and financial information,
+- sharing income and asset documentation,
+- authorizing credit review when appropriate,
+- and reviewing the full scenario with a licensed loan officer.
+
+Your licensed loan officer can then guide you through the actual application steps for your situation.
+    `.trim();
+  }
+
+  if (
+    lower.includes("speak with a loan officer") ||
+    lower.includes("talk to a loan officer") ||
+    lower.includes("contact a loan officer")
+  ) {
+    return `
+The best next step is to connect directly with a licensed loan officer after completing the borrower information and target scenario.
+
+When you speak with the loan officer, be ready to discuss:
+- your income,
+- your monthly debts,
+- your estimated down payment,
+- your target home price,
+- and your preferred monthly payment comfort range.
+
+That will allow the licensed loan officer to review the scenario in detail and guide you properly.
+    `.trim();
+  }
 
   if (
     lower.includes("document") ||
@@ -111,12 +253,12 @@ A licensed loan officer can then determine which factors matter most for your pa
 Increasing the down payment may improve the overall structure of the scenario.
 
 Possible benefits may include:
-- Lower overall loan-to-value
+- Lower overall loan amount
+- Lower loan-to-value
 - Lower monthly payment impact
-- Improved mortgage insurance profile in some cases
-- Greater flexibility depending on the full file review
+- Greater flexibility depending on the full scenario review
 
-Your licensed loan officer can compare the updated numbers and explain how a larger down payment may affect your overall options.
+Your licensed loan officer can compare the updated numbers and explain how a larger down payment may affect the overall structure of the file.
     `.trim();
   }
 
@@ -133,7 +275,7 @@ A helpful next step is to discuss:
 - how much cash you want to keep available after closing,
 - and what level of flexibility matters most to you.
 
-Your licensed loan officer can then help you compare realistic payment scenarios based on current market conditions and full documentation.
+Your licensed loan officer can then help you compare realistic payment scenarios based on current conditions and full documentation.
     `.trim();
   }
 
@@ -149,7 +291,7 @@ That usually means your licensed loan officer will want to review:
 - how the income is earned,
 - how long it has been received,
 - how it is documented,
-- and whether the income is stable and usable under current guidelines.
+- and whether the income is stable and usable under current requirements.
 
 The best next step is to provide a clear picture of the income source so the licensed loan officer can evaluate it properly.
     `.trim();
@@ -158,14 +300,16 @@ The best next step is to provide a clear picture of the income source so the lic
   return `
 That is a good question to review with the full scenario in mind.
 
-The most practical next step is to discuss it with your licensed loan officer using your complete documentation, payment goals, available funds, and current investor requirements.
+The most practical next step is to continue refining the borrower profile, complete the target home price and down payment scenario, and discuss the full picture with a licensed loan officer.
 
 If you want, you can ask a more specific follow-up question about:
+- whether the scenario seems workable,
+- how to apply,
+- how to speak with a loan officer,
 - documents,
-- payment comfort,
-- strengthening the file,
 - down payment strategy,
-- or how to prepare for the next conversation with your loan officer.
+- payment comfort,
+- or how to strengthen the file.
   `.trim();
 }
 
@@ -190,13 +334,22 @@ export async function POST(req: Request) {
       );
     }
 
+    const lower = latestUserMessage.toLowerCase();
+
     const isInitialAnalysisRequest =
-      latestUserMessage.toLowerCase().includes("general strengths in this scenario") ||
-      latestUserMessage.toLowerCase().includes("general areas that may need attention") ||
-      latestUserMessage.toLowerCase().includes("reasonable next steps");
+      lower.includes("general strengths based on the borrower information currently entered") ||
+      lower.includes("general areas that may need attention") ||
+      lower.includes("clear next steps for the borrower");
+
+    const isScenarioReviewRequest =
+      lower.includes("the borrower has now entered the target property scenario") ||
+      lower.includes("what this target scenario means at a high level") ||
+      lower.includes("general factors that may influence whether this target scenario is workable");
 
     const reply = isInitialAnalysisRequest
       ? buildInitialBorrowerReview(latestUserMessage)
+      : isScenarioReviewRequest
+      ? buildScenarioReview(latestUserMessage)
       : buildFollowUpReply(latestUserMessage);
 
     return NextResponse.json({ reply });
