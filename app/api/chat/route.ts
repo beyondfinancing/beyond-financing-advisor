@@ -19,6 +19,11 @@ type LoanOfficerSelection = {
   scheduleUrl?: string;
 };
 
+type ConversationMessage = {
+  role?: string;
+  content?: string;
+};
+
 type RoutingPayload = {
   language?: LanguageCode;
   loanOfficerQuery?: string;
@@ -36,6 +41,7 @@ type RoutingPayload = {
     estimatedLoanAmount?: string;
     estimatedLtv?: string;
   };
+  conversation?: ConversationMessage[];
 };
 
 type RequestBody = {
@@ -65,8 +71,8 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "8576150836",
     assistantMobile: "8576150836",
-    applyUrl: "https://www.beyondfinancing.com",
-    scheduleUrl: "https://www.beyondfinancing.com",
+    applyUrl: "https://www.beyondfinancing.com/apply-now",
+    scheduleUrl: "https://calendly.com/sandropansini",
   },
   {
     id: "warren-wendt",
@@ -76,7 +82,7 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "9788212250",
     assistantMobile: "8576150836",
-    applyUrl: "https://www.beyondfinancing.com",
+    applyUrl: "https://www.beyondfinancing.com/apply-now",
     scheduleUrl: "https://www.beyondfinancing.com",
   },
   {
@@ -87,7 +93,7 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "8576150836",
     assistantMobile: "8576150836",
-    applyUrl: "https://www.beyondfinancing.com",
+    applyUrl: "https://www.beyondfinancing.com/apply-now",
     scheduleUrl: "https://www.beyondfinancing.com",
   },
 ];
@@ -148,823 +154,412 @@ function getLanguage(routing?: RoutingPayload): LanguageCode {
   return routing?.language || "en";
 }
 
-function buildInitialBorrowerReview(language: LanguageCode, userMessage: string) {
-  const lower = userMessage.toLowerCase();
-
-  const hasIncome =
-    lower.includes("gross monthly income:") &&
-    !lower.includes("gross monthly income: not provided");
-
-  const hasCredit =
-    lower.includes("estimated credit score:") &&
-    !lower.includes("estimated credit score: not provided");
-
-  const hasDebt =
-    lower.includes("monthly debt:") &&
-    !lower.includes("monthly debt: not provided");
-
-  if (language === "pt") {
-    const strengths: string[] = [];
-    const attention: string[] = [];
-
-    if (hasIncome) strengths.push("- A renda foi informada para análise preliminar");
-    if (hasCredit) strengths.push("- A pontuação de crédito estimada foi informada");
-    if (hasDebt) strengths.push("- A dívida mensal foi informada para contexto inicial");
-
-    if (!hasIncome) attention.push("- A renda ainda precisa ser informada com clareza");
-    if (!hasCredit) attention.push("- A pontuação de crédito estimada ainda precisa ser informada");
-    if (!hasDebt) attention.push("- A dívida mensal ainda precisa ser informada");
-
-    attention.push("- A elegibilidade final não pode ser determinada apenas com estas informações iniciais");
-    attention.push("- Renda, ativos, crédito e ocupação ainda precisam ser documentados");
-    attention.push("- A estrutura final do financiamento depende da revisão completa por um loan officer licenciado");
-
-    return `
-Revisão Preliminar de Finley Beyond
-
-Pontos positivos gerais deste cenário:
-${strengths.length > 0 ? strengths.join("\n") : "- As informações iniciais já permitem começar a conversa preliminar"}
-
-Pontos que ainda podem exigir atenção:
-${attention.join("\n")}
-
-Próximos passos recomendados:
-- Revisar o perfil inicial com um loan officer licenciado
-- Informar agora o valor estimado do imóvel e a entrada estimada
-- Preparar-se para conversar sobre pagamento mensal confortável, fundos disponíveis e documentação
-- Permitir que o loan officer analise o cenário completo com base nas exigências atuais
-
-Lembrete importante:
-Esta é apenas uma orientação preliminar. A orientação final deve vir de um loan officer licenciado após a revisão completa do cenário e dos requisitos atuais.
-    `.trim();
-  }
-
-  if (language === "es") {
-    const strengths: string[] = [];
-    const attention: string[] = [];
-
-    if (hasIncome) strengths.push("- El ingreso fue informado para la revisión preliminar");
-    if (hasCredit) strengths.push("- Se proporcionó el puntaje de crédito estimado");
-    if (hasDebt) strengths.push("- La deuda mensual fue incluida para contexto inicial");
-
-    if (!hasIncome) attention.push("- El ingreso aún debe informarse con claridad");
-    if (!hasCredit) attention.push("- El puntaje de crédito estimado aún debe informarse");
-    if (!hasDebt) attention.push("- La deuda mensual aún debe informarse");
-
-    attention.push("- La elegibilidad final no puede determinarse solo con esta información inicial");
-    attention.push("- Ingresos, activos, crédito y ocupación aún deben documentarse");
-    attention.push("- La estructura final del financiamiento depende de la revisión completa por un loan officer con licencia");
-
-    return `
-Revisión Preliminar de Finley Beyond
-
-Fortalezas generales de este escenario:
-${strengths.length > 0 ? strengths.join("\n") : "- La información inicial ya permite comenzar la conversación preliminar"}
-
-Aspectos que pueden requerir atención:
-${attention.join("\n")}
-
-Siguientes pasos recomendables:
-- Revisar el perfil inicial con un loan officer con licencia
-- Ingresar ahora el precio estimado de la vivienda y el pago inicial estimado
-- Prepararse para hablar sobre el pago mensual cómodo, fondos disponibles y documentación
-- Permitir que el loan officer revise el escenario completo conforme a los requisitos actuales
-
-Recordatorio importante:
-Esta es únicamente una orientación preliminar. La orientación final debe provenir de un loan officer con licencia después de revisar completamente el escenario y los requisitos vigentes.
-    `.trim();
-  }
-
-  const strengths: string[] = [];
-  const attention: string[] = [];
-
-  if (hasIncome) {
-    strengths.push(
-      "- Income information has been entered, which helps begin the preliminary review"
-    );
-  } else {
-    attention.push(
-      "- Income details still need to be entered clearly for a more useful review"
-    );
-  }
-
-  if (hasCredit) {
-    strengths.push(
-      "- Estimated credit information has been provided for preliminary context"
-    );
-  } else {
-    attention.push(
-      "- Estimated credit information is still needed for better initial context"
-    );
-  }
-
-  if (hasDebt) {
-    strengths.push(
-      "- Monthly debt has been included, which helps frame the payment discussion"
-    );
-  } else {
-    attention.push(
-      "- Monthly debt details should be included to better understand the overall picture"
-    );
-  }
-
-  attention.push("- Final eligibility cannot be determined from intake alone");
-  attention.push(
-    "- Income, assets, credit, and occupancy must still be fully documented"
-  );
-  attention.push(
-    "- Final payment structure and overall options depend on full review by a licensed loan officer"
-  );
-
-  return `
-Finley Beyond Preliminary Review
-
-General strengths in this scenario:
-${strengths.length > 0 ? strengths.join("\n") : "- Basic information can now start the preliminary conversation"}
-
-General areas that may need attention:
-${attention.join("\n")}
-
-Reasonable next steps:
-- Review the basic borrower profile with a licensed loan officer
-- Enter the target home price and estimated down payment next
-- Prepare to discuss monthly payment comfort, available funds, and documentation
-- Allow the licensed loan officer to review the full scenario under current requirements
-
-Important reminder:
-This is preliminary guidance only. Final direction must come from a licensed loan officer after full review of the scenario and current program requirements.
-  `.trim();
+function conversationToText(conversation?: ConversationMessage[]) {
+  if (!conversation || conversation.length === 0) return "";
+  return conversation
+    .map((item) => `${item.role || "unknown"}: ${item.content || ""}`)
+    .join("\n");
 }
 
-function buildScenarioReview(language: LanguageCode, userMessage: string) {
-  const lower = userMessage.toLowerCase();
-
-  const hasHomePrice =
-    lower.includes("estimated home price:") &&
-    !lower.includes("estimated home price: not provided");
-
-  const hasDownPayment =
-    lower.includes("estimated down payment:") &&
-    !lower.includes("estimated down payment: not provided");
-
-  const mentionsHighLtv =
-    lower.includes("estimated ltv: 9") ||
-    lower.includes("94%") ||
-    lower.includes("95%");
-
-  if (language === "pt") {
-    const factors = [
-      "- Conforto com o pagamento mensal",
-      "- Renda documentada e obrigações mensais",
-      "- Fundos disponíveis para fechamento e reservas",
-      "- Revisão completa por um loan officer licenciado com base nas exigências atuais",
-    ];
-
-    if (mentionsHighLtv) {
-      factors.push(
-        "- Uma estrutura com LTV mais alto pode reduzir a flexibilidade e aumentar a sensibilidade do pagamento"
-      );
-    }
-
-    return `
-Revisão do Cenário por Finley Beyond
-
-O que este cenário significa em termos gerais:
-${
-  hasHomePrice && hasDownPayment
-    ? "Você já informou um cenário realista de compra, o que ajuda a orientar melhor a conversa preliminar sobre pagamento, fundos necessários para fechar e estrutura geral do financiamento."
-    : "O cenário do imóvel ainda precisa ser completado para que a conversa seja baseada nos números que você realmente considera."
+function hasAny(text: string, patterns: string[]) {
+  return patterns.some((pattern) => text.includes(pattern));
 }
 
-Itens que devem ser discutidos com um loan officer licenciado:
-- Faixa de preço do imóvel que você pretende comprar
-- Entrada que você espera ter disponível
-- Valor mensal de pagamento com o qual você se sente confortável
-- Se deseja manter reserva de caixa após o fechamento
-- Qualquer detalhe de renda, dívida ou ativos que possa influenciar a análise
+function determineNextQuestion(language: LanguageCode, routing?: RoutingPayload) {
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+  const convo = conversationToText(routing?.conversation).toLowerCase();
 
-Fatores gerais que podem influenciar este cenário:
-${factors.join("\n")}
+  const incomeAnswered =
+    hasAny(convo, [
+      "w-2",
+      "w2",
+      "salary",
+      "salaried",
+      "hourly",
+      "self-employed",
+      "self employed",
+      "1099",
+      "retired",
+      "retirement",
+      "commission",
+      "autônomo",
+      "autonomo",
+      "aposentado",
+      "comissão",
+      "trabajador independiente",
+      "jubilado",
+      "salario",
+      "asalariado",
+      "comision",
+    ]) || !!borrower.income;
 
-Lembrete importante:
-Isto continua sendo apenas orientação preliminar. A orientação final deve vir de um loan officer licenciado após a revisão completa do cenário.
-    `.trim();
-  }
+  const occupancyAnswered = hasAny(convo, [
+    "primary residence",
+    "primary",
+    "owner occupied",
+    "investment",
+    "second home",
+    "vacation home",
+    "residência principal",
+    "moradia principal",
+    "investimento",
+    "segunda casa",
+    "residencia principal",
+    "inversión",
+    "segunda vivienda",
+  ]);
 
-  if (language === "es") {
-    const factors = [
-      "- Comodidad con el pago mensual",
-      "- Ingresos documentados y obligaciones mensuales",
-      "- Fondos disponibles para cierre y reservas",
-      "- Revisión completa por un loan officer con licencia bajo los requisitos vigentes",
-    ];
+  const timelineAnswered = hasAny(convo, [
+    "30 days",
+    "60 days",
+    "90 days",
+    "as soon as possible",
+    "this month",
+    "next month",
+    "30 dias",
+    "60 dias",
+    "90 dias",
+    "o mais rápido possível",
+    "este mês",
+    "próximo mês",
+    "lo antes posible",
+    "este mes",
+    "próximo mes",
+  ]);
 
-    if (mentionsHighLtv) {
-      factors.push(
-        "- Una estructura con LTV más alto puede reducir la flexibilidad y aumentar la sensibilidad del pago"
-      );
-    }
+  const fundsSourceAnswered = hasAny(convo, [
+    "saved",
+    "savings",
+    "gift",
+    "gift funds",
+    "sale of home",
+    "retirement account",
+    "economias",
+    "presente",
+    "doação",
+    "gift funds",
+    "venda da casa",
+    "cuenta de retiro",
+    "ahorros",
+    "regalo",
+    "venta de vivienda",
+  ]);
 
-    return `
-Revisión del Escenario por Finley Beyond
+  const firstTimeBuyerAnswered = hasAny(convo, [
+    "first-time buyer",
+    "first time buyer",
+    "first-time homebuyer",
+    "primeira casa",
+    "primeiro imóvel",
+    "comprador de primeira viagem",
+    "primer comprador",
+    "primera vivienda",
+  ]);
 
-Qué significa este escenario a nivel general:
-${
-  hasHomePrice && hasDownPayment
-    ? "Ahora ha proporcionado un escenario realista de compra, lo que ayuda a orientar mejor la conversación preliminar sobre pagos, fondos necesarios para cerrar y la estructura general del financiamiento."
-    : "El escenario de la propiedad aún debe completarse para que la conversación se base en los números que realmente está considerando."
-}
-
-Aspectos que debe conversar con un loan officer con licencia:
-- El rango de precio de vivienda que desea comprar
-- El pago inicial que espera tener disponible
-- El pago mensual con el que se siente cómodo
-- Si desea conservar efectivo adicional después del cierre
-- Cualquier detalle de ingresos, deudas o activos que pueda afectar la revisión
-
-Factores generales que pueden influir en este escenario:
-${factors.join("\n")}
-
-Recordatorio importante:
-Esto sigue siendo orientación preliminar. La orientación final debe provenir de un loan officer con licencia después de una revisión completa del escenario.
-    `.trim();
-  }
-
-  const factors = [
-    "- Overall monthly payment comfort",
-    "- Documented income and monthly obligations",
-    "- Available funds needed for closing and reserves",
-    "- The complete review by a licensed loan officer under current requirements",
-  ];
-
-  if (mentionsHighLtv) {
-    factors.push(
-      "- A higher loan-to-value structure may reduce flexibility and increase payment sensitivity"
-    );
-  }
-
-  return `
-Finley Beyond Scenario Review
-
-What this target scenario means at a high level:
-${
-  hasHomePrice && hasDownPayment
-    ? "You have now provided a target purchase scenario, which helps frame a more realistic preliminary conversation around payment expectations, funds needed to close, and the overall structure of the file."
-    : "The target purchase scenario still needs to be completed so the conversation can be tied to the actual numbers you are considering."
-}
-
-Items to be prepared to discuss with a licensed loan officer:
-- The home price range you are truly targeting
-- The down payment you expect to have available
-- Your preferred monthly payment comfort range
-- Whether you want to preserve additional cash after closing
-- Any income, debt, or asset details that may affect the review
-
-General factors that may influence whether this scenario is workable:
-${factors.join("\n")}
-
-Important reminder:
-This remains preliminary guidance only. Final guidance must come from a licensed loan officer after complete review of the full scenario.
-  `.trim();
-}
-
-function buildFollowUpReply(language: LanguageCode, userMessage: string) {
-  const lower = userMessage.toLowerCase();
-
-  if (
-    lower.includes("voce fala portugues") ||
-    lower.includes("você fala português") ||
-    lower.includes("fala portugues") ||
-    lower.includes("fala português")
-  ) {
-    return `
-Sim. Eu posso responder em português.
-
-Você pode continuar esta conversa em português, e eu vou fornecer orientação preliminar sobre o seu cenário de financiamento. A orientação final, no entanto, ainda deve ser confirmada por um loan officer licenciado com base nas diretrizes e requisitos atuais.
-    `.trim();
-  }
-
-  if (
-    lower.includes("do you speak portuguese") ||
-    lower.includes("speak portuguese") ||
-    lower.includes("hablas portugués") ||
-    lower.includes("habla portugues")
-  ) {
+  if (!incomeAnswered) {
     if (language === "pt") {
-      return `
-Sim. Posso continuar em português.
-
-Você pode fazer suas perguntas em português, e eu responderei em português com orientação preliminar. A orientação final ainda deve ser confirmada por um loan officer licenciado.
-      `.trim();
+      return "Para ajudar seu loan officer a orientar os próximos passos, qual é o tipo da sua renda principal hoje: assalariado W-2, horista, autônomo, 1099, aposentadoria ou outra?";
     }
-
     if (language === "es") {
-      return `
-Sí. También puedo responder en portugués si así lo prefiere.
-
-Puede continuar en portugués o en español. De cualquier manera, la orientación final deberá ser confirmada por un loan officer con licencia.
-      `.trim();
+      return "Para ayudar a su loan officer a orientar los próximos pasos, ¿cuál es hoy su principal tipo de ingreso: asalariado W-2, por hora, independiente, 1099, jubilación u otro?";
     }
-
-    return `
-Yes. I can also respond in Portuguese.
-
-You may continue in Portuguese, and I will respond accordingly. Final guidance must still be confirmed by a licensed loan officer.
-    `.trim();
+    return "To help your loan officer guide the next steps, what is your main income type today: W-2 salaried, hourly, self-employed, 1099, retirement, or something else?";
   }
 
-  if (
-    lower.includes("what do i need to purchase this home") ||
-    lower.includes("what do i need to buy this home") ||
-    lower.includes("o que eu preciso para comprar esta casa") ||
-    lower.includes("que necesito para comprar esta casa")
-  ) {
+  if (!occupancyAnswered) {
     if (language === "pt") {
-      return `
-Para avançar na compra deste imóvel, normalmente será importante estar preparado para apresentar e discutir:
-
-- documentação de renda,
-- documentação de ativos e fundos disponíveis,
-- entrada estimada,
-- dívida mensal atual,
-- conforto com o pagamento mensal,
-- e quaisquer detalhes que possam afetar a análise do financiamento.
-
-Também será importante revisar o cenário completo com um loan officer licenciado, que poderá orientar você sobre a documentação necessária e os próximos passos apropriados.
-      `.trim();
+      return "Esta compra seria para moradia principal, segunda casa ou imóvel de investimento?";
     }
-
     if (language === "es") {
-      return `
-Para avanzar con la compra de esta vivienda, normalmente será importante estar preparado para presentar y conversar sobre:
-
-- documentación de ingresos,
-- documentación de activos y fondos disponibles,
-- pago inicial estimado,
-- deuda mensual actual,
-- comodidad con el pago mensual,
-- y cualquier detalle que pueda afectar la revisión del financiamiento.
-
-También será importante revisar el escenario completo con un loan officer con licencia, quien podrá orientarle sobre la documentación necesaria y los pasos adecuados a seguir.
-      `.trim();
+      return "¿Esta compra sería para vivienda principal, segunda vivienda o propiedad de inversión?";
     }
-
-    return `
-To move forward with purchasing this home, it will usually be important to be prepared to provide and discuss:
-
-- income documentation,
-- asset documentation and available funds,
-- estimated down payment,
-- current monthly debt,
-- monthly payment comfort,
-- and any details that may affect financing review.
-
-It will also be important to review the full scenario with a licensed loan officer, who can guide you on the exact documentation needed and the appropriate next steps.
-    `.trim();
+    return "Would this purchase be for a primary residence, a second home, or an investment property?";
   }
 
-  if (
-    lower.includes("can i purchase a home") ||
-    lower.includes("can i buy a house") ||
-    lower.includes("can i purchase this home") ||
-    lower.includes("posso comprar uma casa") ||
-    lower.includes("posso comprar esta casa") ||
-    lower.includes("puedo comprar una casa") ||
-    lower.includes("puedo comprar esta casa")
-  ) {
+  if (!timelineAnswered) {
     if (language === "pt") {
-      return `
-Com base nas informações inseridas até agora, pode ser possível continuar explorando a compra de uma casa, mas isso não pode ser confirmado apenas com uma conversa preliminar.
-
-O que será importante agora é revisar:
-- sua renda completa,
-- suas dívidas mensais,
-- os fundos disponíveis para fechamento,
-- o valor do imóvel que você deseja comprar,
-- e o pagamento mensal com o qual você se sente confortável.
-
-O melhor próximo passo é completar o cenário do imóvel e conversar com um loan officer licenciado para uma revisão completa.
-      `.trim();
+      return "Qual é o seu prazo ideal para comprar ou entrar em contrato: o quanto antes, nos próximos 30 a 60 dias, ou mais adiante?";
     }
-
     if (language === "es") {
-      return `
-Con base en la información ingresada hasta ahora, puede ser posible seguir explorando la compra de una vivienda, pero eso no puede confirmarse solo con una conversación preliminar.
-
-Lo importante ahora será revisar:
-- sus ingresos completos,
-- sus deudas mensuales,
-- los fondos disponibles para el cierre,
-- el valor de la propiedad que desea comprar,
-- y el pago mensual con el que se siente cómodo.
-
-El mejor siguiente paso es completar el escenario de la propiedad y conversar con un loan officer con licencia para una revisión completa.
-      `.trim();
+      return "¿Cuál es su plazo ideal para comprar o entrar en contrato: lo antes posible, dentro de los próximos 30 a 60 días, o más adelante?";
     }
-
-    return `
-Based on the information entered so far, it may be possible to continue exploring the purchase of a home, but that cannot be confirmed through a preliminary conversation alone.
-
-What will matter next is reviewing:
-- your full income,
-- your monthly obligations,
-- the funds available for closing,
-- the property price you are targeting,
-- and the monthly payment you are comfortable with.
-
-The best next step is to complete the property scenario and speak with a licensed loan officer for a full review.
-    `.trim();
+    return "What is your ideal timeline to buy or go under contract: as soon as possible, within the next 30 to 60 days, or later on?";
   }
 
-  if (
-    lower.includes("how can i apply") ||
-    lower.includes("apply for mortgage") ||
-    lower.includes("how do i apply") ||
-    lower.includes("como aplicar") ||
-    lower.includes("como posso aplicar") ||
-    lower.includes("como solicito") ||
-    lower.includes("cómo aplicar") ||
-    lower.includes("cómo puedo aplicar")
-  ) {
+  if (!fundsSourceAnswered) {
     if (language === "pt") {
-      return `
-Um próximo passo prático é concluir suas informações básicas e o cenário do imóvel e, em seguida, iniciar o processo formal com o loan officer atribuído.
-
-Em geral, aplicar para um financiamento envolve:
-- fornecer suas informações de contato e financeiras,
-- apresentar documentação de renda e ativos,
-- autorizar a análise de crédito quando apropriado,
-- e revisar o cenário completo com um loan officer licenciado.
-
-Você também pode usar o botão "Aplicar Agora" para seguir diretamente ao próximo passo.
-      `.trim();
+      return "Os fundos para entrada e fechamento virão principalmente de economias, gift funds, venda de outro imóvel ou outra fonte?";
     }
-
     if (language === "es") {
-      return `
-Un siguiente paso práctico es completar su información básica y el escenario de la propiedad, y luego iniciar el proceso formal con el loan officer asignado.
-
-En general, solicitar una hipoteca suele implicar:
-- proporcionar su información de contacto y financiera,
-- presentar documentación de ingresos y activos,
-- autorizar la revisión de crédito cuando corresponda,
-- y revisar el escenario completo con un loan officer con licencia.
-
-También puede utilizar el botón "Aplicar Ahora" para avanzar directamente al siguiente paso.
-      `.trim();
+      return "¿Los fondos para el pago inicial y el cierre provendrán principalmente de ahorros, gift funds, venta de otra propiedad u otra fuente?";
     }
-
-    return `
-A practical next step is to complete your basic information and property scenario and then begin the formal process with the assigned loan officer.
-
-In general, applying for a mortgage usually involves:
-- providing your contact and financial information,
-- sharing income and asset documentation,
-- authorizing credit review when appropriate,
-- and reviewing the full scenario with a licensed loan officer.
-
-You may also use the "Apply Now" button to move directly to the next step.
-    `.trim();
+    return "Will your down payment and closing funds come mainly from savings, gift funds, the sale of another property, or another source?";
   }
 
-  if (
-    lower.includes("speak with a loan officer") ||
-    lower.includes("talk to a loan officer") ||
-    lower.includes("contact a loan officer") ||
-    lower.includes("falar com um loan officer") ||
-    lower.includes("falar com o loan officer") ||
-    lower.includes("hablar con un loan officer")
-  ) {
+  if (!firstTimeBuyerAnswered) {
     if (language === "pt") {
-      return `
-O melhor próximo passo é entrar em contato diretamente com o loan officer atribuído depois de concluir as informações do cliente e o cenário do imóvel.
-
-Você pode usar:
-- o botão "Agendar com o Loan Officer" para marcar um horário,
-- ou o botão "Enviar Email ao Loan Officer" para entrar em contato por email.
-
-Quando falar com o loan officer, esteja pronto para conversar sobre sua renda, dívidas mensais, entrada estimada, valor do imóvel e o pagamento mensal com o qual você se sente confortável.
-      `.trim();
+      return "Esta seria sua primeira compra de imóvel ou você já teve imóvel antes?";
     }
-
     if (language === "es") {
-      return `
-El mejor siguiente paso es comunicarse directamente con el loan officer asignado después de completar la información del cliente y el escenario de la propiedad.
-
-Puede usar:
-- el botón "Agendar con el Loan Officer" para reservar una cita,
-- o el botón "Enviar Correo al Loan Officer" para comunicarse por email.
-
-Cuando hable con el loan officer, esté preparado para conversar sobre sus ingresos, deudas mensuales, pago inicial estimado, valor de la propiedad y el pago mensual con el que se siente cómodo.
-      `.trim();
+      return "¿Esta sería su primera compra de vivienda o ya ha tenido una propiedad antes?";
     }
-
-    return `
-The best next step is to connect directly with the assigned loan officer after completing your borrower information and property scenario.
-
-You may use:
-- the "Schedule with Loan Officer" button to book a time,
-- or the "Email Loan Officer" button to contact them directly by email.
-
-When you speak with the loan officer, be prepared to discuss your income, monthly debts, estimated down payment, target property price, and the monthly payment you are comfortable with.
-    `.trim();
-  }
-
-  if (
-    lower.includes("document") ||
-    lower.includes("documents") ||
-    lower.includes("prepare next") ||
-    lower.includes("collect first") ||
-    lower.includes("documentação") ||
-    lower.includes("documentacion") ||
-    lower.includes("documentación")
-  ) {
-    if (language === "pt") {
-      return `
-Um próximo passo forte é reunir a documentação principal com antecedência para que o loan officer possa revisar o cenário com mais eficiência.
-
-Documentos úteis para separar:
-- comprovantes recentes de renda,
-- extratos recentes de ativos,
-- documento de identificação,
-- informações sobre dívidas atuais,
-- e documentação relacionada a gift funds, depósitos grandes ou outros recursos usados na compra.
-
-Seu loan officer poderá informar exatamente quais documentos adicionais serão necessários para o seu caso.
-      `.trim();
-    }
-
-    if (language === "es") {
-      return `
-Un siguiente paso sólido es reunir la documentación principal con anticipación para que el loan officer pueda revisar el escenario con mayor eficiencia.
-
-Documentos útiles para preparar:
-- comprobantes recientes de ingresos,
-- estados recientes de activos,
-- identificación oficial,
-- información sobre deudas actuales,
-- y documentación relacionada con gift funds, depósitos grandes u otros recursos utilizados en la compra.
-
-Su loan officer podrá indicarle exactamente qué documentación adicional será necesaria para su caso.
-      `.trim();
-    }
-
-    return `
-A strong next step is to gather the core documentation early so the loan officer can review the scenario more efficiently.
-
-Helpful documents to prepare:
-- recent income documentation,
-- recent asset statements,
-- government-issued identification,
-- information about current debts,
-- and documentation related to gift funds, large deposits, or other funds being used for the purchase.
-
-Your loan officer can then tell you exactly what additional documentation may be needed for your specific case.
-    `.trim();
-  }
-
-  if (
-    lower.includes("improve") ||
-    lower.includes("strengthen") ||
-    lower.includes("make my file stronger") ||
-    lower.includes("melhorar meu arquivo") ||
-    lower.includes("fortalecer meu caso") ||
-    lower.includes("mejorar mi perfil")
-  ) {
-    if (language === "pt") {
-      return `
-Para fortalecer um cenário, normalmente ajuda focar nos pontos que um loan officer analisará com mais atenção:
-
-Formas comuns de fortalecer o perfil:
-- manter bem documentados os fundos para fechamento e reservas,
-- reduzir dívidas mensais quando possível,
-- evitar mudanças relevantes no crédito durante a análise,
-- apresentar documentação completa e consistente,
-- e discutir com antecedência o pagamento mensal confortável e o cash-to-close esperado.
-
-Seu loan officer poderá dizer quais fatores têm mais peso no seu caso específico.
-      `.trim();
-    }
-
-    if (language === "es") {
-      return `
-Para fortalecer un escenario, normalmente ayuda enfocarse en los puntos que un loan officer revisará con mayor atención:
-
-Formas comunes de fortalecer el perfil:
-- mantener bien documentados los fondos para cierre y reservas,
-- reducir deudas mensuales cuando sea posible,
-- evitar cambios importantes en el crédito durante la revisión,
-- presentar documentación completa y consistente,
-- y conversar con anticipación sobre el pago mensual cómodo y el cash-to-close esperado.
-
-Su loan officer podrá indicarle qué factores pesan más en su caso específico.
-      `.trim();
-    }
-
-    return `
-To strengthen a scenario, it usually helps to focus on the areas a loan officer will review most closely:
-
-Common ways to strengthen the file:
-- keep funds for closing and reserves well documented,
-- reduce monthly debt where practical,
-- avoid major credit changes during the review,
-- provide complete and consistent documentation,
-- and discuss monthly payment comfort and expected cash to close early.
-
-Your loan officer can then explain which factors matter most in your specific case.
-    `.trim();
-  }
-
-  if (
-    lower.includes("down payment") ||
-    lower.includes("put more down") ||
-    lower.includes("increase the down payment") ||
-    lower.includes("entrada") ||
-    lower.includes("pago inicial")
-  ) {
-    if (language === "pt") {
-      return `
-Aumentar a entrada pode melhorar a estrutura geral do cenário.
-
-Benefícios possíveis:
-- menor valor financiado,
-- menor LTV,
-- menor impacto no pagamento mensal,
-- e maior flexibilidade dependendo da revisão completa do cenário.
-
-Seu loan officer poderá comparar os números atualizados e explicar como uma entrada maior pode afetar a estrutura do financiamento.
-      `.trim();
-    }
-
-    if (language === "es") {
-      return `
-Aumentar el pago inicial puede mejorar la estructura general del escenario.
-
-Posibles beneficios:
-- menor monto financiado,
-- menor LTV,
-- menor impacto en el pago mensual,
-- y mayor flexibilidad dependiendo de la revisión completa del escenario.
-
-Su loan officer podrá comparar los números actualizados y explicarle cómo un pago inicial mayor puede afectar la estructura del financiamiento.
-      `.trim();
-    }
-
-    return `
-Increasing the down payment may improve the overall structure of the scenario.
-
-Possible benefits may include:
-- a lower financed amount,
-- a lower LTV,
-- a lower monthly payment impact,
-- and greater flexibility depending on the complete review of the scenario.
-
-Your loan officer can compare the updated numbers and explain how a larger down payment may affect the structure of the financing.
-    `.trim();
-  }
-
-  if (
-    lower.includes("monthly payment") ||
-    lower.includes("payment") ||
-    lower.includes("afford") ||
-    lower.includes("pagamento mensal") ||
-    lower.includes("pago mensual")
-  ) {
-    if (language === "pt") {
-      return `
-O conforto com o pagamento mensal deve ser analisado juntamente com a renda, as dívidas, os fundos necessários para fechar e a despesa total com habitação.
-
-Um próximo passo útil é conversar sobre:
-- a faixa ideal de pagamento mensal,
-- quanto caixa você deseja manter após o fechamento,
-- e qual nível de flexibilidade é mais importante para você.
-
-Seu loan officer poderá ajudar a comparar cenários realistas com base nas condições atuais e na documentação completa.
-      `.trim();
-    }
-
-    if (language === "es") {
-      return `
-La comodidad con el pago mensual debe revisarse junto con los ingresos, las deudas, los fondos necesarios para cerrar y el gasto total de vivienda.
-
-Un siguiente paso útil es conversar sobre:
-- el rango ideal de pago mensual,
-- cuánto efectivo desea conservar después del cierre,
-- y qué nivel de flexibilidad es más importante para usted.
-
-Su loan officer podrá ayudarle a comparar escenarios realistas según las condiciones actuales y la documentación completa.
-      `.trim();
-    }
-
-    return `
-Monthly payment comfort should be reviewed together with income, debts, funds needed to close, and the total housing expense.
-
-A helpful next step is to discuss:
-- your ideal monthly payment range,
-- how much cash you want to preserve after closing,
-- and what level of flexibility matters most to you.
-
-Your loan officer can help compare realistic scenarios based on current conditions and complete documentation.
-    `.trim();
-  }
-
-  if (
-    lower.includes("self-employed") ||
-    lower.includes("self employed") ||
-    lower.includes("1099") ||
-    lower.includes("autônomo") ||
-    lower.includes("autonomo") ||
-    lower.includes("trabajador independiente")
-  ) {
-    if (language === "pt") {
-      return `
-Se a renda for de autônomo ou não assalariada, o processo de revisão pode exigir um caminho de documentação diferente.
-
-Normalmente, o loan officer precisará revisar:
-- como a renda é obtida,
-- há quanto tempo ela é recebida,
-- como ela é documentada,
-- e se essa renda pode ser usada com base nas exigências atuais.
-
-O melhor próximo passo é apresentar um quadro claro da fonte de renda para que o loan officer possa avaliá-la corretamente.
-      `.trim();
-    }
-
-    if (language === "es") {
-      return `
-Si el ingreso es de trabajador independiente o no asalariado, el proceso de revisión puede requerir una ruta de documentación diferente.
-
-Normalmente, el loan officer querrá revisar:
-- cómo se obtiene el ingreso,
-- cuánto tiempo lleva recibiéndose,
-- cómo se documenta,
-- y si ese ingreso puede utilizarse bajo los requisitos actuales.
-
-El mejor siguiente paso es presentar un panorama claro de la fuente de ingreso para que el loan officer pueda evaluarla correctamente.
-      `.trim();
-    }
-
-    return `
-If the income is self-employed or non-salaried, the review process may require a different documentation path.
-
-Typically, the loan officer will want to review:
-- how the income is earned,
-- how long it has been received,
-- how it is documented,
-- and whether that income can be used under current requirements.
-
-The best next step is to present a clear picture of the income source so the loan officer can evaluate it properly.
-    `.trim();
+    return "Would this be your first home purchase, or have you owned property before?";
   }
 
   if (language === "pt") {
-    return `
-Essa é uma boa pergunta para ser analisada dentro do cenário completo.
+    return "Obrigado. Isso já ajuda bastante. Enquanto seu loan officer analisa o cenário, há alguma pergunta específica sobre documentação, prazo, fundos para fechamento ou pagamento mensal que você queira esclarecer?";
+  }
+  if (language === "es") {
+    return "Gracias. Eso ya ayuda bastante. Mientras su loan officer revisa el escenario, ¿hay alguna pregunta específica sobre documentación, plazo, fondos para el cierre o pago mensual que quiera aclarar?";
+  }
+  return "Thank you. That already helps a lot. While your loan officer reviews the scenario, is there any specific question about documentation, timing, funds to close, or monthly payment that you would like to clarify?";
+}
 
-O próximo passo mais prático é continuar refinando o perfil do cliente, completar o valor do imóvel e a entrada, e discutir o cenário completo com um loan officer licenciado.
+function introductoryMessage(language: LanguageCode, officerName: string) {
+  if (language === "pt") {
+    return `Obrigado por compartilhar estas informações iniciais. Vou organizar este cenário para ${officerName}, que fará a análise pessoal e orientará os próximos passos. Para adiantar o processo, recomendo também clicar em Aplicar Agora.`;
+  }
+  if (language === "es") {
+    return `Gracias por compartir esta información inicial. Voy a organizar este escenario para ${officerName}, quien realizará la revisión personal y le orientará sobre los próximos pasos. Para adelantar el proceso, también le recomiendo hacer clic en Aplicar Ahora.`;
+  }
+  return `Thank you for sharing this initial information. I will organize this scenario for ${officerName}, who will review it personally and advise the next steps. To help move things forward, I also recommend clicking Apply Now.`;
+}
 
-Se quiser, você pode fazer uma pergunta mais específica sobre:
-- se o cenário parece viável,
-- como aplicar,
-- como falar com um loan officer,
-- documentação,
-- estratégia de entrada,
-- conforto com o pagamento,
-- ou como fortalecer o seu perfil.
-    `.trim();
+function scenarioAcknowledgement(language: LanguageCode, officerName: string) {
+  if (language === "pt") {
+    return `Perfeito. Agora já tenho um cenário de compra mais claro para encaminhar a ${officerName}. Estas informações serão enviadas para análise pessoal, e o loan officer orientará você sobre os próximos passos. Também recomendo clicar em Aplicar Agora para adiantar o processo.`;
+  }
+  if (language === "es") {
+    return `Perfecto. Ahora ya tengo un escenario de compra más claro para enviar a ${officerName}. Esta información se enviará para revisión personal, y el loan officer le orientará sobre los próximos pasos. También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.`;
+  }
+  return `Perfect. I now have a clearer purchase scenario to send to ${officerName}. This information will be forwarded for personal review, and the loan officer will advise you on the next steps. I also recommend clicking Apply Now to help move the process forward.`;
+}
+
+function buildAnswer(language: LanguageCode, userMessage: string, officerName: string) {
+  const lower = userMessage.toLowerCase();
+
+  if (
+    hasAny(lower, [
+      "voce fala portugues",
+      "você fala português",
+      "fala portugues",
+      "fala português",
+      "do you speak portuguese",
+      "speak portuguese",
+      "hablas portugués",
+      "habla portugues",
+    ])
+  ) {
+    if (language === "pt") {
+      return "Sim. Posso continuar toda a conversa em português e ajudar a reunir as informações para que seu loan officer faça a análise pessoal.";
+    }
+    if (language === "es") {
+      return "Sí. También puedo continuar en portugués si lo prefiere y ayudar a reunir la información para que su loan officer haga la revisión personal.";
+    }
+    return "Yes. I can continue in Portuguese as well and help gather the information your loan officer needs for a personal review.";
+  }
+
+  if (
+    hasAny(lower, [
+      "can i purchase a home",
+      "can i buy a house",
+      "can i purchase this home",
+      "posso comprar uma casa",
+      "posso comprar esta casa",
+      "puedo comprar una casa",
+      "puedo comprar esta casa",
+      "gostaria de comprar uma casa",
+    ])
+  ) {
+    if (language === "pt") {
+      return `Com base no que foi informado até aqui, ainda não seria apropriado confirmar compra, programa ou aprovação. O que posso dizer é que já temos uma base inicial para que ${officerName} analise seu cenário pessoalmente e oriente os próximos passos. Para adiantar o processo, recomendo clicar em Aplicar Agora.`;
+    }
+    if (language === "es") {
+      return `Con base en lo informado hasta ahora, todavía no sería apropiado confirmar compra, programa o aprobación. Lo que sí puedo decir es que ya tenemos una base inicial para que ${officerName} revise su escenario personalmente y le oriente sobre los próximos pasos. Para avanzar el proceso, le recomiendo hacer clic en Aplicar Ahora.`;
+    }
+    return `Based on what has been shared so far, it would not be appropriate for me to confirm a purchase, a program, or an approval. What I can say is that we now have an initial foundation for ${officerName} to review your scenario personally and advise the next steps. To help move things forward, I recommend clicking Apply Now.`;
+  }
+
+  if (
+    hasAny(lower, [
+      "what do i need to purchase this home",
+      "what do i need to buy this home",
+      "o que eu preciso para comprar esta casa",
+      "que necesito para comprar esta casa",
+      "o que eu preciso para comprar uma casa",
+    ])
+  ) {
+    if (language === "pt") {
+      return `Para seguir adiante, normalmente será importante ter organizados seus documentos de renda, ativos, fundos para entrada e fechamento, além de um cenário claro do imóvel desejado. Seu loan officer também vai querer entender seu objetivo de prazo, ocupação do imóvel e conforto com o pagamento mensal. Essas informações serão enviadas para ${officerName}, que fará a análise pessoal e orientará você sobre o que fazer em seguida.`;
+    }
+    if (language === "es") {
+      return `Para avanzar, normalmente será importante tener organizados sus documentos de ingresos, activos, fondos para pago inicial y cierre, además de un escenario claro de la propiedad deseada. Su loan officer también querrá entender su plazo, el uso de la propiedad y su comodidad con el pago mensual. Esta información se enviará a ${officerName}, quien hará la revisión personal y le indicará qué hacer después.`;
+    }
+    return `To move forward, it will usually be important to organize your income documentation, assets, funds for down payment and closing, and a clear picture of the property you want to buy. Your loan officer will also want to understand your timeline, intended occupancy, and monthly payment comfort. This information will be sent to ${officerName}, who will review it personally and advise what to do next.`;
+  }
+
+  if (
+    hasAny(lower, [
+      "how can i apply",
+      "apply for mortgage",
+      "how do i apply",
+      "como aplicar",
+      "como posso aplicar",
+      "como solicito",
+      "cómo aplicar",
+      "cómo puedo aplicar",
+    ])
+  ) {
+    if (language === "pt") {
+      return "A melhor forma de seguir agora é clicar em Aplicar Agora. Isso ajuda seu loan officer a receber suas informações de forma mais completa e orientar os próximos passos com base na sua situação real.";
+    }
+    if (language === "es") {
+      return "La mejor forma de continuar ahora es hacer clic en Aplicar Ahora. Eso ayuda a que su loan officer reciba su información de manera más completa y pueda orientarle sobre los próximos pasos según su situación real.";
+    }
+    return "The best way to move forward now is to click Apply Now. That helps your loan officer receive your information in a more complete format and advise the next steps based on your real situation.";
+  }
+
+  if (
+    hasAny(lower, [
+      "speak with a loan officer",
+      "talk to a loan officer",
+      "contact a loan officer",
+      "falar com um loan officer",
+      "falar com o loan officer",
+      "hablar con un loan officer",
+    ])
+  ) {
+    if (language === "pt") {
+      return `Você pode usar o botão Agendar com o Loan Officer ou o botão Enviar Email ao Loan Officer. Como ${officerName} está designado ao seu cenário, esse contato será direcionado corretamente.`;
+    }
+    if (language === "es") {
+      return `Puede usar el botón Agendar con el Loan Officer o el botón Enviar Correo al Loan Officer. Como ${officerName} está asignado a su escenario, ese contacto se dirigirá correctamente.`;
+    }
+    return `You can use the Schedule with Loan Officer button or the Email Loan Officer button. Since ${officerName} is assigned to your scenario, that contact will route correctly.`;
+  }
+
+  if (
+    hasAny(lower, [
+      "rate",
+      "rates",
+      "interest rate",
+      "interest rates",
+      "taxa",
+      "taxas",
+      "juros",
+      "tasa",
+      "tasas",
+      "interés",
+      "interes",
+    ])
+  ) {
+    if (language === "pt") {
+      return "As taxas mudam com frequência, e existe uma média nacional publicada no mercado, mas taxa personalizada, termos e programa adequado devem ser informados diretamente pelo loan officer licenciado após a revisão do seu cenário completo.";
+    }
+    if (language === "es") {
+      return "Las tasas cambian con frecuencia, y existe un promedio nacional publicado en el mercado, pero la tasa personalizada, los términos y el programa adecuado deben ser informados directamente por el loan officer con licencia después de revisar su escenario completo.";
+    }
+    return "Rates change frequently, and there are published national average mortgage rates in the market, but your personalized rate, terms, and proper program direction should come directly from the licensed loan officer after reviewing your full scenario.";
+  }
+
+  if (
+    hasAny(lower, [
+      "document",
+      "documents",
+      "documentação",
+      "documentacion",
+      "documentación",
+    ])
+  ) {
+    if (language === "pt") {
+      return "Normalmente seu loan officer vai precisar revisar documentos de renda, ativos, identificação e qualquer informação relevante sobre dívidas ou fundos para fechamento. O que será exigido exatamente depende da análise pessoal do seu cenário.";
+    }
+    if (language === "es") {
+      return "Normalmente su loan officer necesitará revisar documentos de ingresos, activos, identificación y cualquier información relevante sobre deudas o fondos para el cierre. Lo que se requiera exactamente dependerá de la revisión personal de su escenario.";
+    }
+    return "Typically your loan officer will need to review income documents, asset documents, identification, and any relevant information about debts or funds for closing. Exactly what will be required depends on the personal review of your scenario.";
+  }
+
+  if (language === "pt") {
+    return `Obrigado. Vou registrar isso para que ${officerName} tenha um quadro melhor do seu cenário.`;
+  }
+  if (language === "es") {
+    return `Gracias. Voy a registrar eso para que ${officerName} tenga un panorama más claro de su escenario.`;
+  }
+  return `Thank you. I will note that so ${officerName} has a clearer picture of your scenario.`;
+}
+
+function buildInitialBorrowerReview(language: LanguageCode, officerName: string, routing?: RoutingPayload) {
+  const intro = introductoryMessage(language, officerName);
+  const nextQuestion = determineNextQuestion(language, routing);
+
+  if (language === "pt") {
+    return `${intro}
+
+Próxima pergunta para ajudar na qualificação preliminar:
+${nextQuestion}`;
   }
 
   if (language === "es") {
-    return `
-Esa es una buena pregunta para analizar dentro del escenario completo.
+    return `${intro}
 
-El siguiente paso más práctico es seguir refinando el perfil del cliente, completar el precio de la propiedad y el pago inicial, y conversar sobre el escenario completo con un loan officer con licencia.
-
-Si desea, puede hacer una pregunta más específica sobre:
-- si el escenario parece viable,
-- cómo aplicar,
-- cómo hablar con un loan officer,
-- documentación,
-- estrategia de pago inicial,
-- comodidad con el pago,
-- o cómo fortalecer su perfil.
-    `.trim();
+Siguiente pregunta para ayudar con la calificación preliminar:
+${nextQuestion}`;
   }
 
-  return `
-That is a good question to review within the full scenario.
+  return `${intro}
 
-The most practical next step is to keep refining the borrower profile, complete the property price and down payment, and discuss the full scenario with a licensed loan officer.
+Next question to help with the preliminary qualification conversation:
+${nextQuestion}`;
+}
 
-If you want, you can ask a more specific follow-up question about:
-- whether the scenario seems workable,
-- how to apply,
-- how to speak with a loan officer,
-- documentation,
-- down payment strategy,
-- payment comfort,
-- or how to strengthen the file.
-  `.trim();
+function buildScenarioReview(language: LanguageCode, officerName: string, routing?: RoutingPayload) {
+  const intro = scenarioAcknowledgement(language, officerName);
+  const nextQuestion = determineNextQuestion(language, routing);
+
+  if (language === "pt") {
+    return `${intro}
+
+Próxima pergunta para ajudar na preparação do seu loan officer:
+${nextQuestion}`;
+  }
+
+  if (language === "es") {
+    return `${intro}
+
+Siguiente pregunta para ayudar en la preparación de su loan officer:
+${nextQuestion}`;
+  }
+
+  return `${intro}
+
+Next question to help prepare your loan officer:
+${nextQuestion}`;
+}
+
+function buildFollowUpReply(language: LanguageCode, officerName: string, userMessage: string, routing?: RoutingPayload) {
+  const answer = buildAnswer(language, userMessage, officerName);
+  const nextQuestion = determineNextQuestion(language, routing);
+
+  if (language === "pt") {
+    return `${answer}
+
+Próxima pergunta útil:
+${nextQuestion}`;
+  }
+
+  if (language === "es") {
+    return `${answer}
+
+Siguiente pregunta útil:
+${nextQuestion}`;
+  }
+
+  return `${answer}
+
+Helpful next question:
+${nextQuestion}`;
 }
 
 function buildInternalSummary(
@@ -975,6 +570,7 @@ function buildInternalSummary(
   const borrower = routing?.borrower || {};
   const scenario = routing?.scenario || {};
   const language = routing?.language || "en";
+  const convo = conversationToText(routing?.conversation);
 
   return `
 Beyond Intelligence Internal Summary
@@ -1001,12 +597,14 @@ Target Scenario:
 - Estimated Loan Amount: ${scenario.estimatedLoanAmount || "Not provided"}
 - Estimated LTV: ${scenario.estimatedLtv || "Not provided"}
 
+Conversation Transcript:
+${convo || "No additional conversation yet."}
+
 Internal Follow-Up Direction:
-- Review borrower contact information promptly
-- Review conversation summary and scenario inputs
-- Evaluate likely program directions internally
-- Determine documentation needs and next borrower contact steps
-- Confirm guidance under current investor guidelines and overlays
+- Borrower should be encouraged to complete the full application
+- Licensed loan officer must determine program direction, terms, and next steps
+- Review documentation needs, borrower goals, occupancy, timeline, and funds to close
+- Reach out personally to the borrower with next steps
   `.trim();
 }
 
@@ -1153,28 +751,21 @@ export async function POST(req: Request) {
 
     const lower = latestUserMessage.toLowerCase();
     const language = getLanguage(routing);
+    const assignedOfficer = resolveLoanOfficer(routing);
 
     const isInitialAnalysisRequest =
-      lower.includes(
-        "general strengths based on the borrower information currently entered"
-      ) ||
-      lower.includes("general areas that may need attention") ||
-      lower.includes("clear next steps for the borrower");
+      lower.includes("start the borrower conversation as a loan officer assistant") ||
+      lower.includes("briefly acknowledge the borrower information already entered");
 
     const isScenarioReviewRequest =
       lower.includes("the borrower has now entered the target property scenario") ||
-      lower.includes("what this target scenario means at a high level") ||
-      lower.includes(
-        "general factors that may influence whether this target scenario is workable"
-      );
-
-    const assignedOfficer = resolveLoanOfficer(routing);
+      lower.includes("acknowledge it briefly");
 
     const reply = isInitialAnalysisRequest
-      ? buildInitialBorrowerReview(language, latestUserMessage)
+      ? buildInitialBorrowerReview(language, assignedOfficer.name, routing)
       : isScenarioReviewRequest
-      ? buildScenarioReview(language, latestUserMessage)
-      : buildFollowUpReply(language, latestUserMessage);
+      ? buildScenarioReview(language, assignedOfficer.name, routing)
+      : buildFollowUpReply(language, assignedOfficer.name, latestUserMessage, routing);
 
     const internalSummary = buildInternalSummary(stage, assignedOfficer, routing);
 
