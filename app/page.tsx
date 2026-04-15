@@ -11,27 +11,40 @@ type FormState = {
   down: string;
 };
 
-function extractAiText(data: any): string {
-  return (
-    data?.choices?.[0]?.message?.content ||
-    data?.reply ||
-    data?.message ||
-    data?.response ||
-    data?.content ||
-    data?.text ||
-    (typeof data === "string" ? data : JSON.stringify(data, null, 2))
-  );
+function formatCurrency(value: number) {
+  if (!Number.isFinite(value)) return "$0";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-function extractAiText(data: any): string {
-  return (
-    data?.choices?.[0]?.message?.content ||
-    data?.message ||
-    data?.response ||
-    data?.content ||
-    data?.text ||
-    (typeof data === "string" ? data : JSON.stringify(data, null, 2))
-  );
+function extractAiText(data: unknown): string {
+  if (typeof data === "string") return data;
+
+  if (typeof data === "object" && data !== null) {
+    const obj = data as {
+      choices?: Array<{ message?: { content?: string } }>;
+      reply?: string;
+      message?: string;
+      response?: string;
+      content?: string;
+      text?: string;
+    };
+
+    return (
+      obj.choices?.[0]?.message?.content ||
+      obj.reply ||
+      obj.message ||
+      obj.response ||
+      obj.content ||
+      obj.text ||
+      JSON.stringify(obj, null, 2)
+    );
+  }
+
+  return "";
 }
 
 export default function Page() {
@@ -104,6 +117,9 @@ Credit Score: ${form.credit}
 Monthly Income: ${form.income}
 Monthly Debt: ${form.debt}
 Down Payment: ${form.down}
+Estimated Home Price: ${Math.round(results.estimatedHomePrice)}
+Estimated Loan Amount: ${Math.round(results.estimatedLoan)}
+Estimated LTV: ${Math.round(results.ltv * 100)}%
 
 Act as a Certified Mortgage Advisor for Beyond Financing.
 
@@ -119,18 +135,22 @@ Keep the answer professional, practical, and easy to understand.
         }),
       });
 
-      const data = await response.json();
+      const data: unknown = await response.json();
 
       if (!response.ok) {
         const extracted = extractAiText(data);
-        throw new Error(extracted || "The AI request did not complete successfully.");
+        throw new Error(
+          extracted || "The AI request did not complete successfully."
+        );
       }
 
       const text = extractAiText(data);
       setAiResponse(text || "No response was returned from the AI system.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       const message =
-        error?.message || "There was an error connecting to the AI system.";
+        error instanceof Error
+          ? error.message
+          : "There was an error connecting to the AI system.";
       setErrorMessage(message);
       setAiResponse("");
     } finally {
@@ -156,8 +176,7 @@ Keep the answer professional, practical, and easy to understand.
       >
         <div
           style={{
-            background:
-              "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
+            background: "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
             color: "#ffffff",
             borderRadius: 20,
             padding: 28,
@@ -198,7 +217,8 @@ Keep the answer professional, practical, and easy to understand.
               color: "rgba(255,255,255,0.92)",
             }}
           >
-            AI-Powered Mortgage Decision System supervised by a Certified Mortgage Advisor.
+            AI-Powered Mortgage Decision System supervised by a Certified
+            Mortgage Advisor.
           </p>
         </div>
 
@@ -239,11 +259,12 @@ Keep the answer professional, practical, and easy to understand.
                 fontSize: 15,
               }}
             >
-              This system provides preliminary guidance only. It does not constitute
-              a loan approval, underwriting decision, commitment to lend, legal advice,
-              tax advice, or final program eligibility determination. All scenarios must
-              be independently reviewed and confirmed by a licensed loan officer using
-              current investor guidelines, overlays, and program requirements.
+              This system provides preliminary guidance only. It does not
+              constitute a loan approval, underwriting decision, commitment to
+              lend, legal advice, tax advice, or final program eligibility
+              determination. All scenarios must be independently reviewed and
+              confirmed by a licensed loan officer using current investor
+              guidelines, overlays, and program requirements.
             </div>
 
             <label
@@ -460,7 +481,8 @@ Keep the answer professional, practical, and easy to understand.
                     lineHeight: 1.6,
                   }}
                 >
-                  Complete the intake and run the analysis to see the AI response.
+                  Complete the intake and run the analysis to see the AI
+                  response.
                 </div>
               )}
 
