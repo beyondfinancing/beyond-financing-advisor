@@ -5,13 +5,129 @@ type ChatMessage = {
   content?: string;
 };
 
+type LoanOfficerSelection = {
+  id?: string;
+  name?: string;
+  nmls?: string;
+  email?: string;
+  assistantEmail?: string;
+  mobile?: string;
+  assistantMobile?: string;
+};
+
+type RoutingPayload = {
+  loanOfficerQuery?: string;
+  selectedOfficer?: LoanOfficerSelection;
+  borrower?: {
+    name?: string;
+    email?: string;
+    credit?: string;
+    income?: string;
+    debt?: string;
+  };
+  scenario?: {
+    homePrice?: string;
+    downPayment?: string;
+    estimatedLoanAmount?: string;
+    estimatedLtv?: string;
+  };
+};
+
 type RequestBody = {
+  stage?: "initial_review" | "scenario_review" | "follow_up";
+  routing?: RoutingPayload;
   messages?: ChatMessage[];
 };
+
+type LoanOfficerRecord = {
+  id: string;
+  name: string;
+  nmls: string;
+  email: string;
+  assistantEmail: string;
+  mobile: string;
+  assistantMobile: string;
+};
+
+const LOAN_OFFICERS: LoanOfficerRecord[] = [
+  {
+    id: "sandro-pansini-souza",
+    name: "Sandro Pansini Souza",
+    nmls: "1625542",
+    email: "pansini@beyondfinancing.com",
+    assistantEmail: "myloan@beyondfinancing.com",
+    mobile: "8576150836",
+    assistantMobile: "8576150836",
+  },
+  {
+    id: "warren-wendt",
+    name: "Warren Wendt",
+    nmls: "18959",
+    email: "warren@beyondfinancing.com",
+    assistantEmail: "myloan@beyondfinancing.com",
+    mobile: "9788212250",
+    assistantMobile: "8576150836",
+  },
+  {
+    id: "finley-beyond",
+    name: "Finley Beyond",
+    nmls: "16255BF",
+    email: "finley@beyondfinancing.com",
+    assistantEmail: "myloan@beyondfinancing.com",
+    mobile: "8576150836",
+    assistantMobile: "8576150836",
+  },
+];
+
+const DEFAULT_LOAN_OFFICER =
+  LOAN_OFFICERS.find((officer) => officer.id === "finley-beyond") ||
+  LOAN_OFFICERS[0];
 
 function getLatestUserMessage(messages: ChatMessage[]) {
   const reversed = [...messages].reverse();
   return reversed.find((message) => message.role === "user")?.content ?? "";
+}
+
+function resolveLoanOfficer(routing?: RoutingPayload): LoanOfficerRecord {
+  const selected = routing?.selectedOfficer;
+
+  if (selected?.id) {
+    const byId = LOAN_OFFICERS.find((officer) => officer.id === selected.id);
+    if (byId) return byId;
+  }
+
+  if (selected?.nmls) {
+    const byNmls = LOAN_OFFICERS.find(
+      (officer) => officer.nmls.toLowerCase() === selected.nmls?.toLowerCase()
+    );
+    if (byNmls) return byNmls;
+  }
+
+  if (selected?.name) {
+    const byName = LOAN_OFFICERS.find(
+      (officer) => officer.name.toLowerCase() === selected.name?.toLowerCase()
+    );
+    if (byName) return byName;
+  }
+
+  const query = routing?.loanOfficerQuery?.trim().toLowerCase();
+
+  if (query) {
+    const exact = LOAN_OFFICERS.find(
+      (officer) =>
+        officer.name.toLowerCase() === query || officer.nmls.toLowerCase() === query
+    );
+    if (exact) return exact;
+
+    const partial = LOAN_OFFICERS.find(
+      (officer) =>
+        officer.name.toLowerCase().includes(query) ||
+        officer.nmls.toLowerCase().includes(query)
+    );
+    if (partial) return partial;
+  }
+
+  return DEFAULT_LOAN_OFFICER;
 }
 
 function buildInitialBorrowerReview(userMessage: string) {
@@ -62,9 +178,7 @@ function buildInitialBorrowerReview(userMessage: string) {
     );
   }
 
-  attention.push(
-    "- Final eligibility cannot be determined from intake alone"
-  );
+  attention.push("- Final eligibility cannot be determined from intake alone");
   attention.push(
     "- Income, assets, credit, and occupancy must still be fully documented"
   );
@@ -192,7 +306,7 @@ Your licensed loan officer can then guide you through the actual application ste
     lower.includes("contact a loan officer")
   ) {
     return `
-The best next step is to connect directly with a licensed loan officer after completing the borrower information and target scenario.
+The best next step is to connect directly with the assigned licensed loan officer after completing the borrower information and target scenario.
 
 When you speak with the loan officer, be ready to discuss:
 - your income,
@@ -313,10 +427,93 @@ If you want, you can ask a more specific follow-up question about:
   `.trim();
 }
 
+function buildInternalSummary(
+  stage: string,
+  assignedOfficer: LoanOfficerRecord,
+  routing?: RoutingPayload
+) {
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+
+  return `
+Beyond Intelligence Internal Summary
+
+Stage:
+${stage}
+
+Assigned Loan Officer:
+${assignedOfficer.name} — NMLS ${assignedOfficer.nmls}
+
+Borrower:
+- Name: ${borrower.name || "Not provided"}
+- Email: ${borrower.email || "Not provided"}
+- Estimated Credit Score: ${borrower.credit || "Not provided"}
+- Gross Monthly Income: ${borrower.income || "Not provided"}
+- Monthly Debt: ${borrower.debt || "Not provided"}
+
+Target Scenario:
+- Estimated Home Price: ${scenario.homePrice || "Not provided"}
+- Estimated Down Payment: ${scenario.downPayment || "Not provided"}
+- Estimated Loan Amount: ${scenario.estimatedLoanAmount || "Not provided"}
+- Estimated LTV: ${scenario.estimatedLtv || "Not provided"}
+
+Internal Follow-Up Direction:
+- Review borrower contact information promptly
+- Review conversation summary and scenario inputs
+- Evaluate likely program directions internally
+- Determine documentation needs and next borrower contact steps
+- Confirm guidance under current investor guidelines and overlays
+  `.trim();
+}
+
+async function queueInternalNotifications(args: {
+  stage: string;
+  assignedOfficer: LoanOfficerRecord;
+  summary: string;
+  routing?: RoutingPayload;
+}) {
+  const borrowerName = args.routing?.borrower?.name || "Unknown Borrower";
+
+  const emailPayload = {
+    to: args.assignedOfficer.email,
+    cc: args.assignedOfficer.assistantEmail,
+    subject: `Beyond Intelligence Interaction — ${borrowerName}`,
+    body: args.summary,
+  };
+
+  const smsPayload = [
+    {
+      to: args.assignedOfficer.mobile,
+      message: `New Beyond Intelligence interaction received for ${borrowerName}. Review your email summary and follow up promptly.`,
+    },
+    {
+      to: args.assignedOfficer.assistantMobile,
+      message: `New Beyond Intelligence interaction received for ${borrowerName}. Review the assigned loan officer email summary.`,
+    },
+  ];
+
+  console.log("EMAIL_NOTIFICATION_READY", emailPayload);
+  console.log("SMS_NOTIFICATION_READY", smsPayload);
+
+  /**
+   * Future activation point:
+   * - SendGrid / Resend / SMTP for email
+   * - Twilio for SMS
+   *
+   * Example flow:
+   * 1. send email to assignedOfficer.email
+   * 2. cc assignedOfficer.assistantEmail
+   * 3. send SMS to assignedOfficer.mobile
+   * 4. send SMS to assignedOfficer.assistantMobile
+   */
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as RequestBody;
     const messages = body?.messages;
+    const routing = body?.routing;
+    const stage = body?.stage || "follow_up";
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -337,14 +534,20 @@ export async function POST(req: Request) {
     const lower = latestUserMessage.toLowerCase();
 
     const isInitialAnalysisRequest =
-      lower.includes("general strengths based on the borrower information currently entered") ||
+      lower.includes(
+        "general strengths based on the borrower information currently entered"
+      ) ||
       lower.includes("general areas that may need attention") ||
       lower.includes("clear next steps for the borrower");
 
     const isScenarioReviewRequest =
       lower.includes("the borrower has now entered the target property scenario") ||
       lower.includes("what this target scenario means at a high level") ||
-      lower.includes("general factors that may influence whether this target scenario is workable");
+      lower.includes(
+        "general factors that may influence whether this target scenario is workable"
+      );
+
+    const assignedOfficer = resolveLoanOfficer(routing);
 
     const reply = isInitialAnalysisRequest
       ? buildInitialBorrowerReview(latestUserMessage)
@@ -352,7 +555,25 @@ export async function POST(req: Request) {
       ? buildScenarioReview(latestUserMessage)
       : buildFollowUpReply(latestUserMessage);
 
-    return NextResponse.json({ reply });
+    const internalSummary = buildInternalSummary(stage, assignedOfficer, routing);
+
+    await queueInternalNotifications({
+      stage,
+      assignedOfficer,
+      summary: internalSummary,
+      routing,
+    });
+
+    return NextResponse.json({
+      reply,
+      assignedOfficer: {
+        name: assignedOfficer.name,
+        nmls: assignedOfficer.nmls,
+        email: assignedOfficer.email,
+        assistantEmail: assignedOfficer.assistantEmail,
+      },
+      internalSummaryPrepared: true,
+    });
   } catch {
     return NextResponse.json(
       { reply: "Server error processing request." },
