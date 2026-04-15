@@ -116,9 +116,11 @@ Borrower profile for context:
 - Estimated LTV: ${Math.round(results.ltv * 100)}%
 
 You are Finley Beyond, an AI-powered mortgage decision support assistant supervised by a Certified Mortgage Advisor at Beyond Financing.
-Provide preliminary guidance only.
-Do not present anything as a loan approval, underwriting decision, or commitment to lend.
-Always remind the user that a licensed loan officer must review the scenario against current investor guidelines, overlays, and program requirements.
+This is a borrower-facing conversation.
+Do not present exact program approvals, exact program recommendations, lender matches, underwriting conclusions, or commitments to lend.
+Do not state that the borrower qualifies for a specific loan program.
+Keep the response educational, practical, and preliminary.
+Always remind the user that a licensed loan officer must review the scenario using current investor guidelines, overlays, and program requirements.
     `.trim();
   };
 
@@ -127,18 +129,21 @@ Always remind the user that a licensed loan officer must review the scenario aga
     setLoading(true);
     setErrorMessage("");
     setChatError("");
-    setAiResponse("Finley Beyond is analyzing this scenario...");
+    setAiResponse("Finley Beyond is reviewing this scenario...");
 
     try {
       const initialPrompt = `
 ${buildBorrowerContext()}
 
-Please provide:
-1. Likely loan direction
-2. Main risk flags
-3. Recommended next steps
+Please provide a borrower-facing preliminary review with:
+1. General strengths in the scenario
+2. General areas that may need attention
+3. Reasonable next steps for the borrower
+4. A reminder that final guidance must come from a licensed loan officer
 
-Keep the answer professional, practical, and easy to understand.
+Do not identify a specific loan program.
+Do not identify a lender.
+Keep the tone professional, clear, and easy to understand.
       `.trim();
 
       const response = await fetch("/api/chat", {
@@ -217,7 +222,7 @@ Keep the answer professional, practical, and easy to understand.
           messages: [
             {
               role: "user",
-              content: `${systemContext}\n\nInitial instruction: Continue the conversation naturally and answer follow-up mortgage questions based on this borrower profile.`,
+              content: `${systemContext}\n\nContinue the borrower-facing conversation naturally. Stay general and compliant. Avoid specific program recommendations, lender suggestions, approvals, or commitments.`,
             },
             ...nextConversation.map((message) => ({
               role: message.role,
@@ -257,107 +262,90 @@ Keep the answer professional, practical, and easy to understand.
   };
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "#f4f6fb",
-        padding: "32px 20px",
-        fontFamily: "Inter, Arial, Helvetica, sans-serif",
-        color: "#1f2937",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1040,
-          margin: "0 auto",
-        }}
-      >
-        <div
-          style={{
-            background: "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
-            color: "#ffffff",
-            borderRadius: 20,
-            padding: 28,
-            boxShadow: "0 10px 30px rgba(38, 51, 102, 0.18)",
-            marginBottom: 24,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 13,
-              letterSpacing: 0.5,
-              textTransform: "uppercase",
-              opacity: 0.9,
-              marginBottom: 10,
-            }}
-          >
-            Beyond Intelligence™
-          </div>
+    <main style={styles.page}>
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
 
-          <h1
-            style={{
-              fontSize: 32,
-              lineHeight: 1.15,
-              margin: 0,
-              fontWeight: 700,
-            }}
-          >
+        html, body {
+          margin: 0;
+          padding: 0;
+        }
+
+        @media (max-width: 980px) {
+          .bf-main-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .bf-form-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .bf-header-title {
+            font-size: 28px !important;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .bf-page-wrap {
+            padding: 20px 14px !important;
+          }
+
+          .bf-card {
+            padding: 18px !important;
+            border-radius: 16px !important;
+          }
+
+          .bf-hero {
+            padding: 22px !important;
+            border-radius: 16px !important;
+          }
+
+          .bf-header-title {
+            font-size: 24px !important;
+            line-height: 1.2 !important;
+          }
+
+          .bf-section-title {
+            font-size: 20px !important;
+          }
+
+          .bf-button {
+            width: 100%;
+          }
+
+          .bf-metric-value {
+            font-size: 22px !important;
+          }
+
+          .bf-chat-scroll {
+            max-height: 360px !important;
+          }
+        }
+      `}</style>
+
+      <div className="bf-page-wrap" style={styles.pageWrap}>
+        <div className="bf-hero" style={styles.hero}>
+          <div style={styles.heroEyebrow}>Beyond Intelligence™</div>
+
+          <h1 className="bf-header-title" style={styles.heroTitle}>
             Finley Beyond Powered by Beyond Intelligence™
           </h1>
 
-          <p
-            style={{
-              marginTop: 12,
-              marginBottom: 0,
-              fontSize: 16,
-              lineHeight: 1.6,
-              maxWidth: 780,
-              color: "rgba(255,255,255,0.92)",
-            }}
-          >
+          <p style={styles.heroText}>
             AI-Powered Mortgage Decision System supervised by a Certified
             Mortgage Advisor.
           </p>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1.1fr 0.9fr",
-            gap: 24,
-            alignItems: "start",
-          }}
-        >
-          <section
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: 20,
-              padding: 24,
-              boxShadow: "0 10px 25px rgba(15, 23, 42, 0.06)",
-            }}
-          >
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 16,
-                fontSize: 24,
-                color: "#263366",
-              }}
-            >
+        <div className="bf-main-grid" style={styles.mainGrid}>
+          <section className="bf-card" style={styles.card}>
+            <h2 className="bf-section-title" style={styles.sectionTitle}>
               Required Disclaimer
             </h2>
 
-            <div
-              style={{
-                border: "1px solid #dbe3f0",
-                backgroundColor: "#f8fbff",
-                borderRadius: 14,
-                padding: 16,
-                marginBottom: 18,
-                lineHeight: 1.65,
-                fontSize: 15,
-              }}
-            >
+            <div style={styles.noticeBox}>
               This system provides preliminary guidance only. It does not
               constitute a loan approval, underwriting decision, commitment to
               lend, legal advice, tax advice, or final program eligibility
@@ -366,16 +354,7 @@ Keep the answer professional, practical, and easy to understand.
               guidelines, overlays, and program requirements.
             </div>
 
-            <label
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                marginBottom: 24,
-                fontSize: 15,
-                fontWeight: 600,
-              }}
-            >
+            <label style={styles.checkboxRow}>
               <input
                 type="checkbox"
                 checked={accepted}
@@ -385,46 +364,28 @@ Keep the answer professional, practical, and easy to understand.
               I acknowledge and accept this disclaimer before using the system.
             </label>
 
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 16,
-                fontSize: 24,
-                color: "#263366",
-              }}
-            >
+            <h2 className="bf-section-title" style={styles.sectionTitle}>
               Borrower Intake
             </h2>
 
             {!accepted && (
-              <div
-                style={{
-                  backgroundColor: "#fff7ed",
-                  color: "#9a3412",
-                  border: "1px solid #fdba74",
-                  borderRadius: 12,
-                  padding: 14,
-                  marginBottom: 18,
-                  fontSize: 14,
-                }}
-              >
+              <div style={styles.lockBox}>
                 The intake section is locked until the disclaimer is accepted.
               </div>
             )}
 
             <div
+              className="bf-form-grid"
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 16,
+                ...styles.formGrid,
                 opacity: accepted ? 1 : 0.55,
                 pointerEvents: accepted ? "auto" : "none",
               }}
             >
               <div>
-                <label style={labelStyle}>Borrower Name</label>
+                <label style={styles.label}>Borrower Name</label>
                 <input
-                  style={inputStyle}
+                  style={styles.input}
                   type="text"
                   value={form.name}
                   onChange={(e) => setField("name", e.target.value)}
@@ -433,9 +394,9 @@ Keep the answer professional, practical, and easy to understand.
               </div>
 
               <div>
-                <label style={labelStyle}>Email</label>
+                <label style={styles.label}>Email</label>
                 <input
-                  style={inputStyle}
+                  style={styles.input}
                   type="email"
                   value={form.email}
                   onChange={(e) => setField("email", e.target.value)}
@@ -444,9 +405,9 @@ Keep the answer professional, practical, and easy to understand.
               </div>
 
               <div>
-                <label style={labelStyle}>Estimated Credit Score</label>
+                <label style={styles.label}>Estimated Credit Score</label>
                 <input
-                  style={inputStyle}
+                  style={styles.input}
                   type="number"
                   value={form.credit}
                   onChange={(e) => setField("credit", e.target.value)}
@@ -455,9 +416,9 @@ Keep the answer professional, practical, and easy to understand.
               </div>
 
               <div>
-                <label style={labelStyle}>Gross Monthly Income</label>
+                <label style={styles.label}>Gross Monthly Income</label>
                 <input
-                  style={inputStyle}
+                  style={styles.input}
                   type="number"
                   value={form.income}
                   onChange={(e) => setField("income", e.target.value)}
@@ -466,9 +427,9 @@ Keep the answer professional, practical, and easy to understand.
               </div>
 
               <div>
-                <label style={labelStyle}>Monthly Debt</label>
+                <label style={styles.label}>Monthly Debt</label>
                 <input
-                  style={inputStyle}
+                  style={styles.input}
                   type="number"
                   value={form.debt}
                   onChange={(e) => setField("debt", e.target.value)}
@@ -477,9 +438,9 @@ Keep the answer professional, practical, and easy to understand.
               </div>
 
               <div>
-                <label style={labelStyle}>Down Payment / Equity</label>
+                <label style={styles.label}>Down Payment / Equity</label>
                 <input
-                  style={inputStyle}
+                  style={styles.input}
                   type="number"
                   value={form.down}
                   onChange={(e) => setField("down", e.target.value)}
@@ -490,48 +451,23 @@ Keep the answer professional, practical, and easy to understand.
 
             <div style={{ marginTop: 22 }}>
               <button
+                className="bf-button"
                 onClick={runAnalysis}
                 disabled={!accepted || loading}
                 style={{
+                  ...styles.primaryButton,
                   backgroundColor: loading ? "#7c8aa8" : "#263366",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: 12,
-                  padding: "14px 20px",
-                  fontSize: 15,
-                  fontWeight: 700,
                   cursor: !accepted || loading ? "not-allowed" : "pointer",
-                  boxShadow: "0 8px 18px rgba(38, 51, 102, 0.18)",
                 }}
               >
-                {loading ? "Analyzing..." : "Run Full Analysis"}
+                {loading ? "Reviewing..." : "Run Preliminary Review"}
               </button>
             </div>
           </section>
 
-          <aside
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 24,
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                borderRadius: 20,
-                padding: 24,
-                boxShadow: "0 10px 25px rgba(15, 23, 42, 0.06)",
-              }}
-            >
-              <h3
-                style={{
-                  marginTop: 0,
-                  marginBottom: 18,
-                  fontSize: 22,
-                  color: "#263366",
-                }}
-              >
+          <aside style={styles.aside}>
+            <div className="bf-card" style={styles.card}>
+              <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
                 Financial Snapshot
               </h3>
 
@@ -549,76 +485,30 @@ Keep the answer professional, practical, and easy to understand.
               />
             </div>
 
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                borderRadius: 20,
-                padding: 24,
-                boxShadow: "0 10px 25px rgba(15, 23, 42, 0.06)",
-              }}
-            >
-              <h3
-                style={{
-                  marginTop: 0,
-                  marginBottom: 16,
-                  fontSize: 22,
-                  color: "#263366",
-                }}
-              >
-                Finley Analysis
+            <div className="bf-card" style={styles.card}>
+              <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
+                Finley Conversation
               </h3>
 
               {!submitted && (
-                <div
-                  style={{
-                    backgroundColor: "#f8fafc",
-                    border: "1px dashed #cbd5e1",
-                    borderRadius: 12,
-                    padding: 16,
-                    color: "#475569",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Complete the intake and run the analysis to begin the Finley
-                  Beyond conversation.
+                <div style={styles.placeholderBox}>
+                  Complete the intake and run the preliminary review to begin the
+                  Finley Beyond conversation.
                 </div>
               )}
 
               {submitted && errorMessage && (
-                <div
-                  style={{
-                    backgroundColor: "#fef2f2",
-                    color: "#991b1b",
-                    border: "1px solid #fecaca",
-                    borderRadius: 12,
-                    padding: 16,
-                    whiteSpace: "pre-wrap",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {errorMessage}
-                </div>
+                <div style={styles.errorBox}>{errorMessage}</div>
               )}
 
               {submitted && !errorMessage && (
                 <>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
-                      marginBottom: 16,
-                      maxHeight: 420,
-                      overflowY: "auto",
-                      paddingRight: 4,
-                    }}
-                  >
+                  <div className="bf-chat-scroll" style={styles.chatScroll}>
                     {conversation.map((message, index) => (
                       <div
                         key={`${message.role}-${index}`}
                         style={{
+                          ...styles.chatBubble,
                           alignSelf:
                             message.role === "user" ? "flex-end" : "stretch",
                           backgroundColor:
@@ -629,11 +519,6 @@ Keep the answer professional, practical, and easy to understand.
                             message.role === "user"
                               ? "1px solid #263366"
                               : "1px solid #dbeafe",
-                          borderRadius: 14,
-                          padding: 14,
-                          whiteSpace: "pre-wrap",
-                          fontSize: 14,
-                          lineHeight: 1.7,
                         }}
                       >
                         {message.content}
@@ -643,12 +528,9 @@ Keep the answer professional, practical, and easy to understand.
                     {chatLoading && (
                       <div
                         style={{
+                          ...styles.chatBubble,
                           backgroundColor: "#f8fbff",
                           border: "1px solid #dbeafe",
-                          borderRadius: 14,
-                          padding: 14,
-                          fontSize: 14,
-                          lineHeight: 1.7,
                           color: "#1e293b",
                         }}
                       >
@@ -657,75 +539,32 @@ Keep the answer professional, practical, and easy to understand.
                     )}
                   </div>
 
-                  {chatError && (
-                    <div
-                      style={{
-                        backgroundColor: "#fef2f2",
-                        color: "#991b1b",
-                        border: "1px solid #fecaca",
-                        borderRadius: 12,
-                        padding: 12,
-                        fontSize: 13,
-                        marginBottom: 12,
-                      }}
-                    >
-                      {chatError}
-                    </div>
-                  )}
+                  {chatError && <div style={styles.errorMiniBox}>{chatError}</div>}
 
-                  <div
-                    style={{
-                      borderTop: "1px solid #e2e8f0",
-                      paddingTop: 14,
-                    }}
-                  >
-                    <label
-                      style={{
-                        display: "block",
-                        marginBottom: 8,
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: "#334155",
-                      }}
-                    >
+                  <div style={styles.chatComposerWrap}>
+                    <label style={styles.label}>
                       Continue chatting with Finley Beyond
                     </label>
 
                     <textarea
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Ask a follow-up question, such as: Would FHA be better here? What documents should I collect first?"
+                      placeholder="Ask a follow-up question, such as: What should I prepare next? What can strengthen my file? What should I discuss with my loan officer?"
                       rows={4}
-                      style={{
-                        width: "100%",
-                        boxSizing: "border-box",
-                        border: "1px solid #cbd5e1",
-                        borderRadius: 12,
-                        padding: "12px 14px",
-                        fontSize: 14,
-                        outline: "none",
-                        backgroundColor: "#ffffff",
-                        color: "#111827",
-                        resize: "vertical",
-                        marginBottom: 12,
-                      }}
+                      style={styles.textarea}
                       disabled={chatLoading}
                     />
 
                     <button
+                      className="bf-button"
                       onClick={sendChatMessage}
                       disabled={chatLoading || !chatInput.trim()}
                       style={{
+                        ...styles.secondaryButton,
                         backgroundColor:
                           chatLoading || !chatInput.trim()
                             ? "#7c8aa8"
                             : "#0096C7",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: 12,
-                        padding: "12px 18px",
-                        fontSize: 14,
-                        fontWeight: 700,
                         cursor:
                           chatLoading || !chatInput.trim()
                             ? "not-allowed"
@@ -747,55 +586,229 @@ Keep the answer professional, practical, and easy to understand.
 
 function MetricCard({ title, value }: { title: string; value: string }) {
   return (
-    <div
-      style={{
-        backgroundColor: "#f8fbff",
-        border: "1px solid #dbe3f0",
-        borderRadius: 14,
-        padding: 16,
-        marginBottom: 12,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-          color: "#64748b",
-          marginBottom: 6,
-        }}
-      >
-        {title}
-      </div>
-      <div
-        style={{
-          fontSize: 26,
-          fontWeight: 700,
-          color: "#111827",
-        }}
-      >
+    <div style={styles.metricCard}>
+      <div style={styles.metricTitle}>{title}</div>
+      <div className="bf-metric-value" style={styles.metricValue}>
         {value}
       </div>
     </div>
   );
 }
 
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  marginBottom: 8,
-  fontSize: 14,
-  fontWeight: 600,
-  color: "#334155",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: "1px solid #cbd5e1",
-  borderRadius: 12,
-  padding: "12px 14px",
-  fontSize: 15,
-  outline: "none",
-  backgroundColor: "#ffffff",
-  color: "#111827",
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    backgroundColor: "#f4f6fb",
+    fontFamily: "Inter, Arial, Helvetica, sans-serif",
+    color: "#1f2937",
+  },
+  pageWrap: {
+    maxWidth: 1100,
+    margin: "0 auto",
+    padding: "32px 20px",
+  },
+  hero: {
+    background: "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
+    color: "#ffffff",
+    borderRadius: 20,
+    padding: 28,
+    boxShadow: "0 10px 30px rgba(38, 51, 102, 0.18)",
+    marginBottom: 24,
+  },
+  heroEyebrow: {
+    fontSize: 13,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    opacity: 0.9,
+    marginBottom: 10,
+  },
+  heroTitle: {
+    fontSize: 32,
+    lineHeight: 1.15,
+    margin: 0,
+    fontWeight: 700,
+  },
+  heroText: {
+    marginTop: 12,
+    marginBottom: 0,
+    fontSize: 16,
+    lineHeight: 1.6,
+    maxWidth: 780,
+    color: "rgba(255,255,255,0.92)",
+  },
+  mainGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.1fr 0.9fr",
+    gap: 24,
+    alignItems: "start",
+  },
+  aside: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 24,
+  },
+  card: {
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 24,
+    boxShadow: "0 10px 25px rgba(15, 23, 42, 0.06)",
+  },
+  sectionTitle: {
+    marginTop: 0,
+    marginBottom: 16,
+    fontSize: 24,
+    color: "#263366",
+  },
+  sectionTitleSmall: {
+    marginTop: 0,
+    marginBottom: 16,
+    fontSize: 22,
+    color: "#263366",
+  },
+  noticeBox: {
+    border: "1px solid #dbe3f0",
+    backgroundColor: "#f8fbff",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 18,
+    lineHeight: 1.65,
+    fontSize: 15,
+  },
+  checkboxRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 24,
+    fontSize: 15,
+    fontWeight: 600,
+  },
+  lockBox: {
+    backgroundColor: "#fff7ed",
+    color: "#9a3412",
+    border: "1px solid #fdba74",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+    fontSize: 14,
+  },
+  formGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 16,
+  },
+  label: {
+    display: "block",
+    marginBottom: 8,
+    fontSize: 14,
+    fontWeight: 600,
+    color: "#334155",
+  },
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 15,
+    outline: "none",
+    backgroundColor: "#ffffff",
+    color: "#111827",
+  },
+  textarea: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 14,
+    outline: "none",
+    backgroundColor: "#ffffff",
+    color: "#111827",
+    resize: "vertical",
+    marginBottom: 12,
+  },
+  primaryButton: {
+    color: "#ffffff",
+    border: "none",
+    borderRadius: 12,
+    padding: "14px 20px",
+    fontSize: 15,
+    fontWeight: 700,
+    boxShadow: "0 8px 18px rgba(38, 51, 102, 0.18)",
+  },
+  secondaryButton: {
+    color: "#ffffff",
+    border: "none",
+    borderRadius: 12,
+    padding: "12px 18px",
+    fontSize: 14,
+    fontWeight: 700,
+  },
+  metricCard: {
+    backgroundColor: "#f8fbff",
+    border: "1px solid #dbe3f0",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+  },
+  metricTitle: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: "#64748b",
+    marginBottom: 6,
+  },
+  metricValue: {
+    fontSize: 26,
+    fontWeight: 700,
+    color: "#111827",
+  },
+  placeholderBox: {
+    backgroundColor: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    borderRadius: 12,
+    padding: 16,
+    color: "#475569",
+    fontSize: 14,
+    lineHeight: 1.6,
+  },
+  errorBox: {
+    backgroundColor: "#fef2f2",
+    color: "#991b1b",
+    border: "1px solid #fecaca",
+    borderRadius: 12,
+    padding: 16,
+    whiteSpace: "pre-wrap",
+    fontSize: 14,
+    lineHeight: 1.6,
+  },
+  errorMiniBox: {
+    backgroundColor: "#fef2f2",
+    color: "#991b1b",
+    border: "1px solid #fecaca",
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  chatScroll: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    marginBottom: 16,
+    maxHeight: 460,
+    overflowY: "auto",
+    paddingRight: 4,
+  },
+  chatBubble: {
+    borderRadius: 14,
+    padding: 14,
+    whiteSpace: "pre-wrap",
+    fontSize: 14,
+    lineHeight: 1.7,
+  },
+  chatComposerWrap: {
+    borderTop: "1px solid #e2e8f0",
+    paddingTop: 14,
+  },
 };
