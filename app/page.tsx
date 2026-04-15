@@ -34,6 +34,8 @@ type LoanOfficerRecord = {
   scheduleUrl: string;
 };
 
+const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
+
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
   {
     id: "sandro-pansini-souza",
@@ -43,8 +45,8 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "8576150836",
     assistantMobile: "8576150836",
-    applyUrl: "https://www.beyondfinancing.com",
-    scheduleUrl: "https://www.beyondfinancing.com",
+    applyUrl: APPLY_NOW_URL,
+    scheduleUrl: "https://calendly.com/sandropansini",
   },
   {
     id: "warren-wendt",
@@ -54,7 +56,7 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "9788212250",
     assistantMobile: "8576150836",
-    applyUrl: "https://www.beyondfinancing.com",
+    applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://www.beyondfinancing.com",
   },
   {
@@ -65,7 +67,7 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "8576150836",
     assistantMobile: "8576150836",
-    applyUrl: "https://www.beyondfinancing.com",
+    applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://www.beyondfinancing.com",
   },
 ];
@@ -111,12 +113,12 @@ const COPY = {
     updatingScenario: "Updating Scenario...",
     financialSnapshot: "Financial Snapshot",
     estimatedLtv: "Estimated LTV",
-    conversationTitle: "Finley Conversation",
+    conversationTitle: "Conversation with Finley",
     placeholderConversation:
       "Complete the intake and run the preliminary review to begin the Finley Beyond conversation.",
     continueChatting: "Continue chatting with Finley Beyond",
     chatPlaceholder:
-      "Ask a follow-up question, such as: Can I purchase a home? What do I need to purchase this home? How can I speak with a loan officer?",
+      "Ask a question or answer Finley’s next qualification question.",
     sendMessage: "Send Message",
     sending: "Sending...",
     applyNow: "Apply Now",
@@ -165,7 +167,7 @@ const COPY = {
       "Complete as informações e execute a revisão preliminar para iniciar a conversa com Finley Beyond.",
     continueChatting: "Continue conversando com Finley Beyond",
     chatPlaceholder:
-      "Faça uma pergunta, por exemplo: Posso comprar uma casa? O que eu preciso para comprar esta casa? Como posso falar com um loan officer?",
+      "Faça uma pergunta ou responda à próxima pergunta de qualificação do Finley.",
     sendMessage: "Enviar Mensagem",
     sending: "Enviando...",
     applyNow: "Aplicar Agora",
@@ -214,7 +216,7 @@ const COPY = {
       "Complete la información y ejecute la revisión preliminar para comenzar la conversación con Finley Beyond.",
     continueChatting: "Continúe conversando con Finley Beyond",
     chatPlaceholder:
-      "Haga una pregunta, por ejemplo: ¿Puedo comprar una casa? ¿Qué necesito para comprar esta casa? ¿Cómo puedo hablar con un loan officer?",
+      "Haga una pregunta o responda la siguiente pregunta de calificación de Finley.",
     sendMessage: "Enviar Mensaje",
     sending: "Enviando...",
     applyNow: "Aplicar Ahora",
@@ -367,9 +369,13 @@ Borrower profile for context:
         : "Not provided"
     }
 
-You are Finley Beyond, an AI-powered mortgage decision support assistant supervised by a Certified Mortgage Advisor at Beyond Financing.
-This is a borrower-facing conversation.
-The borrower selected language is ${language}.
+Conversation role:
+You are Finley Beyond acting like a professional mortgage loan officer assistant.
+Your job is to gather qualification-oriented information, answer appropriate borrower questions, and help move the borrower toward the assigned loan officer.
+You must never disclose specific loan programs, specific loan terms, personalized interest rates, or definitive qualification determinations to the borrower.
+You may say that rates change and that national average mortgage rates are publicly available, but personalized rate, term, and program determination must come from the licensed loan officer.
+You should encourage the borrower to click Apply Now and advise that the assigned licensed loan officer will review the information personally and advise next steps.
+When helpful, ask the next qualification-style question a loan officer assistant would ask.
 Respond in ${
       language === "pt"
         ? "Portuguese"
@@ -377,10 +383,6 @@ Respond in ${
         ? "Spanish"
         : "English"
     }.
-Do not present exact loan approvals, underwriting decisions, exact program recommendations, lender matches, or commitments to lend.
-Do not state that the borrower qualifies for a specific loan program.
-Keep the response educational, practical, professional, and preliminary.
-Always remind the borrower that final guidance must come from a licensed loan officer using current investor guidelines, overlays, and program requirements.
     `.trim();
   };
 
@@ -414,6 +416,7 @@ Always remind the borrower that final guidance must come from a licensed loan of
           ? `${Math.round(estimatedLtv * 100)}%`
           : "",
     },
+    conversation,
   });
 
   const confirmOfficerSelection = () => {
@@ -457,15 +460,12 @@ Always remind the borrower that final guidance must come from a licensed loan of
       const initialPrompt = `
 ${buildBorrowerContext()}
 
-Please provide a borrower-facing preliminary review with:
-1. General strengths based on the borrower information currently entered
-2. General areas that may need attention
-3. Clear next steps for the borrower
-4. A reminder that the borrower should next enter the target home price and down payment to continue the scenario review
-
-Do not identify a specific loan program.
-Do not identify a lender.
-Keep the tone professional, clear, and easy to understand.
+Start the borrower conversation as a loan officer assistant.
+Briefly acknowledge the borrower information already entered.
+Do not disclose loan programs, rates, terms, or approval status.
+Tell the borrower that this information will be sent to the assigned loan officer for personal review.
+Encourage the borrower to use Apply Now.
+Then ask the next logical qualification-style question.
       `.trim();
 
       const response = await fetch("/api/chat", {
@@ -541,15 +541,11 @@ Keep the tone professional, clear, and easy to understand.
 ${buildBorrowerContext()}
 
 The borrower has now entered the target property scenario.
-Please provide:
-1. A borrower-facing explanation of what this target scenario means at a high level
-2. General items the borrower should be prepared to discuss with a licensed loan officer
-3. General factors that may influence whether this target scenario is workable
-4. A reminder that final guidance must come from a licensed loan officer
-
-Do not identify a specific loan program.
-Do not identify a lender.
-Do not say the borrower is approved or definitively qualifies.
+Acknowledge it briefly.
+Do not disclose loan programs, rates, terms, or approval status.
+Tell the borrower this scenario will be shared with the assigned loan officer for personal analysis.
+Encourage the borrower to click Apply Now.
+Then ask the next logical qualification-style question.
       `.trim();
 
       const response = await fetch("/api/chat", {
@@ -623,15 +619,21 @@ Do not say the borrower is approved or definitively qualifies.
         },
         body: JSON.stringify({
           stage: "follow_up",
-          routing: buildRoutingPayload(),
+          routing: {
+            ...buildRoutingPayload(),
+            conversation: nextConversation,
+          },
           messages: [
             {
               role: "user",
               content: `${buildBorrowerContext()}
 
 Continue the borrower-facing conversation naturally.
-Stay general and compliant.
-Avoid exact program recommendations, lender suggestions, approvals, underwriting decisions, or commitments to lend.`,
+Answer what can properly be answered.
+Never disclose exact loan programs, specific terms, or personalized rates.
+Encourage Apply Now when appropriate.
+Advise that the assigned loan officer will personally review the scenario and advise next steps.
+After answering, ask the next useful qualification-style question if appropriate.`,
             },
             ...nextConversation.map((message) => ({
               role: message.role,
