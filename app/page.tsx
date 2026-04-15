@@ -11,13 +11,16 @@ type FormState = {
   down: string;
 };
 
-function formatCurrency(value: number) {
-  if (!Number.isFinite(value)) return "$0";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
+function extractAiText(data: any): string {
+  return (
+    data?.choices?.[0]?.message?.content ||
+    data?.reply ||
+    data?.message ||
+    data?.response ||
+    data?.content ||
+    data?.text ||
+    (typeof data === "string" ? data : JSON.stringify(data, null, 2))
+  );
 }
 
 function extractAiText(data: any): string {
