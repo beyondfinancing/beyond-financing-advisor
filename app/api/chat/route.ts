@@ -14,81 +14,91 @@ function getLatestUserMessage(messages: ChatMessage[]) {
   return reversed.find((message) => message.role === "user")?.content ?? "";
 }
 
-function buildInitialReview(userMessage: string) {
+function buildInitialBorrowerReview(userMessage: string) {
   const lower = userMessage.toLowerCase();
 
   const highLtv =
     lower.includes("estimated ltv: 9") ||
     lower.includes("ltv: 9") ||
     lower.includes("94%") ||
-    lower.includes("95%") ||
-    lower.includes("high ltv");
+    lower.includes("95%");
 
-  const conventionalDirection = highLtv
-    ? "This scenario appears to fit a conventional high-LTV review, subject to full underwriting, AUS findings, reserve requirements, PMI structure, and investor overlays."
-    : "This scenario appears to fit a conventional financing review, subject to full underwriting and investor eligibility.";
+  const strengths = [
+    "- The scenario reflects income being presented up front for review",
+    "- Funds for down payment or equity are being considered early in the process",
+  ];
 
-  const extraRisk = highLtv
-    ? "\n- Higher LTV may reduce flexibility and increase monthly mortgage insurance"
-    : "";
+  const cautionItems = [
+    "- Final eligibility cannot be determined from intake alone",
+    "- Income, assets, credit, and occupancy must still be fully documented",
+    "- Pricing, mortgage insurance, and lender-specific requirements may affect the final outcome",
+  ];
+
+  if (highLtv) {
+    cautionItems.push(
+      "- A higher loan-to-value structure may reduce flexibility and increase monthly mortgage insurance"
+    );
+  }
 
   return `
-Finley Beyond Initial Review
+Finley Beyond Preliminary Review
 
-Likely Loan Direction:
-${conventionalDirection}
+General strengths in this scenario:
+${strengths.join("\n")}
 
-Key Risk Flags:
-- Final approval cannot be determined from intake alone
-- Income, assets, credit, and occupancy must be fully documented
-- Pricing, mortgage insurance, and lender overlays may materially affect final eligibility${extraRisk}
+General areas that may need attention:
+${cautionItems.join("\n")}
 
-Recommended Next Steps:
-- Run AUS through the appropriate investor channel
-- Verify income documentation and asset sourcing
-- Confirm available funds for closing and reserves
-- Review lender overlays for the selected program
-- Have a licensed loan officer issue final guidance after full file review
+Reasonable next steps:
+- Gather income and asset documents as early as possible
+- Be prepared to discuss available funds for closing, reserves, and monthly payment comfort
+- Review the full picture with a licensed loan officer
+- Allow the licensed loan officer to compare available options under current investor guidelines
 
-Important Notice:
-This is preliminary guidance only and does not constitute a loan approval, underwriting decision, or commitment to lend.
+Important reminder:
+This is preliminary guidance only. Final direction must come from a licensed loan officer after full review of the scenario and current program requirements.
   `.trim();
 }
 
 function buildFollowUpReply(userMessage: string) {
   const lower = userMessage.toLowerCase();
 
-  if (lower.includes("fha")) {
+  if (
+    lower.includes("document") ||
+    lower.includes("documents") ||
+    lower.includes("prepare next") ||
+    lower.includes("collect first")
+  ) {
     return `
-FHA may be worth reviewing if the borrower needs more flexible qualification treatment, especially if conventional pricing, mortgage insurance, or automated findings are less favorable.
+A strong next step is to prepare the core documents early so your licensed loan officer can review the full picture more efficiently.
 
-What to evaluate next:
-- Compare total monthly payment under FHA versus conventional
-- Review upfront and monthly mortgage insurance impact
-- Confirm occupancy, minimum investment, and credit profile
-- Check whether conventional still offers a stronger long-term structure
+Helpful items to gather:
+- Recent income documentation
+- Recent asset statements
+- Government-issued identification
+- Any information related to current debts or obligations
+- Any documentation tied to gift funds, large deposits, or other funds being used in the transaction
 
-This remains preliminary guidance only. A licensed loan officer should compare both options against current investor guidelines before making a recommendation.
+Your licensed loan officer can then tell you exactly what additional items may be needed for your specific situation.
     `.trim();
   }
 
   if (
-    lower.includes("documents") ||
-    lower.includes("document") ||
-    lower.includes("collect first")
+    lower.includes("improve") ||
+    lower.includes("strengthen") ||
+    lower.includes("make my file stronger")
   ) {
     return `
-For a strong next step, begin collecting the core qualification documents first:
+To strengthen a file, it usually helps to focus on the core areas a licensed loan officer will review most closely:
 
-Recommended documents to gather:
-- Most recent pay stubs or income evidence
-- W-2s or tax returns, depending on income type
-- Most recent asset statements for funds to close and reserves
-- Government-issued identification
-- Authorization to pull credit, if not already completed
-- Any documentation relevant to debts, large deposits, or gift funds
+Common ways to strengthen the overall scenario:
+- Keep funds for closing and reserves well documented
+- Reduce outstanding monthly debt where practical
+- Avoid major credit changes during the review process
+- Be ready to provide complete and consistent documentation
+- Discuss payment comfort and cash-to-close expectations early
 
-After that, the licensed loan officer should align the documentation set with the selected program and investor overlays.
+A licensed loan officer can then determine which factors matter most for your particular scenario.
     `.trim();
   }
 
@@ -98,16 +108,32 @@ After that, the licensed loan officer should align the documentation set with th
     lower.includes("increase the down payment")
   ) {
     return `
-Increasing the down payment can strengthen the scenario materially.
+Increasing the down payment may improve the overall structure of the scenario.
 
-Potential benefits:
-- Lower LTV
-- Better mortgage insurance structure
-- Greater flexibility with certain lender overlays
-- Lower monthly housing payment
-- Potentially stronger overall approval profile
+Possible benefits may include:
+- Lower overall loan-to-value
+- Lower monthly payment impact
+- Improved mortgage insurance profile in some cases
+- Greater flexibility depending on the full file review
 
-The next step would be to rerun the scenario with the revised down payment and compare payment, LTV, and program fit.
+Your licensed loan officer can compare the updated numbers and explain how a larger down payment may affect your overall options.
+    `.trim();
+  }
+
+  if (
+    lower.includes("monthly payment") ||
+    lower.includes("payment") ||
+    lower.includes("afford")
+  ) {
+    return `
+Monthly payment comfort should be reviewed carefully alongside income, debts, funds needed to close, and the total monthly housing expense.
+
+A helpful next step is to discuss:
+- your ideal monthly payment range,
+- how much cash you want to keep available after closing,
+- and what level of flexibility matters most to you.
+
+Your licensed loan officer can then help you compare realistic payment scenarios based on current market conditions and full documentation.
     `.trim();
   }
 
@@ -117,29 +143,29 @@ The next step would be to rerun the scenario with the revised down payment and c
     lower.includes("1099")
   ) {
     return `
-If the borrower is self-employed or paid on a 1099 basis, the file should be reviewed differently than a standard salaried borrower.
+If income is self-employed or non-salaried, the review process may require a different documentation path.
 
-Items to review:
-- Length of self-employment
-- Tax return treatment of income
-- Business stability and continuance
-- Whether bank statement, P&L, or other non-QM options may be needed
-- Investor-specific overlays for self-employed borrowers
+That usually means your licensed loan officer will want to review:
+- how the income is earned,
+- how long it has been received,
+- how it is documented,
+- and whether the income is stable and usable under current guidelines.
 
-This could still be viable, but the documentation path and program selection may change materially.
+The best next step is to provide a clear picture of the income source so the licensed loan officer can evaluate it properly.
     `.trim();
   }
 
   return `
-Based on the borrower profile already entered, that question should be reviewed in light of credit, income, debts, funds to close, and the estimated LTV.
+That is a good question to review with the full scenario in mind.
 
-A prudent next step would be:
-- compare the main program options side by side,
-- confirm documentation strength,
-- review lender overlays,
-- and have a licensed loan officer determine the most suitable direction.
+The most practical next step is to discuss it with your licensed loan officer using your complete documentation, payment goals, available funds, and current investor requirements.
 
-If you want, ask the next question more specifically, such as program choice, down payment strategy, documentation, self-employment treatment, gift funds, or approval risks.
+If you want, you can ask a more specific follow-up question about:
+- documents,
+- payment comfort,
+- strengthening the file,
+- down payment strategy,
+- or how to prepare for the next conversation with your loan officer.
   `.trim();
 }
 
@@ -165,12 +191,12 @@ export async function POST(req: Request) {
     }
 
     const isInitialAnalysisRequest =
-      latestUserMessage.toLowerCase().includes("likely loan direction") ||
-      latestUserMessage.toLowerCase().includes("main risk flags") ||
-      latestUserMessage.toLowerCase().includes("recommended next steps");
+      latestUserMessage.toLowerCase().includes("general strengths in this scenario") ||
+      latestUserMessage.toLowerCase().includes("general areas that may need attention") ||
+      latestUserMessage.toLowerCase().includes("reasonable next steps");
 
     const reply = isInitialAnalysisRequest
-      ? buildInitialReview(latestUserMessage)
+      ? buildInitialBorrowerReview(latestUserMessage)
       : buildFollowUpReply(latestUserMessage);
 
     return NextResponse.json({ reply });
