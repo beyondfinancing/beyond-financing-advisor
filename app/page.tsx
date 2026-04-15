@@ -2,6 +2,8 @@
 
 import React, { useMemo, useState } from "react";
 
+type LanguageCode = "en" | "pt" | "es";
+
 type IntakeFormState = {
   name: string;
   email: string;
@@ -28,6 +30,8 @@ type LoanOfficerRecord = {
   assistantEmail: string;
   mobile: string;
   assistantMobile: string;
+  applyUrl: string;
+  scheduleUrl: string;
 };
 
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
@@ -39,6 +43,8 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "8576150836",
     assistantMobile: "8576150836",
+    applyUrl: "https://www.beyondfinancing.com",
+    scheduleUrl: "https://www.beyondfinancing.com",
   },
   {
     id: "warren-wendt",
@@ -48,6 +54,8 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "9788212250",
     assistantMobile: "8576150836",
+    applyUrl: "https://www.beyondfinancing.com",
+    scheduleUrl: "https://www.beyondfinancing.com",
   },
   {
     id: "finley-beyond",
@@ -57,12 +65,164 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantEmail: "myloan@beyondfinancing.com",
     mobile: "8576150836",
     assistantMobile: "8576150836",
+    applyUrl: "https://www.beyondfinancing.com",
+    scheduleUrl: "https://www.beyondfinancing.com",
   },
 ];
 
-const DEFAULT_LOAN_OFFICER = LOAN_OFFICERS.find(
-  (officer) => officer.id === "finley-beyond"
-)!;
+const DEFAULT_LOAN_OFFICER =
+  LOAN_OFFICERS.find((officer) => officer.id === "finley-beyond") ||
+  LOAN_OFFICERS[0];
+
+const COPY = {
+  en: {
+    heroTitle: "Finley Beyond Powered by Beyond Intelligence™",
+    heroText:
+      "AI-Powered Mortgage Decision System supervised by a Certified Mortgage Advisor.",
+    languageLabel: "Language",
+    disclaimerTitle: "Required Disclaimer",
+    disclaimerText:
+      "This system provides preliminary guidance only. It does not constitute a loan approval, underwriting decision, commitment to lend, legal advice, tax advice, or final program eligibility determination. All scenarios must be independently reviewed and confirmed by a licensed loan officer using current investor guidelines, overlays, and program requirements.",
+    acceptText:
+      "I acknowledge and accept this disclaimer before using the system.",
+    intakeTitle: "Borrower Intake",
+    intakeLocked:
+      "The intake section is locked until the disclaimer is accepted.",
+    borrowerName: "Borrower Name",
+    email: "Email",
+    credit: "Estimated Credit Score",
+    income: "Gross Monthly Income",
+    debt: "Monthly Debt",
+    loanOfficer: "Loan Officer Name or NMLS #",
+    loanOfficerPlaceholder: "Type loan officer name or NMLS #",
+    confirmLoanOfficer: "Confirm Loan Officer",
+    unknownLoanOfficer: "I Do Not Know My Loan Officer",
+    assignedRouting: "Assigned Routing",
+    internalRoutingPrefix: "Internal summary will route to",
+    runPreliminaryReview: "Run Preliminary Review",
+    reviewing: "Reviewing...",
+    targetScenarioTitle: "Property Target Scenario",
+    targetScenarioText:
+      "Now enter the target home price and the estimated down payment so Finley Beyond can continue the scenario with the numbers you are actually considering.",
+    homePrice: "Estimated Home Price",
+    downPayment: "Estimated Down Payment",
+    estimatedLoanAmount: "Estimated Loan Amount",
+    continueScenario: "Continue with This Scenario",
+    updatingScenario: "Updating Scenario...",
+    financialSnapshot: "Financial Snapshot",
+    estimatedLtv: "Estimated LTV",
+    conversationTitle: "Finley Conversation",
+    placeholderConversation:
+      "Complete the intake and run the preliminary review to begin the Finley Beyond conversation.",
+    continueChatting: "Continue chatting with Finley Beyond",
+    chatPlaceholder:
+      "Ask a follow-up question, such as: Can I purchase a home? What do I need to purchase this home? How can I speak with a loan officer?",
+    sendMessage: "Send Message",
+    sending: "Sending...",
+    applyNow: "Apply Now",
+    scheduleLoanOfficer: "Schedule with Loan Officer",
+    emailLoanOfficer: "Email Loan Officer",
+    actionTitle: "Next Actions",
+  },
+  pt: {
+    heroTitle: "Finley Beyond com tecnologia Beyond Intelligence™",
+    heroText:
+      "Sistema de orientação hipotecária com IA supervisionado por um Certified Mortgage Advisor.",
+    languageLabel: "Idioma",
+    disclaimerTitle: "Aviso Obrigatório",
+    disclaimerText:
+      "Este sistema fornece apenas orientação preliminar. Não constitui aprovação de empréstimo, decisão de underwriting, compromisso de conceder crédito, aconselhamento jurídico, aconselhamento fiscal ou determinação final de elegibilidade de programa. Todos os cenários devem ser analisados e confirmados de forma independente por um loan officer licenciado, com base nas diretrizes atuais dos investidores, overlays e requisitos do programa.",
+    acceptText:
+      "Reconheço e aceito este aviso antes de usar o sistema.",
+    intakeTitle: "Informações do Cliente",
+    intakeLocked:
+      "A seção de informações permanece bloqueada até que o aviso seja aceito.",
+    borrowerName: "Nome do Cliente",
+    email: "Email",
+    credit: "Pontuação de Crédito Estimada",
+    income: "Renda Bruta Mensal",
+    debt: "Dívida Mensal",
+    loanOfficer: "Nome do Loan Officer ou NMLS #",
+    loanOfficerPlaceholder: "Digite o nome do loan officer ou o NMLS #",
+    confirmLoanOfficer: "Confirmar Loan Officer",
+    unknownLoanOfficer: "Não Sei Meu Loan Officer",
+    assignedRouting: "Roteamento Definido",
+    internalRoutingPrefix: "O resumo interno será enviado para",
+    runPreliminaryReview: "Executar Revisão Preliminar",
+    reviewing: "Analisando...",
+    targetScenarioTitle: "Cenário do Imóvel Desejado",
+    targetScenarioText:
+      "Agora informe o valor estimado do imóvel e a entrada estimada para que Finley Beyond continue o cenário com os números que você realmente está considerando.",
+    homePrice: "Valor Estimado do Imóvel",
+    downPayment: "Entrada Estimada",
+    estimatedLoanAmount: "Valor Estimado do Empréstimo",
+    continueScenario: "Continuar com Este Cenário",
+    updatingScenario: "Atualizando Cenário...",
+    financialSnapshot: "Resumo Financeiro",
+    estimatedLtv: "LTV Estimado",
+    conversationTitle: "Conversa com Finley",
+    placeholderConversation:
+      "Complete as informações e execute a revisão preliminar para iniciar a conversa com Finley Beyond.",
+    continueChatting: "Continue conversando com Finley Beyond",
+    chatPlaceholder:
+      "Faça uma pergunta, por exemplo: Posso comprar uma casa? O que eu preciso para comprar esta casa? Como posso falar com um loan officer?",
+    sendMessage: "Enviar Mensagem",
+    sending: "Enviando...",
+    applyNow: "Aplicar Agora",
+    scheduleLoanOfficer: "Agendar com o Loan Officer",
+    emailLoanOfficer: "Enviar Email ao Loan Officer",
+    actionTitle: "Próximos Passos",
+  },
+  es: {
+    heroTitle: "Finley Beyond impulsado por Beyond Intelligence™",
+    heroText:
+      "Sistema de orientación hipotecaria con IA supervisado por un Certified Mortgage Advisor.",
+    languageLabel: "Idioma",
+    disclaimerTitle: "Aviso Requerido",
+    disclaimerText:
+      "Este sistema proporciona únicamente orientación preliminar. No constituye aprobación de préstamo, decisión de underwriting, compromiso de prestar, asesoría legal, asesoría fiscal ni determinación final de elegibilidad de programa. Todos los escenarios deben ser revisados y confirmados de manera independiente por un loan officer con licencia utilizando las guías actuales de inversionistas, overlays y requisitos del programa.",
+    acceptText:
+      "Reconozco y acepto este aviso antes de usar el sistema.",
+    intakeTitle: "Información del Cliente",
+    intakeLocked:
+      "La sección de información permanece bloqueada hasta que se acepte el aviso.",
+    borrowerName: "Nombre del Cliente",
+    email: "Correo Electrónico",
+    credit: "Puntaje de Crédito Estimado",
+    income: "Ingreso Bruto Mensual",
+    debt: "Deuda Mensual",
+    loanOfficer: "Nombre del Loan Officer o NMLS #",
+    loanOfficerPlaceholder: "Escriba el nombre del loan officer o el NMLS #",
+    confirmLoanOfficer: "Confirmar Loan Officer",
+    unknownLoanOfficer: "No Conozco Mi Loan Officer",
+    assignedRouting: "Asignación Definida",
+    internalRoutingPrefix: "El resumen interno se enviará a",
+    runPreliminaryReview: "Ejecutar Revisión Preliminar",
+    reviewing: "Revisando...",
+    targetScenarioTitle: "Escenario del Inmueble Deseado",
+    targetScenarioText:
+      "Ahora ingrese el precio estimado de la vivienda y el pago inicial estimado para que Finley Beyond continúe el escenario con las cifras que realmente está considerando.",
+    homePrice: "Precio Estimado de la Vivienda",
+    downPayment: "Pago Inicial Estimado",
+    estimatedLoanAmount: "Monto Estimado del Préstamo",
+    continueScenario: "Continuar con Este Escenario",
+    updatingScenario: "Actualizando Escenario...",
+    financialSnapshot: "Resumen Financiero",
+    estimatedLtv: "LTV Estimado",
+    conversationTitle: "Conversación con Finley",
+    placeholderConversation:
+      "Complete la información y ejecute la revisión preliminar para comenzar la conversación con Finley Beyond.",
+    continueChatting: "Continúe conversando con Finley Beyond",
+    chatPlaceholder:
+      "Haga una pregunta, por ejemplo: ¿Puedo comprar una casa? ¿Qué necesito para comprar esta casa? ¿Cómo puedo hablar con un loan officer?",
+    sendMessage: "Enviar Mensaje",
+    sending: "Enviando...",
+    applyNow: "Aplicar Ahora",
+    scheduleLoanOfficer: "Agendar con el Loan Officer",
+    emailLoanOfficer: "Enviar Correo al Loan Officer",
+    actionTitle: "Próximos Pasos",
+  },
+} as const;
 
 function formatCurrency(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "$0";
@@ -122,6 +282,7 @@ function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
 }
 
 export default function Page() {
+  const [language, setLanguage] = useState<LanguageCode>("en");
   const [accepted, setAccepted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [scenarioUnlocked, setScenarioUnlocked] = useState(false);
@@ -148,6 +309,8 @@ export default function Page() {
     homePrice: "",
     downPayment: "",
   });
+
+  const t = COPY[language];
 
   const officerSuggestions = useMemo(() => {
     const query = loanOfficerQuery.trim().toLowerCase();
@@ -185,6 +348,7 @@ export default function Page() {
   const buildBorrowerContext = () => {
     return `
 Borrower profile for context:
+- Preferred language: ${language}
 - Name: ${intakeForm.name || "Not provided"}
 - Email: ${intakeForm.email || "Not provided"}
 - Estimated Credit Score: ${intakeForm.credit || "Not provided"}
@@ -205,6 +369,14 @@ Borrower profile for context:
 
 You are Finley Beyond, an AI-powered mortgage decision support assistant supervised by a Certified Mortgage Advisor at Beyond Financing.
 This is a borrower-facing conversation.
+The borrower selected language is ${language}.
+Respond in ${
+      language === "pt"
+        ? "Portuguese"
+        : language === "es"
+        ? "Spanish"
+        : "English"
+    }.
 Do not present exact loan approvals, underwriting decisions, exact program recommendations, lender matches, or commitments to lend.
 Do not state that the borrower qualifies for a specific loan program.
 Keep the response educational, practical, professional, and preliminary.
@@ -213,6 +385,7 @@ Always remind the borrower that final guidance must come from a licensed loan of
   };
 
   const buildRoutingPayload = () => ({
+    language,
     loanOfficerQuery,
     selectedOfficer: {
       id: activeOfficer.id,
@@ -222,6 +395,8 @@ Always remind the borrower that final guidance must come from a licensed loan of
       assistantEmail: activeOfficer.assistantEmail,
       mobile: activeOfficer.mobile,
       assistantMobile: activeOfficer.assistantMobile,
+      applyUrl: activeOfficer.applyUrl,
+      scheduleUrl: activeOfficer.scheduleUrl,
     },
     borrower: {
       name: intakeForm.name,
@@ -248,13 +423,17 @@ Always remind the borrower that final guidance must come from a licensed loan of
       setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
     } else {
       setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-      setLoanOfficerQuery(`${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`);
+      setLoanOfficerQuery(
+        `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
+      );
     }
   };
 
   const useDefaultFinley = () => {
     setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-    setLoanOfficerQuery(`${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`);
+    setLoanOfficerQuery(
+      `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
+    );
   };
 
   const runPreliminaryReview = async () => {
@@ -265,7 +444,9 @@ Always remind the borrower that final guidance must come from a licensed loan of
     setConversation([]);
 
     const resolvedOfficer =
-      selectedOfficer || resolveOfficerFromQuery(loanOfficerQuery) || DEFAULT_LOAN_OFFICER;
+      selectedOfficer ||
+      resolveOfficerFromQuery(loanOfficerQuery) ||
+      DEFAULT_LOAN_OFFICER;
 
     if (!selectedOfficer || selectedOfficer.id !== resolvedOfficer.id) {
       setSelectedOfficer(resolvedOfficer);
@@ -304,6 +485,8 @@ Keep the tone professional, clear, and easy to understand.
               assistantEmail: resolvedOfficer.assistantEmail,
               mobile: resolvedOfficer.mobile,
               assistantMobile: resolvedOfficer.assistantMobile,
+              applyUrl: resolvedOfficer.applyUrl,
+              scheduleUrl: resolvedOfficer.scheduleUrl,
             },
           },
           messages: [
@@ -486,6 +669,16 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
     }
   };
 
+  const mailtoHref = `mailto:${activeOfficer.email}?subject=${encodeURIComponent(
+    `Borrower inquiry from ${intakeForm.name || "Beyond Intelligence"}`
+  )}&body=${encodeURIComponent(
+    language === "pt"
+      ? `Olá ${activeOfficer.name}, gostaria de falar sobre meu cenário de financiamento.`
+      : language === "es"
+      ? `Hola ${activeOfficer.name}, me gustaría hablar sobre mi escenario de financiamiento.`
+      : `Hello ${activeOfficer.name}, I would like to discuss my financing scenario.`
+  )}`;
+
   return (
     <main style={styles.page}>
       <style>{`
@@ -555,29 +748,32 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
           <div style={styles.heroEyebrow}>Beyond Intelligence™</div>
 
           <h1 className="bf-header-title" style={styles.heroTitle}>
-            Finley Beyond Powered by Beyond Intelligence™
+            {t.heroTitle}
           </h1>
 
-          <p style={styles.heroText}>
-            AI-Powered Mortgage Decision System supervised by a Certified
-            Mortgage Advisor.
-          </p>
+          <p style={styles.heroText}>{t.heroText}</p>
         </div>
 
         <div className="bf-main-grid" style={styles.mainGrid}>
           <section className="bf-card" style={styles.card}>
+            <div style={styles.languageRow}>
+              <label style={styles.label}>{t.languageLabel}</label>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as LanguageCode)}
+                style={styles.select}
+              >
+                <option value="en">English</option>
+                <option value="pt">Português</option>
+                <option value="es">Español</option>
+              </select>
+            </div>
+
             <h2 className="bf-section-title" style={styles.sectionTitle}>
-              Required Disclaimer
+              {t.disclaimerTitle}
             </h2>
 
-            <div style={styles.noticeBox}>
-              This system provides preliminary guidance only. It does not
-              constitute a loan approval, underwriting decision, commitment to
-              lend, legal advice, tax advice, or final program eligibility
-              determination. All scenarios must be independently reviewed and
-              confirmed by a licensed loan officer using current investor
-              guidelines, overlays, and program requirements.
-            </div>
+            <div style={styles.noticeBox}>{t.disclaimerText}</div>
 
             <label style={styles.checkboxRow}>
               <input
@@ -586,18 +782,14 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                 onChange={(e) => setAccepted(e.target.checked)}
                 style={{ marginTop: 3 }}
               />
-              I acknowledge and accept this disclaimer before using the system.
+              {t.acceptText}
             </label>
 
             <h2 className="bf-section-title" style={styles.sectionTitle}>
-              Borrower Intake
+              {t.intakeTitle}
             </h2>
 
-            {!accepted && (
-              <div style={styles.lockBox}>
-                The intake section is locked until the disclaimer is accepted.
-              </div>
-            )}
+            {!accepted && <div style={styles.lockBox}>{t.intakeLocked}</div>}
 
             <div
               className="bf-form-grid"
@@ -608,62 +800,62 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
               }}
             >
               <div>
-                <label style={styles.label}>Borrower Name</label>
+                <label style={styles.label}>{t.borrowerName}</label>
                 <input
                   style={styles.input}
                   type="text"
                   value={intakeForm.name}
                   onChange={(e) => setIntakeField("name", e.target.value)}
-                  placeholder="Enter borrower name"
+                  placeholder={t.borrowerName}
                 />
               </div>
 
               <div>
-                <label style={styles.label}>Email</label>
+                <label style={styles.label}>{t.email}</label>
                 <input
                   style={styles.input}
                   type="email"
                   value={intakeForm.email}
                   onChange={(e) => setIntakeField("email", e.target.value)}
-                  placeholder="Enter email address"
+                  placeholder={t.email}
                 />
               </div>
 
               <div>
-                <label style={styles.label}>Estimated Credit Score</label>
+                <label style={styles.label}>{t.credit}</label>
                 <input
                   style={styles.input}
                   type="number"
                   value={intakeForm.credit}
                   onChange={(e) => setIntakeField("credit", e.target.value)}
-                  placeholder="Enter estimated credit score"
+                  placeholder={t.credit}
                 />
               </div>
 
               <div>
-                <label style={styles.label}>Gross Monthly Income</label>
+                <label style={styles.label}>{t.income}</label>
                 <input
                   style={styles.input}
                   type="number"
                   value={intakeForm.income}
                   onChange={(e) => setIntakeField("income", e.target.value)}
-                  placeholder="Enter gross monthly income"
+                  placeholder={t.income}
                 />
               </div>
 
               <div>
-                <label style={styles.label}>Monthly Debt</label>
+                <label style={styles.label}>{t.debt}</label>
                 <input
                   style={styles.input}
                   type="number"
                   value={intakeForm.debt}
                   onChange={(e) => setIntakeField("debt", e.target.value)}
-                  placeholder="Enter monthly debt"
+                  placeholder={t.debt}
                 />
               </div>
 
               <div style={{ position: "relative" }}>
-                <label style={styles.label}>Loan Officer Name or NMLS #</label>
+                <label style={styles.label}>{t.loanOfficer}</label>
                 <input
                   style={styles.input}
                   type="text"
@@ -672,7 +864,7 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                     setLoanOfficerQuery(e.target.value);
                     setSelectedOfficer(null);
                   }}
-                  placeholder="Type loan officer name or NMLS #"
+                  placeholder={t.loanOfficerPlaceholder}
                 />
 
                 {officerSuggestions.length > 0 && (
@@ -709,7 +901,7 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                     cursor: "pointer",
                   }}
                 >
-                  Confirm Loan Officer
+                  {t.confirmLoanOfficer}
                 </button>
 
                 <button
@@ -721,18 +913,18 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                     cursor: "pointer",
                   }}
                 >
-                  I Do Not Know My Loan Officer
+                  {t.unknownLoanOfficer}
                 </button>
               </div>
             )}
 
             <div style={styles.assignedOfficerBox}>
-              <div style={styles.assignedOfficerTitle}>Assigned Routing</div>
+              <div style={styles.assignedOfficerTitle}>{t.assignedRouting}</div>
               <div style={styles.assignedOfficerText}>
                 {activeOfficer.name} — NMLS {activeOfficer.nmls}
               </div>
               <div style={styles.assignedOfficerSubtext}>
-                Internal summary will route to {activeOfficer.email} and{" "}
+                {t.internalRoutingPrefix} {activeOfficer.email} and{" "}
                 {activeOfficer.assistantEmail}.
               </div>
             </div>
@@ -748,25 +940,21 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                   cursor: !accepted || loading ? "not-allowed" : "pointer",
                 }}
               >
-                {loading ? "Reviewing..." : "Run Preliminary Review"}
+                {loading ? t.reviewing : t.runPreliminaryReview}
               </button>
             </div>
 
             {scenarioUnlocked && (
               <div style={styles.secondStepWrap}>
                 <h2 className="bf-section-title" style={styles.sectionTitle}>
-                  Property Target Scenario
+                  {t.targetScenarioTitle}
                 </h2>
 
-                <div style={styles.infoBox}>
-                  Now enter the target home price and the estimated down payment
-                  so Finley Beyond can continue the scenario with the numbers you
-                  are actually considering.
-                </div>
+                <div style={styles.infoBox}>{t.targetScenarioText}</div>
 
                 <div className="bf-form-grid" style={styles.formGrid}>
                   <div>
-                    <label style={styles.label}>Estimated Home Price</label>
+                    <label style={styles.label}>{t.homePrice}</label>
                     <input
                       style={styles.input}
                       type="number"
@@ -774,12 +962,12 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                       onChange={(e) =>
                         setScenarioField("homePrice", e.target.value)
                       }
-                      placeholder="Enter estimated home price"
+                      placeholder={t.homePrice}
                     />
                   </div>
 
                   <div>
-                    <label style={styles.label}>Estimated Down Payment</label>
+                    <label style={styles.label}>{t.downPayment}</label>
                     <input
                       style={styles.input}
                       type="number"
@@ -787,14 +975,14 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                       onChange={(e) =>
                         setScenarioField("downPayment", e.target.value)
                       }
-                      placeholder="Enter estimated down payment"
+                      placeholder={t.downPayment}
                     />
                   </div>
                 </div>
 
                 <div style={styles.loanPreviewBox}>
                   <div style={styles.loanPreviewTitle}>
-                    Estimated Loan Amount
+                    {t.estimatedLoanAmount}
                   </div>
                   <div style={styles.loanPreviewValue}>
                     {formatCurrency(estimatedLoanAmount)}
@@ -826,9 +1014,7 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                           : "pointer",
                     }}
                   >
-                    {chatLoading
-                      ? "Updating Scenario..."
-                      : "Continue with This Scenario"}
+                    {chatLoading ? t.updatingScenario : t.continueScenario}
                   </button>
                 </div>
               </div>
@@ -839,23 +1025,23 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
             {scenarioUnlocked && (
               <div className="bf-card" style={styles.card}>
                 <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
-                  Financial Snapshot
+                  {t.financialSnapshot}
                 </h3>
 
                 <MetricCard
-                  title="Estimated Home Price"
+                  title={t.homePrice}
                   value={formatCurrency(Number(scenarioForm.homePrice) || 0)}
                 />
                 <MetricCard
-                  title="Estimated Down Payment"
+                  title={t.downPayment}
                   value={formatCurrency(Number(scenarioForm.downPayment) || 0)}
                 />
                 <MetricCard
-                  title="Estimated Loan Amount"
+                  title={t.estimatedLoanAmount}
                   value={formatCurrency(estimatedLoanAmount)}
                 />
                 <MetricCard
-                  title="Estimated LTV"
+                  title={t.estimatedLtv}
                   value={
                     Number(scenarioForm.homePrice) > 0
                       ? `${Math.round(estimatedLtv * 100)}%`
@@ -865,15 +1051,46 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
               </div>
             )}
 
+            {scenarioUnlocked && (
+              <div className="bf-card" style={styles.card}>
+                <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
+                  {t.actionTitle}
+                </h3>
+
+                <div style={styles.actionButtonWrap}>
+                  <a
+                    href={activeOfficer.applyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={styles.actionLinkPrimary}
+                  >
+                    {t.applyNow}
+                  </a>
+
+                  <a
+                    href={activeOfficer.scheduleUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={styles.actionLinkSecondary}
+                  >
+                    {t.scheduleLoanOfficer}
+                  </a>
+
+                  <a href={mailtoHref} style={styles.actionLinkOutline}>
+                    {t.emailLoanOfficer}
+                  </a>
+                </div>
+              </div>
+            )}
+
             <div className="bf-card" style={styles.card}>
               <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
-                Finley Conversation
+                {t.conversationTitle}
               </h3>
 
               {!submitted && (
                 <div style={styles.placeholderBox}>
-                  Complete the intake and run the preliminary review to begin the
-                  Finley Beyond conversation.
+                  {t.placeholderConversation}
                 </div>
               )}
 
@@ -922,14 +1139,12 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                   {chatError && <div style={styles.errorMiniBox}>{chatError}</div>}
 
                   <div style={styles.chatComposerWrap}>
-                    <label style={styles.label}>
-                      Continue chatting with Finley Beyond
-                    </label>
+                    <label style={styles.label}>{t.continueChatting}</label>
 
                     <textarea
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Ask a follow-up question, such as: Can I buy a house with this information? How can I apply for a mortgage? How can I speak with a loan officer?"
+                      placeholder={t.chatPlaceholder}
                       rows={4}
                       style={styles.textarea}
                       disabled={chatLoading}
@@ -951,7 +1166,7 @@ Avoid exact program recommendations, lender suggestions, approvals, underwriting
                             : "pointer",
                       }}
                     >
-                      {chatLoading ? "Sending..." : "Send Message"}
+                      {chatLoading ? t.sending : t.sendMessage}
                     </button>
                   </div>
                 </>
@@ -1044,6 +1259,23 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 16,
     fontSize: 22,
     color: "#263366",
+  },
+  languageRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "end",
+    gap: 12,
+    marginBottom: 18,
+    flexWrap: "wrap",
+  },
+  select: {
+    minWidth: 180,
+    border: "1px solid #cbd5e1",
+    borderRadius: 12,
+    padding: "10px 12px",
+    fontSize: 14,
+    backgroundColor: "#ffffff",
+    color: "#111827",
   },
   noticeBox: {
     border: "1px solid #dbe3f0",
@@ -1288,5 +1520,41 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     lineHeight: 1.5,
     color: "#475569",
+  },
+  actionButtonWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+  actionLinkPrimary: {
+    display: "block",
+    textAlign: "center",
+    textDecoration: "none",
+    color: "#ffffff",
+    backgroundColor: "#263366",
+    borderRadius: 12,
+    padding: "13px 18px",
+    fontWeight: 700,
+  },
+  actionLinkSecondary: {
+    display: "block",
+    textAlign: "center",
+    textDecoration: "none",
+    color: "#ffffff",
+    backgroundColor: "#0096C7",
+    borderRadius: 12,
+    padding: "13px 18px",
+    fontWeight: 700,
+  },
+  actionLinkOutline: {
+    display: "block",
+    textAlign: "center",
+    textDecoration: "none",
+    color: "#263366",
+    backgroundColor: "#ffffff",
+    border: "1px solid #263366",
+    borderRadius: 12,
+    padding: "13px 18px",
+    fontWeight: 700,
   },
 };
