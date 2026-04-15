@@ -2,13 +2,17 @@
 
 import React, { useMemo, useState } from "react";
 
-type FormState = {
+type IntakeFormState = {
   name: string;
   email: string;
   credit: string;
   income: string;
   debt: string;
-  down: string;
+};
+
+type ScenarioFormState = {
+  homePrice: string;
+  downPayment: string;
 };
 
 type ChatMessage = {
@@ -17,7 +21,7 @@ type ChatMessage = {
 };
 
 function formatCurrency(value: number) {
-  if (!Number.isFinite(value)) return "$0";
+  if (!Number.isFinite(value) || value <= 0) return "$0";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -55,91 +59,85 @@ function extractAiText(data: unknown): string {
 export default function Page() {
   const [accepted, setAccepted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [scenarioUnlocked, setScenarioUnlocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
-  const [aiResponse, setAiResponse] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [chatError, setChatError] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
 
-  const [form, setForm] = useState<FormState>({
+  const [intakeForm, setIntakeForm] = useState<IntakeFormState>({
     name: "",
     email: "",
-    credit: "700",
-    income: "12000",
-    debt: "1200",
-    down: "50000",
+    credit: "",
+    income: "",
+    debt: "",
   });
 
-  const setField = (key: keyof FormState, value: string) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  const [scenarioForm, setScenarioForm] = useState<ScenarioFormState>({
+    homePrice: "",
+    downPayment: "",
+  });
+
+  const setIntakeField = (key: keyof IntakeFormState, value: string) => {
+    setIntakeForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const results = useMemo(() => {
-    const income = Number(form.income) || 0;
-    const debt = Number(form.debt) || 0;
-    const down = Number(form.down) || 0;
+  const setScenarioField = (key: keyof ScenarioFormState, value: string) => {
+    setScenarioForm((prev) => ({ ...prev, [key]: value }));
+  };
 
-    const monthlyAvailable = Math.max(income * 0.45 - debt, 0);
-    const monthlyRate = 0.075 / 12;
-    const months = 360;
+  const estimatedLoanAmount = useMemo(() => {
+    const homePrice = Number(scenarioForm.homePrice) || 0;
+    const downPayment = Number(scenarioForm.downPayment) || 0;
+    return Math.max(homePrice - downPayment, 0);
+  }, [scenarioForm]);
 
-    const estimatedLoan =
-      monthlyAvailable > 0
-        ? (monthlyAvailable * (1 - Math.pow(1 + monthlyRate, -months))) /
-          monthlyRate
-        : 0;
-
-    const estimatedHomePrice = estimatedLoan + down;
-    const ltv =
-      estimatedHomePrice > 0 ? estimatedLoan / estimatedHomePrice : 0;
-
-    return {
-      estimatedHomePrice,
-      estimatedLoan,
-      ltv,
-    };
-  }, [form]);
+  const estimatedLtv = useMemo(() => {
+    const homePrice = Number(scenarioForm.homePrice) || 0;
+    if (homePrice <= 0) return 0;
+    return estimatedLoanAmount / homePrice;
+  }, [scenarioForm, estimatedLoanAmount]);
 
   const buildBorrowerContext = () => {
     return `
 Borrower profile for context:
-- Name: ${form.name || "Not provided"}
-- Email: ${form.email || "Not provided"}
-- Estimated Credit Score: ${form.credit}
-- Gross Monthly Income: ${form.income}
-- Monthly Debt: ${form.debt}
-- Down Payment / Equity: ${form.down}
-- Estimated Home Price: ${Math.round(results.estimatedHomePrice)}
-- Estimated Loan Amount: ${Math.round(results.estimatedLoan)}
-- Estimated LTV: ${Math.round(results.ltv * 100)}%
+- Name: ${intakeForm.name || "Not provided"}
+- Email: ${intakeForm.email || "Not provided"}
+- Estimated Credit Score: ${intakeForm.credit || "Not provided"}
+- Gross Monthly Income: ${intakeForm.income || "Not provided"}
+- Monthly Debt: ${intakeForm.debt || "Not provided"}
+- Estimated Home Price: ${scenarioForm.homePrice || "Not provided"}
+- Estimated Down Payment: ${scenarioForm.downPayment || "Not provided"}
+- Estimated Loan Amount: ${estimatedLoanAmount > 0 ? Math.round(estimatedLoanAmount) : "Not provided"}
+- Estimated LTV: ${Number(scenarioForm.homePrice) > 0 ? `${Math.round(estimatedLtv * 100)}%` : "Not provided"}
 
 You are Finley Beyond, an AI-powered mortgage decision support assistant supervised by a Certified Mortgage Advisor at Beyond Financing.
 This is a borrower-facing conversation.
-Do not present exact program approvals, exact program recommendations, lender matches, underwriting conclusions, or commitments to lend.
+Do not present exact loan approvals, underwriting decisions, exact program recommendations, lender matches, or commitments to lend.
 Do not state that the borrower qualifies for a specific loan program.
-Keep the response educational, practical, and preliminary.
-Always remind the user that a licensed loan officer must review the scenario using current investor guidelines, overlays, and program requirements.
+Keep the response educational, practical, professional, and preliminary.
+Always remind the borrower that final guidance must come from a licensed loan officer using current investor guidelines, overlays, and program requirements.
     `.trim();
   };
 
-  const runAnalysis = async () => {
+  const runPreliminaryReview = async () => {
     setSubmitted(true);
     setLoading(true);
     setErrorMessage("");
     setChatError("");
-    setAiResponse("Finley Beyond is reviewing this scenario...");
+    setConversation([]);
 
     try {
       const initialPrompt = `
 ${buildBorrowerContext()}
 
 Please provide a borrower-facing preliminary review with:
-1. General strengths in the scenario
+1. General strengths based on the borrower information currently entered
 2. General areas that may need attention
-3. Reasonable next steps for the borrower
-4. A reminder that final guidance must come from a licensed loan officer
+3. Clear next steps for the borrower
+4. A reminder that the borrower should next enter the target home price and down payment to continue the scenario review
 
 Do not identify a specific loan program.
 Do not identify a lender.
@@ -170,12 +168,80 @@ Keep the tone professional, clear, and easy to understand.
         );
       }
 
-      const text = extractAiText(data);
       const finalText =
-        text || "No response was returned from the AI system.";
+        extractAiText(data) || "No response was returned from the AI system.";
 
-      setAiResponse(finalText);
       setConversation([
+        {
+          role: "assistant",
+          content: finalText,
+        },
+      ]);
+      setScenarioUnlocked(true);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "There was an error connecting to the AI system.";
+      setErrorMessage(message);
+      setConversation([]);
+      setScenarioUnlocked(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateScenarioAndContinue = async () => {
+    if (!submitted || !scenarioUnlocked) return;
+
+    setChatLoading(true);
+    setChatError("");
+
+    try {
+      const prompt = `
+${buildBorrowerContext()}
+
+The borrower has now entered the target property scenario.
+Please provide:
+1. A borrower-facing explanation of what this target scenario means at a high level
+2. General items the borrower should be prepared to discuss with a licensed loan officer
+3. General factors that may influence whether this target scenario is workable
+4. A reminder that final guidance must come from a licensed loan officer
+
+Do not identify a specific loan program.
+Do not identify a lender.
+Do not say the borrower is approved or definitively qualifies.
+      `.trim();
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+        }),
+      });
+
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        const extracted = extractAiText(data);
+        throw new Error(
+          extracted || "The scenario update did not complete successfully."
+        );
+      }
+
+      const finalText =
+        extractAiText(data) || "No response was returned from the AI system.";
+
+      setConversation((prev) => [
+        ...prev,
         {
           role: "assistant",
           content: finalText,
@@ -185,12 +251,10 @@ Keep the tone professional, clear, and easy to understand.
       const message =
         error instanceof Error
           ? error.message
-          : "There was an error connecting to the AI system.";
-      setErrorMessage(message);
-      setAiResponse("");
-      setConversation([]);
+          : "There was an error updating the scenario.";
+      setChatError(message);
     } finally {
-      setLoading(false);
+      setChatLoading(false);
     }
   };
 
@@ -211,8 +275,6 @@ Keep the tone professional, clear, and easy to understand.
     setChatInput("");
 
     try {
-      const systemContext = buildBorrowerContext();
-
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -222,7 +284,11 @@ Keep the tone professional, clear, and easy to understand.
           messages: [
             {
               role: "user",
-              content: `${systemContext}\n\nContinue the borrower-facing conversation naturally. Stay general and compliant. Avoid specific program recommendations, lender suggestions, approvals, or commitments.`,
+              content: `${buildBorrowerContext()}
+
+Continue the borrower-facing conversation naturally.
+Stay general and compliant.
+Avoid exact program recommendations, lender suggestions, approvals, underwriting decisions, or commitments to lend.`,
             },
             ...nextConversation.map((message) => ({
               role: message.role,
@@ -241,9 +307,8 @@ Keep the tone professional, clear, and easy to understand.
         );
       }
 
-      const text = extractAiText(data);
       const finalText =
-        text || "No response was returned from the AI system.";
+        extractAiText(data) || "No response was returned from the AI system.";
 
       setConversation((prev) => [
         ...prev,
@@ -387,8 +452,8 @@ Keep the tone professional, clear, and easy to understand.
                 <input
                   style={styles.input}
                   type="text"
-                  value={form.name}
-                  onChange={(e) => setField("name", e.target.value)}
+                  value={intakeForm.name}
+                  onChange={(e) => setIntakeField("name", e.target.value)}
                   placeholder="Enter borrower name"
                 />
               </div>
@@ -398,8 +463,8 @@ Keep the tone professional, clear, and easy to understand.
                 <input
                   style={styles.input}
                   type="email"
-                  value={form.email}
-                  onChange={(e) => setField("email", e.target.value)}
+                  value={intakeForm.email}
+                  onChange={(e) => setIntakeField("email", e.target.value)}
                   placeholder="Enter email address"
                 />
               </div>
@@ -409,9 +474,9 @@ Keep the tone professional, clear, and easy to understand.
                 <input
                   style={styles.input}
                   type="number"
-                  value={form.credit}
-                  onChange={(e) => setField("credit", e.target.value)}
-                  placeholder="700"
+                  value={intakeForm.credit}
+                  onChange={(e) => setIntakeField("credit", e.target.value)}
+                  placeholder="Enter estimated credit score"
                 />
               </div>
 
@@ -420,9 +485,9 @@ Keep the tone professional, clear, and easy to understand.
                 <input
                   style={styles.input}
                   type="number"
-                  value={form.income}
-                  onChange={(e) => setField("income", e.target.value)}
-                  placeholder="12000"
+                  value={intakeForm.income}
+                  onChange={(e) => setIntakeField("income", e.target.value)}
+                  placeholder="Enter gross monthly income"
                 />
               </div>
 
@@ -431,20 +496,9 @@ Keep the tone professional, clear, and easy to understand.
                 <input
                   style={styles.input}
                   type="number"
-                  value={form.debt}
-                  onChange={(e) => setField("debt", e.target.value)}
-                  placeholder="1200"
-                />
-              </div>
-
-              <div>
-                <label style={styles.label}>Down Payment / Equity</label>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={form.down}
-                  onChange={(e) => setField("down", e.target.value)}
-                  placeholder="50000"
+                  value={intakeForm.debt}
+                  onChange={(e) => setIntakeField("debt", e.target.value)}
+                  placeholder="Enter monthly debt"
                 />
               </div>
             </div>
@@ -452,7 +506,7 @@ Keep the tone professional, clear, and easy to understand.
             <div style={{ marginTop: 22 }}>
               <button
                 className="bf-button"
-                onClick={runAnalysis}
+                onClick={runPreliminaryReview}
                 disabled={!accepted || loading}
                 style={{
                   ...styles.primaryButton,
@@ -463,27 +517,117 @@ Keep the tone professional, clear, and easy to understand.
                 {loading ? "Reviewing..." : "Run Preliminary Review"}
               </button>
             </div>
+
+            {scenarioUnlocked && (
+              <div style={styles.secondStepWrap}>
+                <h2 className="bf-section-title" style={styles.sectionTitle}>
+                  Property Target Scenario
+                </h2>
+
+                <div style={styles.infoBox}>
+                  Now enter the target home price and the estimated down payment
+                  so Finley Beyond can continue the scenario with the numbers you
+                  are actually considering.
+                </div>
+
+                <div className="bf-form-grid" style={styles.formGrid}>
+                  <div>
+                    <label style={styles.label}>Estimated Home Price</label>
+                    <input
+                      style={styles.input}
+                      type="number"
+                      value={scenarioForm.homePrice}
+                      onChange={(e) =>
+                        setScenarioField("homePrice", e.target.value)
+                      }
+                      placeholder="Enter estimated home price"
+                    />
+                  </div>
+
+                  <div>
+                    <label style={styles.label}>Estimated Down Payment</label>
+                    <input
+                      style={styles.input}
+                      type="number"
+                      value={scenarioForm.downPayment}
+                      onChange={(e) =>
+                        setScenarioField("downPayment", e.target.value)
+                      }
+                      placeholder="Enter estimated down payment"
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.loanPreviewBox}>
+                  <div style={styles.loanPreviewTitle}>
+                    Estimated Loan Amount
+                  </div>
+                  <div style={styles.loanPreviewValue}>
+                    {formatCurrency(estimatedLoanAmount)}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <button
+                    className="bf-button"
+                    onClick={updateScenarioAndContinue}
+                    disabled={
+                      chatLoading ||
+                      !scenarioForm.homePrice.trim() ||
+                      !scenarioForm.downPayment.trim()
+                    }
+                    style={{
+                      ...styles.secondaryButton,
+                      backgroundColor:
+                        chatLoading ||
+                        !scenarioForm.homePrice.trim() ||
+                        !scenarioForm.downPayment.trim()
+                          ? "#7c8aa8"
+                          : "#0096C7",
+                      cursor:
+                        chatLoading ||
+                        !scenarioForm.homePrice.trim() ||
+                        !scenarioForm.downPayment.trim()
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {chatLoading ? "Updating Scenario..." : "Continue with This Scenario"}
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
 
           <aside style={styles.aside}>
-            <div className="bf-card" style={styles.card}>
-              <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
-                Financial Snapshot
-              </h3>
+            {scenarioUnlocked && (
+              <div className="bf-card" style={styles.card}>
+                <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
+                  Financial Snapshot
+                </h3>
 
-              <MetricCard
-                title="Estimated Home Price"
-                value={formatCurrency(results.estimatedHomePrice)}
-              />
-              <MetricCard
-                title="Estimated Loan Amount"
-                value={formatCurrency(results.estimatedLoan)}
-              />
-              <MetricCard
-                title="Estimated LTV"
-                value={`${Math.round(results.ltv * 100)}%`}
-              />
-            </div>
+                <MetricCard
+                  title="Estimated Home Price"
+                  value={formatCurrency(Number(scenarioForm.homePrice) || 0)}
+                />
+                <MetricCard
+                  title="Estimated Down Payment"
+                  value={formatCurrency(Number(scenarioForm.downPayment) || 0)}
+                />
+                <MetricCard
+                  title="Estimated Loan Amount"
+                  value={formatCurrency(estimatedLoanAmount)}
+                />
+                <MetricCard
+                  title="Estimated LTV"
+                  value={
+                    Number(scenarioForm.homePrice) > 0
+                      ? `${Math.round(estimatedLtv * 100)}%`
+                      : "0%"
+                  }
+                />
+              </div>
+            )}
 
             <div className="bf-card" style={styles.card}>
               <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
@@ -549,7 +693,7 @@ Keep the tone professional, clear, and easy to understand.
                     <textarea
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Ask a follow-up question, such as: What should I prepare next? What can strengthen my file? What should I discuss with my loan officer?"
+                      placeholder="Ask a follow-up question, such as: Can I buy a house with this information? How can I apply for a mortgage? How can I speak with a loan officer?"
                       rows={4}
                       style={styles.textarea}
                       disabled={chatLoading}
@@ -691,6 +835,16 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 18,
     fontSize: 14,
   },
+  infoBox: {
+    backgroundColor: "#f8fbff",
+    color: "#334155",
+    border: "1px solid #dbeafe",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+    fontSize: 14,
+    lineHeight: 1.6,
+  },
   formGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -743,6 +897,30 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px 18px",
     fontSize: 14,
     fontWeight: 700,
+  },
+  secondStepWrap: {
+    marginTop: 28,
+    paddingTop: 24,
+    borderTop: "1px solid #e2e8f0",
+  },
+  loanPreviewBox: {
+    marginTop: 18,
+    backgroundColor: "#f8fbff",
+    border: "1px solid #dbe3f0",
+    borderRadius: 14,
+    padding: 16,
+  },
+  loanPreviewTitle: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: "#64748b",
+    marginBottom: 6,
+  },
+  loanPreviewValue: {
+    fontSize: 28,
+    fontWeight: 700,
+    color: "#111827",
   },
   metricCard: {
     backgroundColor: "#f8fbff",
