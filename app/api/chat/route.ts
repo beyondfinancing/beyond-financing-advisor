@@ -36,9 +36,18 @@ This is preliminary guidance only and does not constitute a loan approval or com
   `.trim();
 }
 
+type ChatMessage = {
+  role?: string;
+  content?: string;
+};
+
+type RequestBody = {
+  messages?: ChatMessage[];
+};
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as RequestBody;
     const messages = body?.messages;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -48,7 +57,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const userMessage = messages[messages.length - 1]?.content || "";
+    const userMessage = messages[messages.length - 1]?.content ?? "";
 
     if (!userMessage.trim()) {
       return NextResponse.json(
