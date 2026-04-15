@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 export default function Page() {
   const [accepted, setAccepted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [aiResponse, setAiResponse] = useState("");
 
   const [form, setForm] = useState({
     name: "",
@@ -18,6 +19,7 @@ export default function Page() {
     setForm((p) => ({ ...p, [k]: v }));
   };
 
+  // Basic math engine (kept)
   const results = useMemo(() => {
     const income = Number(form.income);
     const debt = Number(form.debt);
@@ -33,7 +35,7 @@ export default function Page() {
         : 0;
 
     const home = loan + down;
-    const ltv = loan / home;
+    const ltv = home > 0 ? loan / home : 0;
 
     return {
       home,
@@ -42,9 +44,53 @@ export default function Page() {
     };
   }, [form]);
 
+  const runAnalysis = async () => {
+    setSubmitted(true);
+    setAiResponse("Analyzing scenario with Finley Beyond...");
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: `
+Borrower scenario:
+Name: ${form.name}
+Email: ${form.email}
+Credit Score: ${form.credit}
+Monthly Income: ${form.income}
+Monthly Debt: ${form.debt}
+Down Payment: ${form.down}
+
+Act as a Certified Mortgage Advisor and provide:
+1. Best loan direction
+2. Risk flags
+3. Recommended next steps
+`,
+            },
+          ],
+        }),
+      });
+
+      const data = await res.json();
+
+      // Adjust depending on your API response structure
+      const text =
+        data?.message ||
+        data?.response ||
+        JSON.stringify(data, null, 2);
+
+      setAiResponse(text);
+    } catch (err) {
+      setAiResponse("Error connecting to AI system.");
+    }
+  };
+
   return (
     <div style={{ padding: 30, fontFamily: "Arial" }}>
-      <h1>Beyond Intelligence — Prototype</h1>
+      <h1>Beyond Intelligence — Finley System</h1>
 
       {/* DISCLAIMER */}
       <div style={{ border: "1px solid #ccc", padding: 15, marginBottom: 20 }}>
@@ -111,24 +157,30 @@ export default function Page() {
         />
         <br />
 
-        <button disabled={!accepted} onClick={() => setSubmitted(true)}>
-          Run Analysis
+        <button disabled={!accepted} onClick={runAnalysis}>
+          Run Full Analysis
         </button>
       </div>
 
       {/* RESULTS */}
       {submitted && (
         <div style={{ marginTop: 30 }}>
-          <h2>Results</h2>
+          <h2>Financial Snapshot</h2>
           <p>Estimated Home Price: ${Math.round(results.home)}</p>
           <p>Estimated Loan: ${Math.round(results.loan)}</p>
           <p>LTV: {Math.round(results.ltv * 100)}%</p>
 
-          <h3>Next Step</h3>
-          <p>
-            This scenario should be reviewed by a licensed loan officer and
-            matched with an investor.
-          </p>
+          <h2>AI Mortgage Advisor (Finley)</h2>
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              background: "#f5f5f5",
+              padding: 15,
+              marginTop: 10,
+            }}
+          >
+            {aiResponse}
+          </pre>
         </div>
       )}
     </div>
