@@ -396,10 +396,10 @@ function analyzeAnsweredState(routing?: RoutingPayload): AnswerState {
     "sale of home",
     "retirement account",
     "bank account",
+    "savings account",
     "economias",
     "poupança",
     "doação",
-    "gift funds",
     "venda de imóvel",
     "ahorros",
     "regalo",
@@ -560,34 +560,133 @@ ${nextQuestion}` : ""
   }`;
 }
 
-function buildClosingFallback(language: LanguageCode, officerName: string): string {
+function buildClosingFallback(
+  language: LanguageCode,
+  officerName: string,
+  routing?: RoutingPayload
+): string {
+  const convo = conversationToText(routing?.conversation).toLowerCase();
+  const prefersText = hasAny(convo, ["text me", "text message", "text is better", "mensagem", "texto"]);
+  const prefersCall = hasAny(convo, ["call me", "phone", "ligar", "llamar", "phone call"]);
+  const prefersEmail = hasAny(convo, ["email me", "email is better", "correo", "email"]);
+
   if (language === "pt") {
+    if (prefersText && prefersCall) {
+      return `Perfeito.
+
+Registrei sua preferência por mensagem de texto e ligação.
+
+Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
+    }
+
+    if (prefersText) {
+      return `Perfeito.
+
+Registrei sua preferência por mensagem de texto.
+
+Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
+    }
+
+    if (prefersCall) {
+      return `Perfeito.
+
+Registrei sua preferência por ligação.
+
+Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
+    }
+
+    if (prefersEmail) {
+      return `Perfeito.
+
+Registrei sua preferência por email.
+
+Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
+    }
+
     return `Perfeito.
 
 Você está pronto para avançar.
 
-Clique em "Aplicar Agora" para iniciar oficialmente. Seu loan officer, ${officerName}, irá acompanhar seu processo e orientar os próximos passos.
-
-Se preferir falar antes, utilize o botão de agendamento abaixo.`;
+Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
   }
 
   if (language === "es") {
+    if (prefersText && prefersCall) {
+      return `Perfecto.
+
+He registrado su preferencia por mensajes de texto y llamadas.
+
+Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
+    }
+
+    if (prefersText) {
+      return `Perfecto.
+
+He registrado su preferencia por mensajes de texto.
+
+Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
+    }
+
+    if (prefersCall) {
+      return `Perfecto.
+
+He registrado su preferencia por llamadas.
+
+Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
+    }
+
+    if (prefersEmail) {
+      return `Perfecto.
+
+He registrado su preferencia por correo electrónico.
+
+Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
+    }
+
     return `Perfecto.
 
 Ya está listo para avanzar.
 
-Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, dará seguimiento y le guiará en los próximos pasos.
+Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
+  }
 
-Si prefiere hablar primero, puede agendar directamente usando el botón abajo.`;
+  if (prefersText && prefersCall) {
+    return `Perfect.
+
+I’ve noted your preference for text updates and a phone call.
+
+Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
+  }
+
+  if (prefersText) {
+    return `Perfect.
+
+I’ve noted your preference for text updates.
+
+Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
+  }
+
+  if (prefersCall) {
+    return `Perfect.
+
+I’ve noted your preference for a phone call.
+
+Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
+  }
+
+  if (prefersEmail) {
+    return `Perfect.
+
+I’ve noted your preference for email updates.
+
+Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
   }
 
   return `Perfect.
 
 You’re ready to move forward.
 
-Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up and guide you through the next steps.
-
-If you prefer to speak first, you can schedule directly using the button below.`;
+Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
 }
 
 function buildFollowUpFallback(language: LanguageCode, routing?: RoutingPayload): string {
@@ -644,7 +743,7 @@ async function callOpenAIChat(args: {
       },
       body: JSON.stringify({
         model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
-        temperature: 0.3,
+        temperature: 0.25,
         messages: [
           { role: "system", content: args.system },
           { role: "user", content: args.user },
@@ -738,6 +837,7 @@ Important compliance rules:
 - do not reopen the conversation after a clear closing intent
 - do not ask for information that has already been provided in intake, scenario, or prior conversation
 - be state-aware and avoid redundant questions
+- when the borrower is ready, the final close should be short, warm, and action-oriented
 
 Language rule:
 - respond only in ${
@@ -750,9 +850,10 @@ Language rule:
 The borrower has expressed clear intent to move forward.
 Do not ask another qualifying question.
 Close the conversation naturally and briefly.
-Direct the borrower to Apply Now or Schedule with Loan Officer.
+Direct the borrower to Apply Now.
 Acknowledge that the assigned loan officer will follow up.
 Do not add extra paragraphs that reopen discussion.
+If communication preference was already provided, acknowledge it briefly and close.
 `
     : stage === "initial_review"
     ? `
@@ -811,7 +912,7 @@ ${stageInstruction}
 
   if (closingIntent) {
     return {
-      reply: buildClosingFallback(language, assignedOfficer.name),
+      reply: buildClosingFallback(language, assignedOfficer.name, routing),
       shouldClose: true,
     };
   }
