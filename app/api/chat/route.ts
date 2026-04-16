@@ -256,7 +256,6 @@ function detectClosingIntent(text: string) {
     "quiero aplicar",
     "quiero seguir",
     "quiero avanzar",
-    "agendar",
     "llámame",
     "mándame mensaje",
   ]);
@@ -701,9 +700,7 @@ Rules:
 - be practical and concise
 - use only the borrower data and transcript provided
 - do not promise approval
-- do not claim certainty where the data does not support it
 - provisional programs should be directional only
-- do not mention lender selection questions to the borrower
   `.trim();
 
   const user = `
@@ -966,77 +963,6 @@ async function queueInternalNotifications(args: {
     assignedOfficer: args.assignedOfficer,
     routing: args.routing,
   });
-}
-
-async function generateInternalSummary(args: {
-  stage: string;
-  assignedOfficer: LoanOfficerRecord;
-  routing?: RoutingPayload;
-}): Promise<SummaryPayload> {
-  const { stage, assignedOfficer, routing } = args;
-  const fallback = buildFallbackSummary(stage, assignedOfficer, routing);
-
-  const system = `
-You create concise internal mortgage loan officer briefings for Beyond Financing.
-
-Return valid JSON only with this exact shape:
-{
-  "borrowerSummary": "string",
-  "likelyDirection": "string",
-  "strengths": ["string"],
-  "openQuestions": ["string"],
-  "provisionalPrograms": ["string"],
-  "recommendedNextStep": "string",
-  "loanOfficerActionPlan": ["string"]
-}
-
-Rules:
-- write for an internal licensed mortgage loan officer
-- be practical and concise
-- use only the borrower data and transcript provided
-- do not promise approval
-- provisional programs should be directional only
-  `.trim();
-
-  const user = `
-Assigned loan officer:
-- Name: ${assignedOfficer.name}
-- NMLS: ${assignedOfficer.nmls}
-
-Stage:
-${stage}
-
-${buildContextBlock(getLanguage(routing), routing, assignedOfficer)}
-  `.trim();
-
-  const aiSummary = await callOpenAIJson<SummaryPayload>({ system, user });
-
-  if (!aiSummary) return fallback;
-
-  return {
-    borrowerSummary: aiSummary.borrowerSummary || fallback.borrowerSummary,
-    likelyDirection: aiSummary.likelyDirection || fallback.likelyDirection,
-    strengths:
-      Array.isArray(aiSummary.strengths) && aiSummary.strengths.length > 0
-        ? aiSummary.strengths
-        : fallback.strengths,
-    openQuestions:
-      Array.isArray(aiSummary.openQuestions) && aiSummary.openQuestions.length > 0
-        ? aiSummary.openQuestions
-        : fallback.openQuestions,
-    provisionalPrograms:
-      Array.isArray(aiSummary.provisionalPrograms) &&
-      aiSummary.provisionalPrograms.length > 0
-        ? aiSummary.provisionalPrograms
-        : fallback.provisionalPrograms,
-    recommendedNextStep:
-      aiSummary.recommendedNextStep || fallback.recommendedNextStep,
-    loanOfficerActionPlan:
-      Array.isArray(aiSummary.loanOfficerActionPlan) &&
-      aiSummary.loanOfficerActionPlan.length > 0
-        ? aiSummary.loanOfficerActionPlan
-        : fallback.loanOfficerActionPlan,
-  };
 }
 
 export async function POST(req: Request) {
