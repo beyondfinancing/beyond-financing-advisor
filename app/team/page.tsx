@@ -7,7 +7,12 @@ import { evaluateFannieMaeMultifamily } from "@/lib/lender-guidelines/fannie-mae
 import { evaluateFreddieMacSingleFamily } from "@/lib/lender-guidelines/freddie-mac/single-family/data";
 import { evaluateFreddieMacMultifamily } from "@/lib/lender-guidelines/freddie-mac/multi-family/data";
 
-type TeamRole = "Loan Officer" | "Loan Officer Assistant" | "Processor";
+type TeamRole =
+  | "Loan Officer"
+  | "Loan Officer Assistant"
+  | "Processor"
+  | "Real Estate Agent";
+
 type LoanPurpose = "Purchase" | "Refinance" | "Investment";
 
 type TeamChatMessage = {
@@ -33,6 +38,46 @@ type TeamScenario = {
   units: string;
   dscr: string;
 };
+
+type AccessCredential = {
+  loginId: string;
+  password: string;
+  role: TeamRole;
+  displayName: string;
+};
+
+const ACCESS_CREDENTIALS: AccessCredential[] = [
+  {
+    loginId: "1625542",
+    password: "ChangeMeSandro1!",
+    role: "Loan Officer",
+    displayName: "Sandro Pansini Souza",
+  },
+  {
+    loginId: "2394496FB",
+    password: "ChangeMeFinley1!",
+    role: "Loan Officer Assistant",
+    displayName: "Finley Beyond",
+  },
+  {
+    loginId: "2394496SP",
+    password: "ChangeMeProcessor1!",
+    role: "Processor",
+    displayName: "Sample Processor",
+  },
+  {
+    loginId: "2394496LO",
+    password: "ChangeMeAssistant1!",
+    role: "Loan Officer Assistant",
+    displayName: "Sample LO Assistant",
+  },
+  {
+    loginId: "REA001",
+    password: "ChangeMeAgent1!",
+    role: "Real Estate Agent",
+    displayName: "Sample Real Estate Agent",
+  },
+];
 
 function cardStyle(): React.CSSProperties {
   return {
@@ -94,6 +139,14 @@ function normalizeOccupancy(
 }
 
 export default function TeamPage() {
+  const [accessLoginId, setAccessLoginId] = useState("");
+  const [accessPassword, setAccessPassword] = useState("");
+  const [accessError, setAccessError] = useState("");
+  const [accessGranted, setAccessGranted] = useState(false);
+  const [authorizedUser, setAuthorizedUser] = useState<AccessCredential | null>(
+    null
+  );
+
   const [scenario, setScenario] = useState<TeamScenario>({
     borrowerName: "",
     professionalName: "",
@@ -160,7 +213,9 @@ export default function TeamPage() {
         ltv,
         dti,
         occupancy:
-          occupancy === "primary" || occupancy === "second" || occupancy === "investment"
+          occupancy === "primary" ||
+          occupancy === "second" ||
+          occupancy === "investment"
             ? occupancy
             : "primary",
         firstTimeBuyer: false,
@@ -171,7 +226,9 @@ export default function TeamPage() {
         ltv,
         dti,
         occupancy:
-          occupancy === "primary" || occupancy === "second" || occupancy === "investment"
+          occupancy === "primary" ||
+          occupancy === "second" ||
+          occupancy === "investment"
             ? occupancy
             : "primary",
         firstTimeBuyer: false,
@@ -217,6 +274,32 @@ export default function TeamPage() {
     estimatedLtv,
   ]);
 
+  const handleAccessLogin = () => {
+    const credential = ACCESS_CREDENTIALS.find(
+      (item) =>
+        item.loginId.trim().toLowerCase() ===
+          accessLoginId.trim().toLowerCase() &&
+        item.password === accessPassword
+    );
+
+    if (!credential) {
+      setAccessError("Invalid login credentials. Please try again.");
+      setAccessGranted(false);
+      setAuthorizedUser(null);
+      return;
+    }
+
+    setAccessError("");
+    setAuthorizedUser(credential);
+    setAccessGranted(true);
+
+    setScenario((prev) => ({
+      ...prev,
+      professionalName: credential.displayName,
+      role: credential.role,
+    }));
+  };
+
   const sendMessage = async () => {
     if (!chatInput.trim()) return;
     if (!scenario.borrowerName.trim()) {
@@ -240,6 +323,8 @@ export default function TeamPage() {
           scenario,
           messages: nextMessages,
           suggestions: onScreenSuggestions,
+          authorizedUser: authorizedUser?.displayName || "",
+          authorizedRole: authorizedUser?.role || "",
         }),
       });
 
@@ -283,6 +368,9 @@ export default function TeamPage() {
           scenario,
           messages,
           suggestions: onScreenSuggestions,
+          authorizedUser: authorizedUser?.displayName || "",
+          authorizedRole: authorizedUser?.role || "",
+          accessLoginId,
         }),
       });
 
@@ -297,6 +385,176 @@ export default function TeamPage() {
       setEmailing(false);
     }
   };
+
+  if (!accessGranted) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "#F1F3F8",
+          color: "#263366",
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 760,
+            margin: "0 auto",
+            padding: "28px 20px 48px",
+          }}
+        >
+          <div
+            style={{
+              display: "inline-block",
+              padding: "8px 14px",
+              borderRadius: 999,
+              background: "#E8EEF8",
+              color: "#263366",
+              fontSize: 12,
+              fontWeight: 700,
+              marginBottom: 14,
+            }}
+          >
+            PROFESSIONAL ACCESS
+          </div>
+
+          <h1
+            style={{
+              margin: "0 0 12px",
+              fontSize: "clamp(34px, 6vw, 54px)",
+              lineHeight: 1.15,
+            }}
+          >
+            Team Workspace Login
+          </h1>
+
+          <p
+            style={{
+              margin: "0 0 22px",
+              color: "#5A6A84",
+              lineHeight: 1.7,
+              fontSize: "clamp(16px, 2.3vw, 18px)",
+            }}
+          >
+            Loan officers, loan officer assistants, processors, and real estate
+            agents must enter valid credentials before accessing Beyond
+            Intelligence professional tools.
+          </p>
+
+          <div style={cardStyle()}>
+            <h2 style={{ marginTop: 0, fontSize: 20 }}>Access Gate</h2>
+
+            <div
+              style={{
+                background: "#F8FAFC",
+                border: "1px solid #D9E1EC",
+                borderRadius: 16,
+                padding: 16,
+                lineHeight: 1.8,
+                marginBottom: 18,
+                color: "#4B5C78",
+              }}
+            >
+              <div>
+                <strong>Loan Officer Login ID:</strong> NMLS #
+              </div>
+              <div>
+                <strong>Loan Officer Assistant / Processor Login ID:</strong>{" "}
+                Company NMLS # + initials
+              </div>
+              <div>
+                <strong>Example:</strong> Finley Beyond = 2394496FB
+              </div>
+              <div>
+                <strong>Borrowers:</strong> no login required
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr",
+                gap: 14,
+              }}
+            >
+              <input
+                placeholder="Login ID"
+                value={accessLoginId}
+                onChange={(e) => setAccessLoginId(e.target.value)}
+                style={inputStyle()}
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={accessPassword}
+                onChange={(e) => setAccessPassword(e.target.value)}
+                style={inputStyle()}
+              />
+            </div>
+
+            {accessError && (
+              <div
+                style={{
+                  marginTop: 14,
+                  background: "#FFF4F2",
+                  border: "1px solid #F3C5BC",
+                  color: "#8A3B2F",
+                  borderRadius: 14,
+                  padding: 14,
+                  lineHeight: 1.6,
+                }}
+              >
+                {accessError}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 12,
+                marginTop: 18,
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleAccessLogin}
+                style={buttonPrimaryStyle(false)}
+              >
+                Access Team Workspace
+              </button>
+
+              <Link
+                href="/"
+                style={{
+                  ...buttonSecondaryStyle(false),
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+              >
+                Back to Beyond Intelligence
+              </Link>
+            </div>
+
+            <div
+              style={{
+                marginTop: 18,
+                paddingTop: 18,
+                borderTop: "1px solid #E0E7F0",
+                color: "#6A7890",
+                lineHeight: 1.7,
+                fontSize: 14,
+              }}
+            >
+              Bot prevention such as reCAPTCHA, Turnstile, or hCaptcha will be
+              added later as a separate stop block for production use.
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -350,23 +608,51 @@ export default function TeamPage() {
                 fontSize: "clamp(16px, 2.5vw, 18px)",
               }}
             >
-              Loan officers, loan officer assistants, and processors can discuss
-              borrower scenarios with Finley Beyond and receive a professional
-              summary by email when the review is complete.
+              Loan officers, loan officer assistants, processors, and real
+              estate agents can discuss borrower scenarios with Finley Beyond
+              and receive a professional summary by email when the review is
+              complete.
             </p>
+
+            <div
+              style={{
+                marginTop: 14,
+                color: "#5A6A84",
+                lineHeight: 1.7,
+                fontSize: 14,
+              }}
+            >
+              Signed in as <strong>{authorizedUser?.displayName}</strong> —{" "}
+              {authorizedUser?.role} ({authorizedUser?.loginId})
+            </div>
           </div>
 
-          <Link
-            href="/"
-            style={{
-              textDecoration: "none",
-              color: "#263366",
-              fontWeight: 700,
-              alignSelf: "center",
-            }}
-          >
-            Back to Beyond Intelligence
-          </Link>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => {
+                setAccessGranted(false);
+                setAuthorizedUser(null);
+                setAccessLoginId("");
+                setAccessPassword("");
+              }}
+              style={buttonSecondaryStyle(false)}
+            >
+              Sign Out
+            </button>
+
+            <Link
+              href="/"
+              style={{
+                textDecoration: "none",
+                color: "#263366",
+                fontWeight: 700,
+                alignSelf: "center",
+              }}
+            >
+              Back to Beyond Intelligence
+            </Link>
+          </div>
         </div>
 
         <div
@@ -433,6 +719,7 @@ export default function TeamPage() {
                   <option>Loan Officer</option>
                   <option>Loan Officer Assistant</option>
                   <option>Processor</option>
+                  <option>Real Estate Agent</option>
                 </select>
                 <input
                   placeholder="Borrower Current State"
@@ -726,6 +1013,10 @@ export default function TeamPage() {
                 <li>
                   When the review is complete, the summary is emailed to the
                   professional who interacted with the system.
+                </li>
+                <li>
+                  Real production security should later move to server-side
+                  authentication and bot protection.
                 </li>
               </ul>
             </section>
