@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { evaluateFannieMaeSingleFamily } from "@/lib/lender-guidelines/fannie-mae/single-family/data";
+import { evaluateFannieMaeMultifamily } from "@/lib/lender-guidelines/fannie-mae/multi-family/data";
+import { evaluateFreddieMacSingleFamily } from "@/lib/lender-guidelines/freddie-mac/single-family/data";
+import { evaluateFreddieMacMultifamily } from "@/lib/lender-guidelines/freddie-mac/multi-family/data";
+
 type LanguageCode = "en" | "pt" | "es";
 
 type ChatMessage = {
@@ -44,6 +49,11 @@ type RoutingPayload = {
     occupancy?: string;
     timeline?: string;
     fundsSource?: string;
+    units?: string;
+    propertyType?: string;
+    dscr?: string;
+    firstTimeBuyer?: string;
+    experienceLevel?: string;
   };
   conversation?: ConversationMessage[];
 };
@@ -91,6 +101,13 @@ type AnswerState = {
   hasFundsSource: boolean;
   hasPropertyTypeIntent: boolean;
   hasCommunicationPreference: boolean;
+};
+
+type InternalProgramMatch = {
+  program: string;
+  strength: "strong" | "moderate" | "weak";
+  source: string;
+  notes: string[];
 };
 
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
@@ -727,6 +744,232 @@ ${nextQuestion}` : ""
   }`;
 }
 
+function normalizeOccupancy(
+  occupancy?: string
+): "primary" | "second" | "investment" | "mixed-use" | "other" {
+  const value = (occupancy || "").toLowerCase().trim();
+
+  if (
+    hasAny(value, [
+      "primary",
+      "primary residence",
+      "primary home",
+      "moradia principal",
+      "residência principal",
+      "vivienda principal",
+    ])
+  ) {
+    return "primary";
+  }
+
+  if (
+    hasAny(value, [
+      "second",
+      "second home",
+      "segunda casa",
+      "segunda vivienda",
+    ])
+  ) {
+    return "second";
+  }
+
+  if (
+    hasAny(value, [
+      "investment",
+      "investment property",
+      "investimento",
+      "propiedad de inversión",
+    ])
+  ) {
+    return "investment";
+  }
+
+  if (hasAny(value, ["mixed-use", "mixed use", "mixed"])) {
+    return "mixed-use";
+  }
+
+  return "other";
+}
+
+function normalizeExperience(
+  experienceLevel?: string
+): "first-time-investor" | "experienced-investor" | undefined {
+  const value = (experienceLevel || "").toLowerCase().trim();
+
+  if (
+    hasAny(value, [
+      "first-time-investor",
+      "first time investor",
+      "first investor",
+      "primeiro investidor",
+      "primer inversionista",
+    ])
+  ) {
+    return "first-time-investor";
+  }
+
+  if (
+    hasAny(value, [
+      "experienced-investor",
+      "experienced investor",
+      "seasoned investor",
+      "investidor experiente",
+      "inversionista experimentado",
+    ])
+  ) {
+    return "experienced-investor";
+  }
+
+  return undefined;
+}
+
+function buildProgramSuggestions(routing?: RoutingPayload): InternalProgramMatch[] {
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+
+  const creditScore = Number(borrower.credit || 0);
+  const homePrice = Number(scenario.homePrice || 0);
+  const downPayment = Number(scenario.downPayment || 0);
+  const estimatedLtvString = scenario.estimatedLtv || "";
+  const estimatedLtvNumber = Number(
+    estimatedLtvString.toString().replace("%", "").trim() || 0
+  );
+
+  const ltv =
+    homePrice > 0 && downPayment >= 0
+      ? ((homePrice - downPayment) / homePrice) * 100
+      : estimatedLtvNumber;
+
+  const dti =
+    borrower.income && borrower.debt && Number(borrower.income) > 0
+      ? (Number(borrower.debt) / Number(borrower.income)) * 100
+      : undefined;
+
+  const occupancy = normalizeOccupancy(scenario.occupancy);
+  const firstTimeBuyer =
+    hasAny((scenario.firstTimeBuyer || "").toLowerCase(), [
+      "yes",
+      "true",
+      "sim",
+      "sí",
+      "si",
+    ]) || false;
+
+  const units = Number(scenario.units || 0) || undefined;
+  const dscr = Number(scenario.dscr || 0) || undefined;
+  const experienceLevel = normalizeExperience(scenario.experienceLevel);
+
+  const isMultifamily =
+    (units !== undefined && units >= 5) ||
+    hasAny((scenario.propertyType || "").toLowerCase(), [
+      "multi-family",
+      "multifamily",
+      "multifamiliar",
+      "5+ unit",
+      "apartment",
+    ]);
+
+  const suggestions: InternalProgramMatch[] = [];
+
+  if (!isMultifamily) {
+    const fannie = evaluateFannieMaeSingleFamily({
+      creditScore,
+      ltv,
+      dti,
+      occupancy:
+        occupancy === "mixed-use" || occupancy === "other" ? "primary" : occupancy,
+      firstTimeBuyer,
+    });
+
+    const freddie = evaluateFreddieMacSingleFamily({
+      creditScore,
+      ltv,
+      dti,
+      occupancy:
+        occupancy === "mixed-use" || occupancy === "other" ? "primary" : occupancy,
+      firstTimeBuyer,
+    });
+
+    fannie
+      .filter((item) => item.eligible)
+      .forEach((item) => {
+        suggestions.push({
+          program: item.program,
+          strength: item.strength,
+          source: "Fannie Mae Single-Family",
+          notes: item.notes,
+        });
+      });
+
+    freddie
+      .filter((item) => item.eligible)
+      .forEach((item) => {
+        suggestions.push({
+          program: item.program,
+          strength: item.strength,
+          source: "Freddie Mac Single-Family",
+          notes: item.notes,
+        });
+      });
+  } else {
+    const fannie = evaluateFannieMaeMultifamily({
+      creditScore: creditScore || undefined,
+      ltv,
+      dscr,
+      occupancy:
+        occupancy === "primary" || occupancy === "second"
+          ? "investment"
+          : occupancy === "mixed-use"
+          ? "mixed-use"
+          : "investment",
+      units,
+      experienceLevel,
+    });
+
+    const freddie = evaluateFreddieMacMultifamily({
+      creditScore: creditScore || undefined,
+      ltv,
+      dscr,
+      occupancy:
+        occupancy === "primary" || occupancy === "second"
+          ? "investment"
+          : occupancy === "mixed-use"
+          ? "mixed-use"
+          : "investment",
+      units,
+      experienceLevel,
+    });
+
+    fannie
+      .filter((item) => item.eligible)
+      .forEach((item) => {
+        suggestions.push({
+          program: item.program,
+          strength: item.strength,
+          source: "Fannie Mae Multi-Family",
+          notes: item.notes,
+        });
+      });
+
+    freddie
+      .filter((item) => item.eligible)
+      .forEach((item) => {
+        suggestions.push({
+          program: item.program,
+          strength: item.strength,
+          source: "Freddie Mac Multi-Family",
+          notes: item.notes,
+        });
+      });
+  }
+
+  const rank = { strong: 3, moderate: 2, weak: 1 };
+
+  return suggestions
+    .sort((a, b) => rank[b.strength] - rank[a.strength])
+    .slice(0, 6);
+}
+
 async function callOpenAIChat(args: {
   system: string;
   user: string;
@@ -936,6 +1179,7 @@ function buildFallbackSummary(
   const borrower = routing?.borrower || {};
   const scenario = routing?.scenario || {};
   const transcript = conversationToText(routing?.conversation);
+  const programMatches = buildProgramSuggestions(routing);
 
   const strengths: string[] = [];
 
@@ -955,24 +1199,22 @@ function buildFallbackSummary(
     );
   }
 
-  const provisionalPrograms: string[] = [];
-  const credit = Number(borrower.credit || 0);
-  const ltv = Number(String(scenario.estimatedLtv || "").replace("%", "") || 0);
-
-  if (credit >= 700 && ltv <= 95) {
-    provisionalPrograms.push("Conventional financing (high confidence)");
-  } else if (credit >= 620) {
-    provisionalPrograms.push("FHA or alternative low down payment options");
-  } else {
-    provisionalPrograms.push("Manual or alternative documentation review");
-  }
+  const provisionalPrograms =
+    programMatches.length > 0
+      ? programMatches.map(
+          (item) =>
+            `${item.program} — ${item.strength.toUpperCase()} alignment (${item.source})`
+        )
+      : ["Initial agency review recommended"];
 
   return {
     borrowerSummary:
       transcript ||
       "Borrower completed initial intake and is actively moving forward with financing.",
     likelyDirection:
-      "Borrower demonstrates strong forward intent and should be prioritized for immediate loan officer engagement.",
+      programMatches.length > 0
+        ? "Borrower scenario appears to align with one or more agency directions and should be prioritized for immediate licensed loan officer review."
+        : "Borrower demonstrates strong forward intent and should be prioritized for immediate loan officer engagement.",
     strengths:
       strengths.length > 0
         ? strengths
@@ -980,12 +1222,12 @@ function buildFallbackSummary(
     openQuestions: [],
     provisionalPrograms,
     recommendedNextStep:
-      "Borrower is ready to apply. Immediate follow-up is recommended to secure the application and structure the file.",
+      "Borrower is ready to apply. Immediate follow-up is recommended to secure the application, confirm documentation strategy, and select final program direction.",
     loanOfficerActionPlan: [
       "Contact borrower immediately (high intent).",
       "Guide borrower through full application submission.",
       "Confirm final structure and documentation strategy.",
-      "Move file toward pre-approval or underwriting review quickly.",
+      "Review agency-aligned provisional program matches and select best execution path.",
     ],
   };
 }
@@ -997,6 +1239,7 @@ async function generateInternalSummary(args: {
 }): Promise<SummaryPayload> {
   const { stage, assignedOfficer, routing } = args;
   const fallback = buildFallbackSummary(stage, assignedOfficer, routing);
+  const programMatches = buildProgramSuggestions(routing);
 
   const system = `
 You create concise internal mortgage loan officer briefings for Beyond Financing.
@@ -1015,7 +1258,7 @@ Return valid JSON only with this exact shape:
 Rules:
 - write for an internal licensed mortgage loan officer
 - be practical and concise
-- use only the borrower data and transcript provided
+- use only the borrower data, transcript, and provisional program intelligence provided
 - do not promise approval
 - provisional programs should be directional only
 - if the borrower is clearly ready to apply or move forward, do not create unnecessary open questions
@@ -1032,6 +1275,20 @@ Stage:
 ${stage}
 
 ${buildContextBlock(getLanguage(routing), routing, assignedOfficer)}
+
+Provisional program intelligence:
+${
+  programMatches.length > 0
+    ? programMatches
+        .map(
+          (item) =>
+            `- ${item.program} | strength: ${item.strength} | source: ${item.source} | notes: ${item.notes.join(
+              "; "
+            )}`
+        )
+        .join("\n")
+    : "No provisional agency matches generated."
+}
   `.trim();
 
   const aiSummary = await callOpenAIJson<SummaryPayload>({ system, user });
@@ -1072,6 +1329,8 @@ function buildSummaryHtml(args: {
   const borrower = routing?.borrower || {};
   const scenario = routing?.scenario || {};
   const transcriptMessages = routing?.conversation || [];
+  const programMatches = buildProgramSuggestions(routing);
+
   const isReadyToApply =
     stage === "follow_up" &&
     (
@@ -1080,6 +1339,25 @@ function buildSummaryHtml(args: {
       summary.likelyDirection.toLowerCase().includes("immediate") ||
       summary.likelyDirection.toLowerCase().includes("ready")
     );
+
+  const potentialProgramDirectionHtml =
+    programMatches.length > 0
+      ? `
+      <h3 style="margin:18px 0 8px 0;">Potential Program Direction</h3>
+      <ul style="line-height:1.8;">
+        ${programMatches
+          .map(
+            (item) =>
+              `<li><strong>${escapeHtml(item.program)}</strong> — ${escapeHtml(
+                item.strength.toUpperCase()
+              )} alignment (${escapeHtml(item.source)})<br /><span style="color:#475569;">${escapeHtml(
+                item.notes.join(" | ")
+              )}</span></li>`
+          )
+          .join("")}
+      </ul>
+      `
+      : "";
 
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
@@ -1139,6 +1417,8 @@ function buildSummaryHtml(args: {
 
         <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
         <p style="line-height:1.7;">${nl2br(summary.likelyDirection)}</p>
+
+        ${potentialProgramDirectionHtml}
 
         <h3 style="margin:18px 0 8px 0;">Provisional Program Directions</h3>
         <ul style="line-height:1.8;">
