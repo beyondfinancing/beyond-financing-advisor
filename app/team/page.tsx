@@ -77,6 +77,36 @@ const ACCESS_CREDENTIALS: AccessCredential[] = [
     role: "Real Estate Agent",
     displayName: "Sample Real Estate Agent",
   },
+  {
+  loginId: "18959",
+  password: "Warren18959!BI",
+  role: "Loan Officer",
+  displayName: "Warren Wendt",
+},
+{
+  loginId: "2749644",
+  password: "Nate2749644!BI",
+  role: "Loan Officer",
+  displayName: "Nate Hubley",
+},
+{
+  loginId: "2394496AS",
+  password: "AmarilisAS!2394",
+  role: "Processor",
+  displayName: "Amarilis Santos",
+},
+{
+  loginId: "2394496KN",
+  password: "KyleKN!2394",
+  role: "Processor",
+  displayName: "Kyle Nicholson",
+},
+{
+  loginId: "2394496BM",
+  password: "BiaBM!2394",
+  role: "Loan Officer Assistant",
+  displayName: "Bia Marques",
+},
 ];
 
 function cardStyle(): React.CSSProperties {
