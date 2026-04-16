@@ -99,6 +99,8 @@ const COPY = {
     loanOfficerPlaceholder: "Type loan officer name or NMLS #",
     confirmLoanOfficer: "Confirm Loan Officer",
     unknownLoanOfficer: "I Do Not Know My Loan Officer",
+    loanOfficerNotFound:
+      "We could not match that loan officer. Please select one from the suggestions or click 'I Do Not Know My Loan Officer.'",
     assignedRouting: "Assigned Routing",
     internalRoutingPrefix: "Internal summary will route to",
     runPreliminaryReview: "Run Preliminary Review",
@@ -148,6 +150,8 @@ const COPY = {
     loanOfficerPlaceholder: "Digite o nome do loan officer ou o NMLS #",
     confirmLoanOfficer: "Confirmar Loan Officer",
     unknownLoanOfficer: "Não Sei Meu Loan Officer",
+    loanOfficerNotFound:
+      "Não foi possível localizar esse loan officer. Selecione um nome nas sugestões ou clique em 'Não Sei Meu Loan Officer'.",
     assignedRouting: "Roteamento Definido",
     internalRoutingPrefix: "O resumo interno será enviado para",
     runPreliminaryReview: "Executar Revisão Preliminar",
@@ -197,6 +201,8 @@ const COPY = {
     loanOfficerPlaceholder: "Escriba el nombre del loan officer o el NMLS #",
     confirmLoanOfficer: "Confirmar Loan Officer",
     unknownLoanOfficer: "No Conozco Mi Loan Officer",
+    loanOfficerNotFound:
+      "No pudimos identificar ese loan officer. Seleccione uno de las sugerencias o haga clic en 'No Conozco Mi Loan Officer'.",
     assignedRouting: "Asignación Definida",
     internalRoutingPrefix: "El resumen interno se enviará a",
     runPreliminaryReview: "Ejecutar Revisión Preliminar",
@@ -263,23 +269,38 @@ function extractAiText(data: unknown): string {
 }
 
 function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
-  const trimmed = query.trim().toLowerCase();
-  if (!trimmed) return null;
+  const cleaned = query.toLowerCase().trim();
 
-  const exact = LOAN_OFFICERS.find(
-    (officer) =>
-      officer.name.toLowerCase() === trimmed ||
-      officer.nmls.toLowerCase() === trimmed
+  if (!cleaned) return null;
+
+  const exactName = LOAN_OFFICERS.find(
+    (officer) => officer.name.toLowerCase() === cleaned
   );
+  if (exactName) return exactName;
 
-  if (exact) return exact;
-
-  const partial = LOAN_OFFICERS.find(
-    (officer) =>
-      officer.name.toLowerCase().includes(trimmed) ||
-      officer.nmls.toLowerCase().includes(trimmed)
+  const exactNmls = LOAN_OFFICERS.find(
+    (officer) => officer.nmls.toLowerCase() === cleaned
   );
+  if (exactNmls) return exactNmls;
 
+  const nmlsParts = cleaned.match(/[0-9a-z]+/g);
+  if (nmlsParts) {
+    for (const part of nmlsParts) {
+      const foundByNmls = LOAN_OFFICERS.find((officer) =>
+        officer.nmls.toLowerCase().includes(part)
+      );
+      if (foundByNmls) return foundByNmls;
+    }
+  }
+
+  const foundByContainedName = LOAN_OFFICERS.find((officer) =>
+    cleaned.includes(officer.name.toLowerCase())
+  );
+  if (foundByContainedName) return foundByContainedName;
+
+  const partial = LOAN_OFFICERS.find((officer) =>
+    officer.name.toLowerCase().includes(cleaned)
+  );
   return partial || null;
 }
 
@@ -292,6 +313,7 @@ export default function Page() {
   const [chatLoading, setChatLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [chatError, setChatError] = useState("");
+  const [loanOfficerError, setLoanOfficerError] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
 
@@ -421,15 +443,16 @@ Respond in ${
 
   const confirmOfficerSelection = () => {
     const matched = resolveOfficerFromQuery(loanOfficerQuery);
+
     if (matched) {
       setSelectedOfficer(matched);
       setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
-    } else {
-      setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-      setLoanOfficerQuery(
-        `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
-      );
+      setLoanOfficerError("");
+      return;
     }
+
+    setSelectedOfficer(null);
+    setLoanOfficerError(t.loanOfficerNotFound);
   };
 
   const useDefaultFinley = () => {
@@ -437,6 +460,7 @@ Respond in ${
     setLoanOfficerQuery(
       `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
     );
+    setLoanOfficerError("");
   };
 
   const runPreliminaryReview = async () => {
@@ -453,8 +477,12 @@ Respond in ${
 
     if (!selectedOfficer || selectedOfficer.id !== resolvedOfficer.id) {
       setSelectedOfficer(resolvedOfficer);
-      setLoanOfficerQuery(`${resolvedOfficer.name} — NMLS ${resolvedOfficer.nmls}`);
+      setLoanOfficerQuery(
+        `${resolvedOfficer.name} — NMLS ${resolvedOfficer.nmls}`
+      );
     }
+
+    setLoanOfficerError("");
 
     try {
       const initialPrompt = `
@@ -865,6 +893,7 @@ After answering, ask the next useful qualification-style question if appropriate
                   onChange={(e) => {
                     setLoanOfficerQuery(e.target.value);
                     setSelectedOfficer(null);
+                    setLoanOfficerError("");
                   }}
                   placeholder={t.loanOfficerPlaceholder}
                 />
@@ -880,6 +909,7 @@ After answering, ask the next useful qualification-style question if appropriate
                           setLoanOfficerQuery(
                             `${officer.name} — NMLS ${officer.nmls}`
                           );
+                          setLoanOfficerError("");
                         }}
                         style={styles.suggestionItem}
                       >
@@ -890,6 +920,10 @@ After answering, ask the next useful qualification-style question if appropriate
                 )}
               </div>
             </div>
+
+            {loanOfficerError && (
+              <div style={styles.errorMiniBox}>{loanOfficerError}</div>
+            )}
 
             {accepted && (
               <div style={styles.loanOfficerActionRow}>
@@ -1053,38 +1087,6 @@ After answering, ask the next useful qualification-style question if appropriate
               </div>
             )}
 
-            {scenarioUnlocked && (
-              <div className="bf-card" style={styles.card}>
-                <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
-                  {t.actionTitle}
-                </h3>
-
-                <div style={styles.actionButtonWrap}>
-                  <a
-                    href={activeOfficer.applyUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={styles.actionLinkPrimary}
-                  >
-                    {t.applyNow}
-                  </a>
-
-                  <a
-                    href={activeOfficer.scheduleUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={styles.actionLinkSecondary}
-                  >
-                    {t.scheduleLoanOfficer}
-                  </a>
-
-                  <a href={mailtoHref} style={styles.actionLinkOutline}>
-                    {t.emailLoanOfficer}
-                  </a>
-                </div>
-              </div>
-            )}
-
             <div className="bf-card" style={styles.card}>
               <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
                 {t.conversationTitle}
@@ -1174,6 +1176,38 @@ After answering, ask the next useful qualification-style question if appropriate
                 </>
               )}
             </div>
+
+            {scenarioUnlocked && (
+              <div className="bf-card" style={styles.card}>
+                <h3 className="bf-section-title" style={styles.sectionTitleSmall}>
+                  {t.actionTitle}
+                </h3>
+
+                <div style={styles.actionButtonWrap}>
+                  <a
+                    href={activeOfficer.applyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={styles.actionLinkPrimary}
+                  >
+                    {t.applyNow}
+                  </a>
+
+                  <a
+                    href={activeOfficer.scheduleUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={styles.actionLinkSecondary}
+                  >
+                    {t.scheduleLoanOfficer}
+                  </a>
+
+                  <a href={mailtoHref} style={styles.actionLinkOutline}>
+                    {t.emailLoanOfficer}
+                  </a>
+                </div>
+              </div>
+            )}
           </aside>
         </div>
       </div>
@@ -1313,7 +1347,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 14,
     marginBottom: 18,
     fontSize: 14,
-    lineHeight: 1.6,
+    lineHeight: 1.7,
   },
   formGrid: {
     display: "grid",
@@ -1350,6 +1384,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#111827",
     resize: "vertical",
     marginBottom: 12,
+    lineHeight: 1.6,
   },
   primaryButton: {
     color: "#ffffff",
@@ -1427,7 +1462,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 16,
     color: "#475569",
     fontSize: 14,
-    lineHeight: 1.6,
+    lineHeight: 1.7,
   },
   errorBox: {
     backgroundColor: "#fef2f2",
@@ -1437,7 +1472,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 16,
     whiteSpace: "pre-wrap",
     fontSize: 14,
-    lineHeight: 1.6,
+    lineHeight: 1.7,
   },
   errorMiniBox: {
     backgroundColor: "#fef2f2",
@@ -1446,12 +1481,14 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 12,
     padding: 12,
     fontSize: 13,
+    marginTop: 14,
     marginBottom: 12,
+    lineHeight: 1.6,
   },
   chatScroll: {
     display: "flex",
     flexDirection: "column",
-    gap: 12,
+    gap: 14,
     marginBottom: 16,
     maxHeight: 460,
     overflowY: "auto",
@@ -1459,10 +1496,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   chatBubble: {
     borderRadius: 14,
-    padding: 14,
+    padding: 16,
     whiteSpace: "pre-wrap",
     fontSize: 14,
-    lineHeight: 1.7,
+    lineHeight: 1.8,
   },
   chatComposerWrap: {
     borderTop: "1px solid #e2e8f0",
@@ -1520,7 +1557,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   assignedOfficerSubtext: {
     fontSize: 13,
-    lineHeight: 1.5,
+    lineHeight: 1.6,
     color: "#475569",
   },
   actionButtonWrap: {
