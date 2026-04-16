@@ -34,12 +34,16 @@ type RoutingPayload = {
     credit?: string;
     income?: string;
     debt?: string;
+    phone?: string;
   };
   scenario?: {
     homePrice?: string;
     downPayment?: string;
     estimatedLoanAmount?: string;
     estimatedLtv?: string;
+    occupancy?: string;
+    timeline?: string;
+    fundsSource?: string;
   };
   conversation?: ConversationMessage[];
 };
@@ -60,6 +64,16 @@ type LoanOfficerRecord = {
   assistantMobile: string;
   applyUrl: string;
   scheduleUrl: string;
+};
+
+type SummaryPayload = {
+  borrowerSummary: string;
+  likelyDirection: string;
+  strengths: string[];
+  openQuestions: string[];
+  provisionalPrograms: string[];
+  recommendedNextStep: string;
+  loanOfficerActionPlan: string[];
 };
 
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
@@ -101,6 +115,14 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
 const DEFAULT_LOAN_OFFICER =
   LOAN_OFFICERS.find((officer) => officer.id === "finley-beyond") ||
   LOAN_OFFICERS[0];
+
+function parseJsonSafely<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
 
 function getLatestUserMessage(messages: ChatMessage[]) {
   const reversed = [...messages].reverse();
@@ -163,320 +185,79 @@ function conversationToText(conversation?: ConversationMessage[]) {
     .join("\n");
 }
 
-function hasAny(text: string, patterns: string[]) {
-  return patterns.some((pattern) => text.includes(pattern));
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
-function determineNextQuestion(language: LanguageCode, routing?: RoutingPayload) {
-  const borrower = routing?.borrower || {};
-  const convo = conversationToText(routing?.conversation).toLowerCase();
-
-  const incomeAnswered =
-    hasAny(convo, [
-      "w-2",
-      "w2",
-      "salary",
-      "salaried",
-      "hourly",
-      "self-employed",
-      "self employed",
-      "1099",
-      "retired",
-      "retirement",
-      "commission",
-      "autônomo",
-      "autonomo",
-      "aposentado",
-      "comissão",
-      "trabajador independiente",
-      "jubilado",
-      "salario",
-      "asalariado",
-      "comision",
-    ]) || !!borrower.income;
-
-  const occupancyAnswered = hasAny(convo, [
-    "primary residence",
-    "primary",
-    "owner occupied",
-    "investment",
-    "second home",
-    "vacation home",
-    "residência principal",
-    "moradia principal",
-    "investimento",
-    "segunda casa",
-    "residencia principal",
-    "inversión",
-    "segunda vivienda",
-  ]);
-
-  const timelineAnswered = hasAny(convo, [
-    "30 days",
-    "60 days",
-    "90 days",
-    "as soon as possible",
-    "this month",
-    "next month",
-    "30 dias",
-    "60 dias",
-    "90 dias",
-    "o mais rápido possível",
-    "este mês",
-    "próximo mês",
-    "lo antes posible",
-    "este mes",
-    "próximo mes",
-  ]);
-
-  const fundsSourceAnswered = hasAny(convo, [
-    "saved",
-    "savings",
-    "gift",
-    "gift funds",
-    "sale of home",
-    "retirement account",
-    "economias",
-    "presente",
-    "doação",
-    "venda da casa",
-    "cuenta de retiro",
-    "ahorros",
-    "regalo",
-    "venta de vivienda",
-  ]);
-
-  const firstTimeBuyerAnswered = hasAny(convo, [
-    "first-time buyer",
-    "first time buyer",
-    "first-time homebuyer",
-    "primeira casa",
-    "primeiro imóvel",
-    "comprador de primeira viagem",
-    "primer comprador",
-    "primera vivienda",
-  ]);
-
-  if (!incomeAnswered) {
-    if (language === "pt") {
-      return "Para ajudar seu loan officer a orientar os próximos passos, qual é o tipo da sua renda principal hoje: assalariado W-2, horista, autônomo, 1099, aposentadoria ou outra?";
-    }
-    if (language === "es") {
-      return "Para ayudar a su loan officer a orientar los próximos pasos, ¿cuál es hoy su principal tipo de ingreso: asalariado W-2, por hora, independiente, 1099, jubilación u otro?";
-    }
-    return "To help your loan officer guide the next steps, what is your main income type today: W-2 salaried, hourly, self-employed, 1099, retirement, or something else?";
-  }
-
-  if (!occupancyAnswered) {
-    if (language === "pt") {
-      return "Esta compra seria para moradia principal, segunda casa ou imóvel de investimento?";
-    }
-    if (language === "es") {
-      return "¿Esta compra sería para vivienda principal, segunda vivienda o propiedad de inversión?";
-    }
-    return "Would this purchase be for a primary residence, a second home, or an investment property?";
-  }
-
-  if (!timelineAnswered) {
-    if (language === "pt") {
-      return "Qual é o seu prazo ideal para comprar ou entrar em contrato: o quanto antes, nos próximos 30 a 60 dias, ou mais adiante?";
-    }
-    if (language === "es") {
-      return "¿Cuál es su plazo ideal para comprar o entrar en contrato: lo antes posible, dentro de los próximos 30 a 60 días, o más adelante?";
-    }
-    return "What is your ideal timeline to buy or go under contract: as soon as possible, within the next 30 to 60 days, or later on?";
-  }
-
-  if (!fundsSourceAnswered) {
-    if (language === "pt") {
-      return "Os fundos para entrada e fechamento virão principalmente de economias, gift funds, venda de outro imóvel ou outra fonte?";
-    }
-    if (language === "es") {
-      return "¿Los fondos para el pago inicial y el cierre provendrán principalmente de ahorros, gift funds, venta de otra propiedad u otra fuente?";
-    }
-    return "Will your down payment and closing funds come mainly from savings, gift funds, the sale of another property, or another source?";
-  }
-
-  if (!firstTimeBuyerAnswered) {
-    if (language === "pt") {
-      return "Esta seria sua primeira compra de imóvel ou você já teve imóvel antes?";
-    }
-    if (language === "es") {
-      return "¿Esta sería su primera compra de vivienda o ya ha tenido una propiedad antes?";
-    }
-    return "Would this be your first home purchase, or have you owned property before?";
-  }
-
-  if (language === "pt") {
-    return "Obrigado. Isso já ajuda bastante. Enquanto seu loan officer analisa o cenário, há alguma pergunta específica sobre documentação, prazo, fundos para fechamento ou pagamento mensal que você queira esclarecer?";
-  }
-  if (language === "es") {
-    return "Gracias. Eso ya ayuda bastante. Mientras su loan officer revisa el escenario, ¿hay alguna pregunta específica sobre documentación, plazo, fondos para el cierre o pago mensual que quiera aclarar?";
-  }
-  return "Thank you. That already helps a lot. While your loan officer reviews the scenario, is there any specific question about documentation, timing, funds to close, or monthly payment that you would like to clarify?";
+function nl2br(value: string): string {
+  return escapeHtml(value).replace(/\n/g, "<br />");
 }
 
-function buildAnswer(language: LanguageCode, userMessage: string, officerName: string) {
-  const lower = userMessage.toLowerCase();
+function buildTranscriptHtml(messages: ConversationMessage[]): string {
+  return messages
+    .map((msg, index) => {
+      const roleLabel = msg.role === "user" ? "Borrower" : "Finley Beyond";
 
-  if (
-    hasAny(lower, [
-      "voce fala portugues",
-      "você fala português",
-      "fala portugues",
-      "fala português",
-      "do you speak portuguese",
-      "speak portuguese",
-      "hablas portugués",
-      "habla portugues",
-    ])
-  ) {
-    if (language === "pt") {
-      return "Sim. Posso continuar toda a conversa em português e ajudar a reunir as informações para que seu loan officer faça a análise pessoal.";
-    }
-    if (language === "es") {
-      return "Sí. También puedo continuar en portugués si lo prefiere y ayudar a reunir la información para que su loan officer haga la revisión personal.";
-    }
-    return "Yes. I can continue in Portuguese as well and help gather the information your loan officer needs for a personal review.";
-  }
-
-  if (
-    hasAny(lower, [
-      "can i purchase a home",
-      "can i buy a house",
-      "can i purchase this home",
-      "posso comprar uma casa",
-      "posso comprar esta casa",
-      "puedo comprar una casa",
-      "puedo comprar esta casa",
-      "gostaria de comprar uma casa",
-    ])
-  ) {
-    if (language === "pt") {
-      return `Com base no que foi informado até aqui, ainda não seria apropriado confirmar compra, programa ou aprovação. O que posso dizer é que já temos uma base inicial para que ${officerName} analise seu cenário pessoalmente e oriente os próximos passos. Para adiantar o processo, recomendo clicar em Aplicar Agora.`;
-    }
-    if (language === "es") {
-      return `Con base en lo informado hasta ahora, todavía no sería apropiado confirmar compra, programa o aprobación. Lo que sí puedo decir es que ya tenemos una base inicial para que ${officerName} revise su escenario personalmente y le oriente sobre los próximos pasos. Para avanzar el proceso, le recomiendo hacer clic en Aplicar Ahora.`;
-    }
-    return `Based on what has been shared so far, it would not be appropriate for me to confirm a purchase, a program, or an approval. What I can say is that we now have an initial foundation for ${officerName} to review your scenario personally and advise the next steps. To help move things forward, I recommend clicking Apply Now.`;
-  }
-
-  if (
-    hasAny(lower, [
-      "what do i need to purchase this home",
-      "what do i need to buy this home",
-      "o que eu preciso para comprar esta casa",
-      "que necesito para comprar esta casa",
-      "o que eu preciso para comprar uma casa",
-    ])
-  ) {
-    if (language === "pt") {
-      return `Para seguir adiante, normalmente será importante ter organizados seus documentos de renda, ativos, fundos para entrada e fechamento, além de um cenário claro do imóvel desejado. Seu loan officer também vai querer entender seu objetivo de prazo, ocupação do imóvel e conforto com o pagamento mensal. Essas informações serão enviadas para ${officerName}, que fará a análise pessoal e orientará você sobre o que fazer em seguida.`;
-    }
-    if (language === "es") {
-      return `Para avanzar, normalmente será importante tener organizados sus documentos de ingresos, activos, fondos para pago inicial y cierre, además de un escenario claro de la propiedad deseada. Su loan officer también querrá entender su plazo, el uso de la propiedad y su comodidad con el pago mensual. Esta información se enviará a ${officerName}, quien hará la revisión personal y le indicará qué hacer después.`;
-    }
-    return `To move forward, it will usually be important to organize your income documentation, assets, funds for down payment and closing, and a clear picture of the property you want to buy. Your loan officer will also want to understand your timeline, intended occupancy, and monthly payment comfort. This information will be sent to ${officerName}, who will review it personally and advise what to do next.`;
-  }
-
-  if (
-    hasAny(lower, [
-      "how can i apply",
-      "apply for mortgage",
-      "how do i apply",
-      "como aplicar",
-      "como posso aplicar",
-      "como solicito",
-      "cómo aplicar",
-      "cómo puedo aplicar",
-    ])
-  ) {
-    if (language === "pt") {
-      return "A melhor forma de seguir agora é clicar em Aplicar Agora. Isso ajuda seu loan officer a receber suas informações de forma mais completa e orientar os próximos passos com base na sua situação real.";
-    }
-    if (language === "es") {
-      return "La mejor forma de continuar ahora es hacer clic en Aplicar Ahora. Eso ayuda a que su loan officer reciba su información de manera más completa y pueda orientarle sobre los próximos pasos según su situación real.";
-    }
-    return "The best way to move forward now is to click Apply Now. That helps your loan officer receive your information in a more complete format and advise the next steps based on your real situation.";
-  }
-
-  if (
-    hasAny(lower, [
-      "speak with a loan officer",
-      "talk to a loan officer",
-      "contact a loan officer",
-      "falar com um loan officer",
-      "falar com o loan officer",
-      "hablar con un loan officer",
-    ])
-  ) {
-    if (language === "pt") {
-      return `Você pode usar o botão Agendar com o Loan Officer ou o botão Enviar Email ao Loan Officer. Como ${officerName} está designado ao seu cenário, esse contato será direcionado corretamente.`;
-    }
-    if (language === "es") {
-      return `Puede usar el botón Agendar con el Loan Officer o el botón Enviar Correo al Loan Officer. Como ${officerName} está asignado a su escenario, ese contacto se dirigirá correctamente.`;
-    }
-    return `You can use the Schedule with Loan Officer button or the Email Loan Officer button. Since ${officerName} is assigned to your scenario, that contact will route correctly.`;
-  }
-
-  if (
-    hasAny(lower, [
-      "rate",
-      "rates",
-      "interest rate",
-      "interest rates",
-      "taxa",
-      "taxas",
-      "juros",
-      "tasa",
-      "tasas",
-      "interés",
-      "interes",
-    ])
-  ) {
-    if (language === "pt") {
-      return "As taxas mudam com frequência, e existe uma média nacional publicada no mercado, mas taxa personalizada, termos e programa adequado devem ser informados diretamente pelo loan officer licenciado após a revisão do seu cenário completo.";
-    }
-    if (language === "es") {
-      return "Las tasas cambian con frecuencia, y existe un promedio nacional publicado en el mercado, pero la tasa personalizada, los términos y el programa adecuado deben ser informados directamente por el loan officer con licencia después de revisar su escenario completo.";
-    }
-    return "Rates change frequently, and there are published national average mortgage rates in the market, but your personalized rate, terms, and proper program direction should come directly from the licensed loan officer after reviewing your full scenario.";
-  }
-
-  if (
-    hasAny(lower, [
-      "document",
-      "documents",
-      "documentação",
-      "documentacion",
-      "documentación",
-    ])
-  ) {
-    if (language === "pt") {
-      return "Normalmente seu loan officer vai precisar revisar documentos de renda, ativos, identificação e qualquer informação relevante sobre dívidas ou fundos para fechamento. O que será exigido exatamente depende da análise pessoal do seu cenário.";
-    }
-    if (language === "es") {
-      return "Normalmente su loan officer necesitará revisar documentos de ingresos, activos, identificación y cualquier información relevante sobre deudas o fondos para el cierre. Lo que se requiera exactamente dependerá de la revisión personal de su escenario.";
-    }
-    return "Typically your loan officer will need to review income documents, asset documents, identification, and any relevant information about debts or funds for closing. Exactly what will be required depends on the personal review of your scenario.";
-  }
-
-  if (language === "pt") {
-    return `Obrigado. Vou registrar isso para que ${officerName} tenha um quadro melhor do seu cenário.`;
-  }
-  if (language === "es") {
-    return `Gracias. Voy a registrar eso para que ${officerName} tenga un panorama más claro de su escenario.`;
-  }
-  return `Thank you. I will note that so ${officerName} has a clearer picture of your scenario.`;
+      return `
+        <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;background:${
+          msg.role === "user" ? "#DCEAFE" : "#F3F4F6"
+        };color:#263366;">
+          <div style="font-weight:700;margin-bottom:6px;">${roleLabel} ${index + 1}</div>
+          <div style="line-height:1.6;">${nl2br(msg.content || "")}</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
-function buildInitialBorrowerReview(
+function buildContextBlock(
   language: LanguageCode,
-  officerName: string,
-  routing?: RoutingPayload
+  routing: RoutingPayload | undefined,
+  assignedOfficer: LoanOfficerRecord
 ) {
-  const nextQuestion = determineNextQuestion(language, routing);
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+  const transcript = conversationToText(routing?.conversation);
 
+  return `
+Borrower and scenario context:
+
+Preferred language: ${language}
+Assigned loan officer: ${assignedOfficer.name} — NMLS ${assignedOfficer.nmls}
+Assigned loan officer email: ${assignedOfficer.email}
+Assistant email: ${assignedOfficer.assistantEmail}
+
+Borrower details:
+- Name: ${borrower.name || "Not provided"}
+- Email: ${borrower.email || "Not provided"}
+- Phone: ${borrower.phone || "Not provided"}
+- Estimated credit score: ${borrower.credit || "Not provided"}
+- Gross monthly income: ${borrower.income || "Not provided"}
+- Monthly debt: ${borrower.debt || "Not provided"}
+
+Scenario details:
+- Estimated home price: ${scenario.homePrice || "Not provided"}
+- Estimated down payment: ${scenario.downPayment || "Not provided"}
+- Estimated loan amount: ${scenario.estimatedLoanAmount || "Not provided"}
+- Estimated LTV: ${scenario.estimatedLtv || "Not provided"}
+- Occupancy: ${scenario.occupancy || "Not provided"}
+- Timeline: ${scenario.timeline || "Not provided"}
+- Funds source: ${scenario.fundsSource || "Not provided"}
+
+Conversation transcript so far:
+${transcript || "No prior transcript yet."}
+  `.trim();
+}
+
+function buildInitialFallback(
+  language: LanguageCode,
+  officerName: string
+): string {
   if (language === "pt") {
     return `Obrigado por compartilhar estas informações iniciais.
 
@@ -484,9 +265,9 @@ Vou organizar este cenário para o loan officer designado, que fará a análise 
 
 Para adiantar o processo, recomendo também clicar em Aplicar Agora.
 
-Agora, vou fazer algumas perguntas para ajudar na qualificação preliminar:
+Vou fazer algumas perguntas para ajudar na qualificação preliminar:
 
-${nextQuestion}`;
+Esta compra seria para moradia principal, segunda casa ou imóvel de investimento?`;
   }
 
   if (language === "es") {
@@ -496,9 +277,9 @@ Voy a organizar este escenario para el loan officer asignado, quien realizará l
 
 Para adelantar el proceso, también le recomiendo hacer clic en Aplicar Ahora.
 
-Ahora voy a hacerle algunas preguntas para ayudar con la calificación preliminar:
+Voy a hacerle algunas preguntas para ayudar con la calificación preliminar:
 
-${nextQuestion}`;
+¿Esta compra sería para vivienda principal, segunda vivienda o propiedad de inversión?`;
   }
 
   return `Thank you for sharing this initial information.
@@ -509,16 +290,13 @@ To help move things forward, I also recommend clicking Apply Now.
 
 I will ask you a few questions to help with the preliminary qualification process:
 
-${nextQuestion}`;
+Would this purchase be for a primary residence, a second home, or an investment property?`;
 }
 
-function buildScenarioReview(
+function buildScenarioFallback(
   language: LanguageCode,
-  officerName: string,
-  routing?: RoutingPayload
-) {
-  const nextQuestion = determineNextQuestion(language, routing);
-
+  officerName: string
+): string {
   if (language === "pt") {
     return `Perfeito.
 
@@ -528,9 +306,7 @@ Estas informações serão analisadas pessoalmente, e você receberá orientaç�
 
 Também recomendo clicar em Aplicar Agora para adiantar o processo.
 
-Vou continuar com algumas perguntas para ajudar na preparação do seu perfil:
-
-${nextQuestion}`;
+Para eu ajudar melhor, qual é o seu prazo ideal para comprar ou entrar em contrato: o quanto antes, nos próximos 30 a 60 dias, ou mais adiante?`;
   }
 
   if (language === "es") {
@@ -542,9 +318,7 @@ Esta información será revisada personalmente, y usted recibirá orientación s
 
 También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.
 
-Voy a continuar con algunas preguntas para ayudar a preparar su perfil:
-
-${nextQuestion}`;
+Para ayudarle mejor, ¿cuál es su plazo ideal para comprar o entrar en contrato: lo antes posible, dentro de los próximos 30 a 60 días, o más adelante?`;
   }
 
   return `Perfect.
@@ -555,93 +329,441 @@ This information will be reviewed personally, and you will be guided on the next
 
 I also recommend clicking Apply Now to help move the process forward.
 
-I will continue asking a few questions to better prepare your profile:
-
-${nextQuestion}`;
+To help me guide the next step, what is your ideal timeline to buy or go under contract: as soon as possible, within the next 30 to 60 days, or later on?`;
 }
 
-function buildFollowUpReply(
-  language: LanguageCode,
-  officerName: string,
-  userMessage: string,
-  routing?: RoutingPayload
-) {
-  const answer = buildAnswer(language, userMessage, officerName);
-  const nextQuestion = determineNextQuestion(language, routing);
-
+function buildFollowUpFallback(language: LanguageCode): string {
   if (language === "pt") {
-    return `${answer}
+    return `Obrigado. Isso já ajuda bastante.
+
+Vou registrar isso para que o loan officer designado tenha um quadro mais claro do seu cenário.
+
+Também recomendo clicar em Aplicar Agora para adiantar o processo.
 
 Próxima pergunta útil:
 
-${nextQuestion}`;
+Os fundos para entrada e fechamento virão principalmente de economias, gift funds, venda de outro imóvel ou outra fonte?`;
   }
 
   if (language === "es") {
-    return `${answer}
+    return `Gracias. Eso ayuda bastante.
+
+Voy a registrar eso para que el loan officer asignado tenga un panorama más claro de su escenario.
+
+También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.
 
 Siguiente pregunta útil:
 
-${nextQuestion}`;
+¿Los fondos para el pago inicial y el cierre provendrán principalmente de ahorros, gift funds, venta de otra propiedad u otra fuente?`;
   }
 
-  return `${answer}
+  return `Thank you. That helps a lot.
+
+I will note that so the assigned loan officer has a clearer picture of your scenario.
+
+I also recommend clicking Apply Now to help move things forward.
 
 Helpful next question:
 
-${nextQuestion}`;
+Will your down payment and closing funds come mainly from savings, gift funds, the sale of another property, or another source?`;
 }
 
-function buildInternalSummary(
+async function callOpenAIChat(args: {
+  system: string;
+  user: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
+        temperature: 0.45,
+        messages: [
+          { role: "system", content: args.system },
+          { role: "user", content: args.user },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+
+    return typeof content === "string" && content.trim() ? content.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function callOpenAIJson<T>(args: {
+  system: string;
+  user: string;
+}): Promise<T | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_SUMMARY_MODEL || "gpt-4o-mini",
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: args.system },
+          { role: "user", content: args.user },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const raw = data?.choices?.[0]?.message?.content;
+    if (typeof raw !== "string" || !raw.trim()) return null;
+
+    return parseJsonSafely<T>(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function generateBorrowerReply(args: {
+  stage: "initial_review" | "scenario_review" | "follow_up";
+  language: LanguageCode;
+  latestUserMessage: string;
+  routing?: RoutingPayload;
+  assignedOfficer: LoanOfficerRecord;
+}): Promise<string> {
+  const { stage, language, latestUserMessage, routing, assignedOfficer } = args;
+
+  const system = `
+You are Finley Beyond, an AI-powered mortgage advisor assistant for Beyond Financing.
+
+Your job:
+- speak naturally and professionally
+- gather mortgage qualification information
+- keep the conversation helpful and warm
+- sound like a real, polished mortgage loan officer assistant
+- tailor the response to the borrower's language
+
+Important compliance rules:
+- never promise approval
+- never state that the borrower is definitively qualified
+- never give a commitment to lend
+- never give personalized interest rates
+- never state a final underwriting decision
+- you may discuss likely or possible mortgage directions only in broad, careful language when useful
+- you may mention that the assigned licensed loan officer will personally review the scenario
+- encourage the borrower to click Apply Now when appropriate
+- keep responses concise but human
+- always end with one useful next question unless the borrower is clearly asking to speak with the loan officer right away
+
+Language rule:
+- respond only in ${language === "pt" ? "Portuguese" : language === "es" ? "Spanish" : "English"}
+  `.trim();
+
+  const stageInstruction =
+    stage === "initial_review"
+      ? `
+The borrower has just completed the first intake.
+Acknowledge the information.
+Mention that the assigned loan officer will review it personally.
+Do not sound robotic.
+Then ask the next best qualification question.
+`.trim()
+      : stage === "scenario_review"
+      ? `
+The borrower has now added a property target scenario.
+Acknowledge the scenario in a natural way.
+Mention that the assigned loan officer will review it personally.
+If helpful, briefly mention broad possible direction without promising anything.
+Then ask the next best qualification question.
+`.trim()
+      : `
+Continue the live borrower-facing mortgage conversation naturally.
+Answer the borrower's message in a human way.
+You may reference broad mortgage directions carefully if the borrower asks.
+Do not overuse repeated phrases.
+Then ask the next best qualification question unless the borrower clearly wants direct contact only.
+`.trim();
+
+  const user = `
+${buildContextBlock(language, routing, assignedOfficer)}
+
+Current stage: ${stage}
+Assigned loan officer name: ${assignedOfficer.name}
+
+Latest user-facing input:
+${latestUserMessage}
+
+Instruction:
+${stageInstruction}
+  `.trim();
+
+  const aiReply = await callOpenAIChat({ system, user });
+
+  if (aiReply) return aiReply;
+
+  if (stage === "initial_review") {
+    return buildInitialFallback(language, assignedOfficer.name);
+  }
+
+  if (stage === "scenario_review") {
+    return buildScenarioFallback(language, assignedOfficer.name);
+  }
+
+  return buildFollowUpFallback(language);
+}
+
+function buildFallbackSummary(
   stage: string,
   assignedOfficer: LoanOfficerRecord,
   routing?: RoutingPayload
-) {
+): SummaryPayload {
   const borrower = routing?.borrower || {};
   const scenario = routing?.scenario || {};
-  const language = routing?.language || "en";
-  const convo = conversationToText(routing?.conversation);
+  const transcript = conversationToText(routing?.conversation);
 
-  return `
-Beyond Intelligence Internal Summary
+  const strengths: string[] = [];
+  if (borrower.name) strengths.push("Borrower provided name.");
+  if (borrower.email) strengths.push("Borrower provided email.");
+  if (borrower.credit) strengths.push(`Estimated credit score provided: ${borrower.credit}.`);
+  if (borrower.income) strengths.push(`Gross monthly income provided: ${borrower.income}.`);
+  if (scenario.homePrice) strengths.push(`Estimated home price provided: ${scenario.homePrice}.`);
+  if (scenario.downPayment) strengths.push(`Estimated down payment provided: ${scenario.downPayment}.`);
+
+  const provisionalPrograms: string[] = [];
+  const credit = Number(borrower.credit || 0);
+  const ltv = Number(String(scenario.estimatedLtv || "").replace("%", "") || 0);
+
+  if (credit >= 700) provisionalPrograms.push("Conventional review");
+  if (credit >= 620 && ltv >= 90) provisionalPrograms.push("High-LTV conventional review");
+  if (credit > 0 && credit < 700) provisionalPrograms.push("FHA review");
+  if (provisionalPrograms.length === 0) provisionalPrograms.push("Initial financing review");
+
+  return {
+    borrowerSummary:
+      transcript ||
+      "Borrower engaged with Finley Beyond and submitted an initial mortgage scenario.",
+    likelyDirection:
+      "Borrower appears to be in an early mortgage review stage and should receive licensed loan officer follow-up.",
+    strengths:
+      strengths.length > 0
+        ? strengths
+        : ["Borrower engaged with the intake and qualification flow."],
+    openQuestions: [
+      "Confirm occupancy intent.",
+      "Confirm timeline to purchase.",
+      "Confirm funds source for down payment and closing.",
+      "Confirm supporting documentation strategy.",
+    ],
+    provisionalPrograms,
+    recommendedNextStep:
+      "Loan officer should review the scenario personally and guide the borrower toward full application and documentation collection.",
+    loanOfficerActionPlan: [
+      `Review this ${stage} interaction.`,
+      "Contact the borrower directly.",
+      "Confirm occupancy, timeline, and funds to close.",
+      "Determine the most appropriate program direction after full review.",
+    ],
+  };
+}
+
+async function generateInternalSummary(args: {
+  stage: string;
+  assignedOfficer: LoanOfficerRecord;
+  routing?: RoutingPayload;
+}): Promise<SummaryPayload> {
+  const { stage, assignedOfficer, routing } = args;
+
+  const fallback = buildFallbackSummary(stage, assignedOfficer, routing);
+
+  const system = `
+You create concise internal mortgage loan officer briefings for Beyond Financing.
+
+Return valid JSON only with this exact shape:
+{
+  "borrowerSummary": "string",
+  "likelyDirection": "string",
+  "strengths": ["string"],
+  "openQuestions": ["string"],
+  "provisionalPrograms": ["string"],
+  "recommendedNextStep": "string",
+  "loanOfficerActionPlan": ["string"]
+}
+
+Rules:
+- write for an internal licensed mortgage loan officer
+- be practical and concise
+- use only the borrower data and transcript provided
+- do not promise approval
+- do not claim certainty where the data does not support it
+- "provisionalPrograms" should be directional, not guaranteed
+- acceptable directional examples include Conventional review, FHA review, VA review, Jumbo review, Self-employed review, ITIN review, Alternative documentation review, etc.
+- mention likely program directions only when supported by the intake and conversation
+  `.trim();
+
+  const user = `
+Assigned loan officer:
+- Name: ${assignedOfficer.name}
+- NMLS: ${assignedOfficer.nmls}
 
 Stage:
 ${stage}
 
-Preferred Language:
-${language}
-
-Assigned Loan Officer:
-${assignedOfficer.name} — NMLS ${assignedOfficer.nmls}
-
-Borrower:
-- Name: ${borrower.name || "Not provided"}
-- Email: ${borrower.email || "Not provided"}
-- Estimated Credit Score: ${borrower.credit || "Not provided"}
-- Gross Monthly Income: ${borrower.income || "Not provided"}
-- Monthly Debt: ${borrower.debt || "Not provided"}
-
-Target Scenario:
-- Estimated Home Price: ${scenario.homePrice || "Not provided"}
-- Estimated Down Payment: ${scenario.downPayment || "Not provided"}
-- Estimated Loan Amount: ${scenario.estimatedLoanAmount || "Not provided"}
-- Estimated LTV: ${scenario.estimatedLtv || "Not provided"}
-
-Conversation Transcript:
-${convo || "No additional conversation yet."}
-
-Internal Follow-Up Direction:
-- Borrower should be encouraged to complete the full application
-- Licensed loan officer must determine program direction, terms, and next steps
-- Review documentation needs, borrower goals, occupancy, timeline, and funds to close
-- Reach out personally to the borrower with next steps
+${buildContextBlock(getLanguage(routing), routing, assignedOfficer)}
   `.trim();
+
+  const aiSummary = await callOpenAIJson<SummaryPayload>({ system, user });
+
+  if (!aiSummary) return fallback;
+
+  return {
+    borrowerSummary: aiSummary.borrowerSummary || fallback.borrowerSummary,
+    likelyDirection: aiSummary.likelyDirection || fallback.likelyDirection,
+    strengths:
+      Array.isArray(aiSummary.strengths) && aiSummary.strengths.length > 0
+        ? aiSummary.strengths
+        : fallback.strengths,
+    openQuestions:
+      Array.isArray(aiSummary.openQuestions) && aiSummary.openQuestions.length > 0
+        ? aiSummary.openQuestions
+        : fallback.openQuestions,
+    provisionalPrograms:
+      Array.isArray(aiSummary.provisionalPrograms) &&
+      aiSummary.provisionalPrograms.length > 0
+        ? aiSummary.provisionalPrograms
+        : fallback.provisionalPrograms,
+    recommendedNextStep:
+      aiSummary.recommendedNextStep || fallback.recommendedNextStep,
+    loanOfficerActionPlan:
+      Array.isArray(aiSummary.loanOfficerActionPlan) &&
+      aiSummary.loanOfficerActionPlan.length > 0
+        ? aiSummary.loanOfficerActionPlan
+        : fallback.loanOfficerActionPlan,
+  };
+}
+
+function buildSummaryHtml(args: {
+  summary: SummaryPayload;
+  stage: string;
+  assignedOfficer: LoanOfficerRecord;
+  routing?: RoutingPayload;
+}) {
+  const { summary, stage, assignedOfficer, routing } = args;
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+  const transcriptMessages = routing?.conversation || [];
+
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
+      <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond</h1>
+
+      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
+        <p><strong>Stage:</strong> ${escapeHtml(stage)}</p>
+        <p><strong>Preferred Language:</strong> ${escapeHtml(routing?.language || "en")}</p>
+        <p><strong>Assigned Loan Officer:</strong> ${escapeHtml(
+          `${assignedOfficer.name} — NMLS ${assignedOfficer.nmls}`
+        )}</p>
+        <p><strong>Borrower Name:</strong> ${escapeHtml(borrower.name || "Not provided")}</p>
+        <p><strong>Email:</strong> ${escapeHtml(borrower.email || "Not provided")}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(borrower.phone || "Not provided")}</p>
+        <p><strong>Credit Score:</strong> ${escapeHtml(borrower.credit || "Not provided")}</p>
+        <p><strong>Gross Monthly Income:</strong> ${escapeHtml(
+          borrower.income || "Not provided"
+        )}</p>
+        <p><strong>Monthly Debt:</strong> ${escapeHtml(borrower.debt || "Not provided")}</p>
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Scenario Snapshot</h2>
+        <p><strong>Estimated Home Price:</strong> ${escapeHtml(
+          scenario.homePrice || "Not provided"
+        )}</p>
+        <p><strong>Estimated Down Payment:</strong> ${escapeHtml(
+          scenario.downPayment || "Not provided"
+        )}</p>
+        <p><strong>Estimated Loan Amount:</strong> ${escapeHtml(
+          scenario.estimatedLoanAmount || "Not provided"
+        )}</p>
+        <p><strong>Estimated LTV:</strong> ${escapeHtml(
+          scenario.estimatedLtv || "Not provided"
+        )}</p>
+        <p><strong>Occupancy:</strong> ${escapeHtml(scenario.occupancy || "Not provided")}</p>
+        <p><strong>Timeline:</strong> ${escapeHtml(scenario.timeline || "Not provided")}</p>
+        <p><strong>Funds Source:</strong> ${escapeHtml(
+          scenario.fundsSource || "Not provided"
+        )}</p>
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Borrower Summary</h2>
+        <p style="line-height:1.7;">${nl2br(summary.borrowerSummary)}</p>
+
+        <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
+        <p style="line-height:1.7;">${nl2br(summary.likelyDirection)}</p>
+
+        <h3 style="margin:18px 0 8px 0;">Provisional Program Directions</h3>
+        <ul style="line-height:1.8;">
+          ${summary.provisionalPrograms
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("")}
+        </ul>
+
+        <h3 style="margin:18px 0 8px 0;">Strengths</h3>
+        <ul style="line-height:1.8;">
+          ${summary.strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+
+        <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
+        <ul style="line-height:1.8;">
+          ${summary.openQuestions
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("")}
+        </ul>
+
+        <h3 style="margin:18px 0 8px 0;">Recommended Next Step</h3>
+        <p style="line-height:1.7;">${nl2br(summary.recommendedNextStep)}</p>
+
+        <h3 style="margin:18px 0 8px 0;">Loan Officer Action Plan</h3>
+        <ul style="line-height:1.8;">
+          ${summary.loanOfficerActionPlan
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("")}
+        </ul>
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Full Conversation Transcript</h2>
+        ${
+          transcriptMessages.length > 0
+            ? buildTranscriptHtml(transcriptMessages)
+            : "<p>No transcript available.</p>"
+        }
+      </div>
+    </div>
+  `;
 }
 
 async function sendResendEmail(args: {
   assignedOfficer: LoanOfficerRecord;
-  summary: string;
   routing?: RoutingPayload;
+  stage: string;
+  summary: SummaryPayload;
 }) {
   const resendApiKey = process.env.RESEND_API_KEY;
   const resendFrom =
@@ -655,6 +777,13 @@ async function sendResendEmail(args: {
 
   const borrowerName = args.routing?.borrower?.name || "Unknown Borrower";
 
+  const html = buildSummaryHtml({
+    summary: args.summary,
+    stage: args.stage,
+    assignedOfficer: args.assignedOfficer,
+    routing: args.routing,
+  });
+
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -665,8 +794,9 @@ async function sendResendEmail(args: {
       from: resendFrom,
       to: [args.assignedOfficer.email],
       cc: [args.assignedOfficer.assistantEmail],
+      reply_to: args.routing?.borrower?.email || undefined,
       subject: `Beyond Intelligence Interaction — ${borrowerName}`,
-      text: args.summary,
+      html,
     }),
   });
 
@@ -693,8 +823,8 @@ async function sendTwilioSms(args: {
   }
 
   const borrowerName = args.routing?.borrower?.name || "Unknown Borrower";
-  const messageToOfficer = `New Beyond Intelligence interaction received for ${borrowerName}. Review your email summary and follow up promptly.`;
-  const messageToAssistant = `New Beyond Intelligence interaction received for ${borrowerName}. Review the assigned loan officer email summary.`;
+  const messageToOfficer = `New Beyond Intelligence interaction received for ${borrowerName}. Review the email summary and follow up promptly.`;
+  const messageToAssistant = `New Beyond Intelligence interaction received for ${borrowerName}. Review the assigned loan officer summary email.`;
 
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
 
@@ -732,23 +862,14 @@ async function sendTwilioSms(args: {
 async function queueInternalNotifications(args: {
   stage: string;
   assignedOfficer: LoanOfficerRecord;
-  summary: string;
   routing?: RoutingPayload;
+  summary: SummaryPayload;
 }) {
-  console.log("EMAIL_NOTIFICATION_READY", {
-    to: args.assignedOfficer.email,
-    cc: args.assignedOfficer.assistantEmail,
-  });
-
-  console.log("SMS_NOTIFICATION_READY", {
-    toOfficer: args.assignedOfficer.mobile,
-    toAssistant: args.assignedOfficer.assistantMobile,
-  });
-
   await sendResendEmail({
     assignedOfficer: args.assignedOfficer,
-    summary: args.summary,
     routing: args.routing,
+    stage: args.stage,
+    summary: args.summary,
   });
 
   await sendTwilioSms({
@@ -780,31 +901,45 @@ export async function POST(req: Request) {
       );
     }
 
-    const lower = latestUserMessage.toLowerCase();
     const language = getLanguage(routing);
     const assignedOfficer = resolveLoanOfficer(routing);
 
-    const isInitialAnalysisRequest =
-      lower.includes("start the borrower conversation as a loan officer assistant") ||
-      lower.includes("briefly acknowledge the borrower information already entered");
+    const reply = await generateBorrowerReply({
+      stage,
+      language,
+      latestUserMessage,
+      routing,
+      assignedOfficer,
+    });
 
-    const isScenarioReviewRequest =
-      lower.includes("the borrower has now entered the target property scenario") ||
-      lower.includes("acknowledge it briefly");
-
-    const reply = isInitialAnalysisRequest
-      ? buildInitialBorrowerReview(language, assignedOfficer.name, routing)
-      : isScenarioReviewRequest
-      ? buildScenarioReview(language, assignedOfficer.name, routing)
-      : buildFollowUpReply(language, assignedOfficer.name, latestUserMessage, routing);
-
-    const internalSummary = buildInternalSummary(stage, assignedOfficer, routing);
+    const summary = await generateInternalSummary({
+      stage,
+      assignedOfficer,
+      routing: {
+        ...routing,
+        conversation:
+          routing?.conversation && routing.conversation.length > 0
+            ? routing.conversation
+            : stage === "follow_up"
+            ? routing?.conversation || []
+            : [
+                ...(routing?.conversation || []),
+                { role: "assistant", content: reply },
+              ],
+      },
+    });
 
     await queueInternalNotifications({
       stage,
       assignedOfficer,
-      summary: internalSummary,
-      routing,
+      routing: {
+        ...routing,
+        conversation:
+          routing?.conversation && routing.conversation.length > 0
+            ? routing.conversation
+            : [{ role: "assistant", content: reply }],
+      },
+      summary,
     });
 
     return NextResponse.json({
@@ -818,6 +953,7 @@ export async function POST(req: Request) {
         scheduleUrl: assignedOfficer.scheduleUrl,
       },
       internalSummaryPrepared: true,
+      summaryPreview: summary,
     });
   } catch {
     return NextResponse.json(
