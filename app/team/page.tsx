@@ -44,6 +44,13 @@ type AccessCredential = {
   password: string;
   role: TeamRole;
   displayName: string;
+  email?: string;
+};
+
+type ProgramSuggestion = {
+  program: string;
+  strength: string;
+  notes: string[];
 };
 
 const ACCESS_CREDENTIALS: AccessCredential[] = [
@@ -52,24 +59,49 @@ const ACCESS_CREDENTIALS: AccessCredential[] = [
     password: "ChangeMeSandro1!",
     role: "Loan Officer",
     displayName: "Sandro Pansini Souza",
+    email: "pansini@beyondfinancing.com",
   },
   {
     loginId: "2394496FB",
     password: "ChangeMeFinley1!",
     role: "Loan Officer Assistant",
     displayName: "Finley Beyond",
+    email: "finley@beyondfinancing.com",
   },
   {
-    loginId: "2394496SP",
-    password: "ChangeMeProcessor1!",
+    loginId: "2394496AS",
+    password: "AmarilisAS!2394",
     role: "Processor",
-    displayName: "Sample Processor",
+    displayName: "Amarilis Santos",
+    email: "amarilis@beyondfinancing.com",
   },
   {
-    loginId: "2394496LO",
-    password: "ChangeMeAssistant1!",
+    loginId: "18959",
+    password: "Warren18959!BI",
+    role: "Loan Officer",
+    displayName: "Warren Wendt",
+    email: "warren@beyondfinancing.com",
+  },
+  {
+    loginId: "2394496KN",
+    password: "KyleKN!2394",
+    role: "Processor",
+    displayName: "Kyle Nicholson",
+    email: "kyle@beyondfinancing.com",
+  },
+  {
+    loginId: "2749644",
+    password: "Nate2749644!BI",
+    role: "Loan Officer",
+    displayName: "Nate Hubley",
+    email: "nate@beyondfinancing.com",
+  },
+  {
+    loginId: "2394496BM",
+    password: "BiaBM!2394",
     role: "Loan Officer Assistant",
-    displayName: "Sample LO Assistant",
+    displayName: "Bia Marques",
+    email: "bia@beyondfinancing.com",
   },
   {
     loginId: "REA001",
@@ -77,36 +109,6 @@ const ACCESS_CREDENTIALS: AccessCredential[] = [
     role: "Real Estate Agent",
     displayName: "Sample Real Estate Agent",
   },
-  {
-  loginId: "18959",
-  password: "Warren18959!BI",
-  role: "Loan Officer",
-  displayName: "Warren Wendt",
-},
-{
-  loginId: "2749644",
-  password: "Nate2749644!BI",
-  role: "Loan Officer",
-  displayName: "Nate Hubley",
-},
-{
-  loginId: "2394496AS",
-  password: "AmarilisAS!2394",
-  role: "Processor",
-  displayName: "Amarilis Santos",
-},
-{
-  loginId: "2394496KN",
-  password: "KyleKN!2394",
-  role: "Processor",
-  displayName: "Kyle Nicholson",
-},
-{
-  loginId: "2394496BM",
-  password: "BiaBM!2394",
-  role: "Loan Officer Assistant",
-  displayName: "Bia Marques",
-},
 ];
 
 function cardStyle(): React.CSSProperties {
@@ -168,6 +170,136 @@ function normalizeOccupancy(
   return "other";
 }
 
+function getRoleObjective(role: TeamRole): string {
+  switch (role) {
+    case "Loan Officer":
+      return "Focus on qualification direction, program fit, borrower strength, risk flags, and next underwriting questions.";
+    case "Loan Officer Assistant":
+      return "Focus on intake completeness, borrower follow-up, unanswered questions, missing details, and communication preparation for the loan officer.";
+    case "Processor":
+      return "Focus on documentation readiness, missing items, verifications, timeline blockers, and what the file still needs before clean review.";
+    case "Real Estate Agent":
+      return "Focus on deal viability, borrower readiness, likely financing path, timing strength, and what needs to happen next to move toward contract confidence.";
+    default:
+      return "Focus on structured mortgage scenario analysis.";
+  }
+}
+
+function getRolePrompt(role: TeamRole, scenario: TeamScenario): string {
+  const borrowerName = scenario.borrowerName || "the borrower";
+
+  switch (role) {
+    case "Loan Officer":
+      return `Act as Finley Beyond supporting a Loan Officer. Analyze ${borrowerName}'s scenario from a loan structuring perspective. Emphasize likely program direction, qualification alignment, material risk flags, compensating factors, and the next 3-5 underwriting-focused questions the loan officer should ask.`;
+    case "Loan Officer Assistant":
+      return `Act as Finley Beyond supporting a Loan Officer Assistant. Analyze ${borrowerName}'s scenario from an intake and borrower-preparation perspective. Emphasize unanswered intake questions, missing borrower facts, likely documents to request next, and what should be organized before handing the file to the loan officer.`;
+    case "Processor":
+      return `Act as Finley Beyond supporting a Processor. Analyze ${borrowerName}'s scenario from a file-readiness perspective. Emphasize missing documentation, expected verifications, timeline blockers, underwriting support items, and what should be cleaned up before the file progresses.`;
+    case "Real Estate Agent":
+      return `Act as Finley Beyond supporting a Real Estate Agent. Analyze ${borrowerName}'s scenario from a transaction-readiness perspective. Emphasize borrower strength, likely financing direction, timing readiness, possible pressure points that could affect contract strategy, and the next actions the agent and loan team should coordinate.`;
+    default:
+      return `Act as Finley Beyond supporting a mortgage professional reviewing ${borrowerName}'s scenario.`;
+  }
+}
+
+function getRoleStarterMessage(role: TeamRole): string {
+  switch (role) {
+    case "Loan Officer":
+      return "I am ready to review this borrower scenario from a loan officer perspective. Help me narrow program direction, qualification alignment, and risk.";
+    case "Loan Officer Assistant":
+      return "I am ready to review this borrower scenario from a loan officer assistant perspective. Help me identify missing questions, borrower follow-up items, and likely documents to request.";
+    case "Processor":
+      return "I am ready to review this borrower scenario from a processor perspective. Help me identify missing documentation, verification items, and file-readiness issues.";
+    case "Real Estate Agent":
+      return "I am ready to review this borrower scenario from a real estate agent perspective. Help me understand buyer readiness, likely financing direction, and next coordination steps.";
+    default:
+      return "I am ready to review this borrower scenario.";
+  }
+}
+
+function buildRoleNotes(role: TeamRole): string[] {
+  switch (role) {
+    case "Loan Officer":
+      return [
+        "Finley Beyond will speak in loan-structuring language.",
+        "Expect focus on qualification, program fit, compensating factors, and risk flags.",
+        "Best for borrower strategy and pre-approval direction.",
+      ];
+    case "Loan Officer Assistant":
+      return [
+        "Finley Beyond will emphasize intake completion and follow-up preparation.",
+        "Expect focus on missing answers, missing borrower facts, and next document requests.",
+        "Best for preparing a clean handoff to the loan officer.",
+      ];
+    case "Processor":
+      return [
+        "Finley Beyond will emphasize file-readiness and documentation discipline.",
+        "Expect focus on missing documents, verifications, conditions, and timeline blockers.",
+        "Best for preparing a cleaner submission path.",
+      ];
+    case "Real Estate Agent":
+      return [
+        "Finley Beyond will emphasize deal readiness and transaction clarity.",
+        "Expect focus on timing, borrower strength, likely financing path, and coordination points.",
+        "Best for transaction planning with the loan team.",
+      ];
+    default:
+      return ["Role notes unavailable."];
+  }
+}
+
+function buildMissingDocumentChecklist(
+  role: TeamRole,
+  scenario: TeamScenario
+): string[] {
+  const docs: string[] = [];
+
+  if (!scenario.borrowerName.trim()) docs.push("Borrower full name");
+  if (!scenario.professionalEmail.trim())
+    docs.push("Professional email for summary routing");
+  if (!scenario.credit.trim()) docs.push("Credit score or credit estimate");
+  if (!scenario.income.trim()) docs.push("Gross monthly income");
+  if (!scenario.homePrice.trim()) docs.push("Estimated home price");
+  if (!scenario.downPayment.trim()) docs.push("Estimated down payment or equity");
+  if (!scenario.occupancy.trim()) docs.push("Occupancy intent");
+  if (!scenario.borrowerCurrentState.trim())
+    docs.push("Borrower current state");
+  if (!scenario.borrowerTargetState.trim())
+    docs.push("Borrower target state");
+
+  if (
+    role === "Loan Officer Assistant" ||
+    role === "Processor" ||
+    role === "Loan Officer"
+  ) {
+    docs.push("Government-issued ID");
+    docs.push("Recent pay stubs or income support");
+    docs.push("Last 2 months bank statements");
+    docs.push("Authorization to pull credit if applicable");
+  }
+
+  if (role === "Processor") {
+    docs.push("Asset sourcing review");
+    docs.push("Employment / income verification plan");
+    docs.push("Purchase contract if already under agreement");
+    docs.push("Real estate owned schedule if applicable");
+  }
+
+  if (role === "Loan Officer") {
+    docs.push("Income type clarification");
+    docs.push("Employment history / self-employment history");
+    docs.push("Existing real estate owned details");
+  }
+
+  if (role === "Real Estate Agent") {
+    docs.push("Loan officer confirmation");
+    docs.push("Timeline to apply / pre-approval");
+    docs.push("Funds-to-close discussion");
+  }
+
+  return Array.from(new Set(docs));
+}
+
 export default function TeamPage() {
   const [accessLoginId, setAccessLoginId] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
@@ -222,7 +354,7 @@ export default function TeamPage() {
     return Math.max(0, Math.round(((homePrice - downPayment) / homePrice) * 100));
   }, [scenario.homePrice, scenario.downPayment]);
 
-  const onScreenSuggestions = useMemo(() => {
+  const onScreenSuggestions: ProgramSuggestion[] = useMemo(() => {
     const credit = Number(scenario.credit || 0);
     const ltv = estimatedLtv;
     const occupancy = normalizeOccupancy(scenario.occupancy);
@@ -304,6 +436,16 @@ export default function TeamPage() {
     estimatedLtv,
   ]);
 
+  const roleNotes = useMemo(
+    () => buildRoleNotes(scenario.role),
+    [scenario.role]
+  );
+
+  const documentChecklist = useMemo(
+    () => buildMissingDocumentChecklist(scenario.role, scenario),
+    [scenario.role, scenario]
+  );
+
   const handleAccessLogin = () => {
     const credential = ACCESS_CREDENTIALS.find(
       (item) =>
@@ -326,8 +468,18 @@ export default function TeamPage() {
     setScenario((prev) => ({
       ...prev,
       professionalName: credential.displayName,
+      professionalEmail: credential.email || prev.professionalEmail,
       role: credential.role,
     }));
+
+    setMessages([
+      {
+        role: "assistant",
+        content: `Welcome ${credential.displayName}. ${getRoleObjective(
+          credential.role
+        )}`,
+      },
+    ]);
   };
 
   const sendMessage = async () => {
@@ -339,9 +491,9 @@ export default function TeamPage() {
 
     setSending(true);
 
-    const nextMessages = [
+    const nextMessages: TeamChatMessage[] = [
       ...messages,
-      { role: "user" as const, content: chatInput.trim() },
+      { role: "user", content: chatInput.trim() },
     ];
 
     try {
@@ -355,18 +507,23 @@ export default function TeamPage() {
           suggestions: onScreenSuggestions,
           authorizedUser: authorizedUser?.displayName || "",
           authorizedRole: authorizedUser?.role || "",
+          rolePrompt: getRolePrompt(scenario.role, scenario),
+          roleObjective: getRoleObjective(scenario.role),
+          roleDocumentChecklist: documentChecklist,
         }),
       });
 
       const data = await response.json();
 
+      const fallbackReply = `${getRoleObjective(
+        scenario.role
+      )} Based on the current scenario, continue by clarifying income structure, occupancy, timeline, and documentation readiness.`;
+
       setMessages([
         ...nextMessages,
         {
           role: "assistant",
-          content:
-            data.reply ||
-            "Scenario recorded. Continue refining the structure with Finley Beyond.",
+          content: data.reply || fallbackReply,
         },
       ]);
 
@@ -401,6 +558,9 @@ export default function TeamPage() {
           authorizedUser: authorizedUser?.displayName || "",
           authorizedRole: authorizedUser?.role || "",
           accessLoginId,
+          rolePrompt: getRolePrompt(scenario.role, scenario),
+          roleObjective: getRoleObjective(scenario.role),
+          roleDocumentChecklist: documentChecklist,
         }),
       });
 
@@ -414,6 +574,25 @@ export default function TeamPage() {
     } finally {
       setEmailing(false);
     }
+  };
+
+  const startRoleReview = () => {
+    if (!scenario.borrowerName.trim()) {
+      alert("Please enter a Borrower Scenario Name first.");
+      return;
+    }
+
+    const starter = getRoleStarterMessage(scenario.role);
+    setMessages([
+      ...messages,
+      { role: "user", content: starter },
+      {
+        role: "assistant",
+        content: `${getRoleObjective(
+          scenario.role
+        )} I am ready to help review this scenario for ${scenario.borrowerName}.`,
+      },
+    ]);
   };
 
   if (!accessGranted) {
@@ -698,6 +877,20 @@ export default function TeamPage() {
 
               <div
                 style={{
+                  background: "#F8FAFC",
+                  border: "1px solid #D9E1EC",
+                  borderRadius: 16,
+                  padding: 16,
+                  marginBottom: 18,
+                  lineHeight: 1.8,
+                  color: "#4B5C78",
+                }}
+              >
+                <strong>Role Objective:</strong> {getRoleObjective(scenario.role)}
+              </div>
+
+              <div
+                style={{
                   display: "grid",
                   gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                   gap: 14,
@@ -905,6 +1098,16 @@ export default function TeamPage() {
                   <strong>Estimated LTV:</strong> {estimatedLtv || 0}%
                 </div>
               </div>
+
+              <div style={{ marginTop: 18 }}>
+                <button
+                  type="button"
+                  onClick={startRoleReview}
+                  style={buttonPrimaryStyle(false)}
+                >
+                  Start Role-Based Review
+                </button>
+              </div>
             </section>
 
             <section style={cardStyle()}>
@@ -1028,6 +1231,28 @@ export default function TeamPage() {
 
             <section style={cardStyle()}>
               <h2 style={{ marginTop: 0, fontSize: 18 }}>
+                Role-Based Guidance
+              </h2>
+              <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
+                {roleNotes.map((note, index) => (
+                  <li key={index}>{note}</li>
+                ))}
+              </ul>
+            </section>
+
+            <section style={cardStyle()}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>
+                Suggested Checklist / Missing Items
+              </h2>
+              <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
+                {documentChecklist.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+            </section>
+
+            <section style={cardStyle()}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>
                 Professional Testing Notes
               </h2>
               <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
@@ -1041,12 +1266,12 @@ export default function TeamPage() {
                   beginning.
                 </li>
                 <li>
-                  When the review is complete, the summary is emailed to the
-                  professional who interacted with the system.
+                  Role-based behavior now changes Finley Beyond’s focus depending
+                  on who is using the system.
                 </li>
                 <li>
-                  Real production security should later move to server-side
-                  authentication and bot protection.
+                  When the review is complete, the summary is emailed to the
+                  professional who interacted with the system.
                 </li>
               </ul>
             </section>
