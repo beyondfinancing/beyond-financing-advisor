@@ -15,7 +15,7 @@ export default function HomePage() {
         style={{
           maxWidth: 1200,
           margin: "0 auto",
-          padding: "56px 24px 32px",
+          padding: "40px 20px 24px",
         }}
       >
         <div
@@ -28,7 +28,7 @@ export default function HomePage() {
             fontSize: 13,
             fontWeight: 700,
             letterSpacing: 0.3,
-            marginBottom: 20,
+            marginBottom: 18,
           }}
         >
           BEYOND INTELLIGENCE™
@@ -36,11 +36,11 @@ export default function HomePage() {
 
         <h1
           style={{
-            fontSize: "clamp(34px, 6vw, 62px)",
+            fontSize: "clamp(34px, 7vw, 62px)",
             lineHeight: 1.05,
             margin: "0 0 16px",
             fontWeight: 800,
-            maxWidth: 900,
+            maxWidth: 980,
           }}
         >
           AI-Powered Mortgage Decision Support
@@ -51,10 +51,10 @@ export default function HomePage() {
 
         <p
           style={{
-            maxWidth: 900,
-            fontSize: 20,
-            lineHeight: 1.6,
-            margin: "0 0 28px",
+            maxWidth: 960,
+            fontSize: "clamp(18px, 2.5vw, 20px)",
+            lineHeight: 1.65,
+            margin: "0 0 24px",
             color: "#41536F",
           }}
         >
@@ -122,14 +122,14 @@ export default function HomePage() {
         style={{
           maxWidth: 1200,
           margin: "0 auto",
-          padding: "12px 24px 56px",
+          padding: "12px 20px 44px",
         }}
       >
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 22,
+            gap: 20,
           }}
         >
           <div
@@ -137,7 +137,7 @@ export default function HomePage() {
               background: "#fff",
               border: "1px solid #D9E1EC",
               borderRadius: 24,
-              padding: 26,
+              padding: 24,
               boxShadow: "0 10px 28px rgba(38, 51, 102, 0.06)",
             }}
           >
@@ -152,10 +152,16 @@ export default function HomePage() {
             >
               CLIENT / BORROWER
             </div>
-            <h2 style={{ margin: "0 0 12px", fontSize: 28 }}>
+            <h2
+              style={{
+                margin: "0 0 12px",
+                fontSize: "clamp(28px, 4vw, 30px)",
+                lineHeight: 1.3,
+              }}
+            >
               Prepare before you speak with your loan officer
             </h2>
-            <p style={{ margin: 0, lineHeight: 1.7, color: "#4B5C78" }}>
+            <p style={{ margin: 0, lineHeight: 1.75, color: "#4B5C78" }}>
               Finley Beyond gathers intake details, target property scenario,
               loan purpose, current state, move-to state, optional Realtor
               information, and follow-up questions so the loan officer begins
@@ -168,7 +174,7 @@ export default function HomePage() {
               background: "#fff",
               border: "1px solid #D9E1EC",
               borderRadius: 24,
-              padding: 26,
+              padding: 24,
               boxShadow: "0 10px 28px rgba(38, 51, 102, 0.06)",
             }}
           >
@@ -183,10 +189,16 @@ export default function HomePage() {
             >
               LOAN OFFICER TEAM
             </div>
-            <h2 style={{ margin: "0 0 12px", fontSize: 28 }}>
+            <h2
+              style={{
+                margin: "0 0 12px",
+                fontSize: "clamp(28px, 4vw, 30px)",
+                lineHeight: 1.3,
+              }}
+            >
               Collaborate with Finley Beyond on program direction
             </h2>
-            <p style={{ margin: 0, lineHeight: 1.7, color: "#4B5C78" }}>
+            <p style={{ margin: 0, lineHeight: 1.75, color: "#4B5C78" }}>
               Loan officers, assistants, and processors can test scenarios,
               narrow possible program paths, discuss borrower structure with
               Finley Beyond, and receive an emailed summary of the professional
@@ -199,7 +211,7 @@ export default function HomePage() {
               background: "#fff",
               border: "1px solid #D9E1EC",
               borderRadius: 24,
-              padding: 26,
+              padding: 24,
               boxShadow: "0 10px 28px rgba(38, 51, 102, 0.06)",
             }}
           >
@@ -214,13 +226,21 @@ export default function HomePage() {
             >
               GROWTH ENGINE
             </div>
-            <h2 style={{ margin: "0 0 12px", fontSize: 28 }}>
-              Built to grow with agency and lender knowledge
+            <h2
+              style={{
+                margin: "0 0 12px",
+                fontSize: "clamp(28px, 4vw, 30px)",
+                lineHeight: 1.3,
+              }}
+            >
+              Built for Institutional-Grade Mortgage Decision Support
             </h2>
-            <p style={{ margin: 0, lineHeight: 1.7, color: "#4B5C78" }}>
-              As you add investor overlays, selling guides, non-QM options,
-              niche products, and workflow rules, Beyond Intelligence becomes a
-              stronger institutional knowledge layer for your team.
+            <p style={{ margin: 0, lineHeight: 1.75, color: "#4B5C78" }}>
+              As Beyond Intelligence expands through agency guidance, investor
+              overlays, niche loan products, and real-world workflow
+              intelligence, it evolves into a more powerful decision-support
+              platform for borrowers, loan officers, assistants, processors, and
+              scalable mortgage operations.
             </p>
           </div>
         </div>
