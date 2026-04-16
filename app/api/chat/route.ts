@@ -29,32 +29,45 @@ type ConversationMessage = {
   content?: string;
 };
 
+type BorrowerFields = {
+  name?: string;
+  email?: string;
+  credit?: string;
+  income?: string;
+  debt?: string;
+  phone?: string;
+};
+
+type ScenarioFields = {
+  homePrice?: string;
+  downPayment?: string;
+  estimatedLoanAmount?: string;
+  estimatedLtv?: string;
+  occupancy?: string;
+  timeline?: string;
+  fundsSource?: string;
+  units?: string;
+  propertyType?: string;
+  dscr?: string;
+  firstTimeBuyer?: string;
+  experienceLevel?: string;
+  communicationPreference?: string;
+  transactionType?: string;
+  citizenshipStatus?: string;
+  visaType?: string;
+  currentHousingPayment?: string;
+  reoCount?: string;
+  giftFunds?: string;
+  selfEmployed?: string;
+  incomeType?: string;
+};
+
 type RoutingPayload = {
   language?: LanguageCode;
   loanOfficerQuery?: string;
   selectedOfficer?: LoanOfficerSelection;
-  borrower?: {
-    name?: string;
-    email?: string;
-    credit?: string;
-    income?: string;
-    debt?: string;
-    phone?: string;
-  };
-  scenario?: {
-    homePrice?: string;
-    downPayment?: string;
-    estimatedLoanAmount?: string;
-    estimatedLtv?: string;
-    occupancy?: string;
-    timeline?: string;
-    fundsSource?: string;
-    units?: string;
-    propertyType?: string;
-    dscr?: string;
-    firstTimeBuyer?: string;
-    experienceLevel?: string;
-  };
+  borrower?: BorrowerFields;
+  scenario?: ScenarioFields;
   conversation?: ConversationMessage[];
 };
 
@@ -84,6 +97,10 @@ type SummaryPayload = {
   provisionalPrograms: string[];
   recommendedNextStep: string;
   loanOfficerActionPlan: string[];
+  riskFlags: string[];
+  missingItems: string[];
+  borrowerReadiness: string;
+  suggestedDocuments: string[];
 };
 
 type AnswerState = {
@@ -101,6 +118,8 @@ type AnswerState = {
   hasFundsSource: boolean;
   hasPropertyTypeIntent: boolean;
   hasCommunicationPreference: boolean;
+  hasIncomeType: boolean;
+  hasTransactionType: boolean;
 };
 
 type InternalProgramMatch = {
@@ -108,6 +127,11 @@ type InternalProgramMatch = {
   strength: "strong" | "moderate" | "weak";
   source: string;
   notes: string[];
+};
+
+type ExtractedStructuredAnswers = {
+  borrower?: Partial<BorrowerFields>;
+  scenario?: Partial<ScenarioFields>;
 };
 
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
@@ -257,6 +281,10 @@ function hasValue(value?: string) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function normalizeWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function detectClosingIntent(text: string) {
   const lower = text.toLowerCase();
 
@@ -299,24 +327,495 @@ function detectClosingIntent(text: string) {
   ]);
 }
 
-function detectCommunicationPreference(text: string) {
+function detectCommunicationPreferenceValue(text: string): string | undefined {
   const lower = text.toLowerCase();
-  return hasAny(lower, [
+
+  const wantsText = hasAny(lower, [
     "text me",
     "text message",
-    "email me",
-    "call me",
-    "phone is better",
-    "email is better",
     "text is better",
     "mensagem",
     "texto",
-    "ligar",
-    "email",
-    "correo",
     "mensaje",
-    "llamar",
   ]);
+
+  const wantsCall = hasAny(lower, [
+    "call me",
+    "phone call",
+    "phone is better",
+    "ligar",
+    "ligação",
+    "llamar",
+    "phone",
+  ]);
+
+  const wantsEmail = hasAny(lower, [
+    "email me",
+    "email is better",
+    "correo",
+    "e-mail",
+    "email",
+  ]);
+
+  if (wantsText && wantsCall) return "Text message and phone call";
+  if (wantsText && wantsEmail) return "Text message and email";
+  if (wantsCall && wantsEmail) return "Phone call and email";
+  if (wantsText) return "Text message";
+  if (wantsCall) return "Phone call";
+  if (wantsEmail) return "Email";
+
+  return undefined;
+}
+
+function normalizeOccupancy(
+  occupancy?: string
+): "primary" | "second" | "investment" | "mixed-use" | "other" {
+  const value = (occupancy || "").toLowerCase().trim();
+
+  if (
+    hasAny(value, [
+      "primary",
+      "primary residence",
+      "primary home",
+      "owner occupied",
+      "owner-occupied",
+      "moradia principal",
+      "residência principal",
+      "vivienda principal",
+    ])
+  ) {
+    return "primary";
+  }
+
+  if (
+    hasAny(value, [
+      "second",
+      "second home",
+      "vacation home",
+      "segunda casa",
+      "segunda vivienda",
+    ])
+  ) {
+    return "second";
+  }
+
+  if (
+    hasAny(value, [
+      "investment",
+      "investment property",
+      "investimento",
+      "propiedad de inversión",
+    ])
+  ) {
+    return "investment";
+  }
+
+  if (hasAny(value, ["mixed-use", "mixed use", "mixed", "mixed use property"])) {
+    return "mixed-use";
+  }
+
+  return "other";
+}
+
+function normalizeExperience(
+  experienceLevel?: string
+): "first-time-investor" | "experienced-investor" | undefined {
+  const value = (experienceLevel || "").toLowerCase().trim();
+
+  if (
+    hasAny(value, [
+      "first-time-investor",
+      "first time investor",
+      "first investor",
+      "primeiro investidor",
+      "primer inversionista",
+    ])
+  ) {
+    return "first-time-investor";
+  }
+
+  if (
+    hasAny(value, [
+      "experienced-investor",
+      "experienced investor",
+      "seasoned investor",
+      "investidor experiente",
+      "inversionista experimentado",
+    ])
+  ) {
+    return "experienced-investor";
+  }
+
+  return undefined;
+}
+
+function normalizeTransactionType(value?: string): string | undefined {
+  const lower = (value || "").toLowerCase().trim();
+  if (!lower) return undefined;
+
+  if (hasAny(lower, ["purchase", "buy", "compra", "comprar", "compra de vivienda"])) {
+    return "Purchase";
+  }
+
+  if (hasAny(lower, ["refinance", "refi", "refinanciamento", "refinance"])) {
+    return "Refinance";
+  }
+
+  if (hasAny(lower, ["cash-out", "cash out", "saque", "retiro de efectivo"])) {
+    return "Cash-Out Refinance";
+  }
+
+  return normalizeWhitespace(value || "");
+}
+
+function normalizeTimelineValue(value?: string): string | undefined {
+  const lower = (value || "").toLowerCase().trim();
+  if (!lower) return undefined;
+
+  if (
+    hasAny(lower, [
+      "as soon as possible",
+      "asap",
+      "immediately",
+      "o quanto antes",
+      "o mais rápido possível",
+      "lo antes posible",
+      "inmediatamente",
+    ])
+  ) {
+    return "As soon as possible";
+  }
+
+  if (
+    hasAny(lower, [
+      "30 to 60 days",
+      "30-60 days",
+      "30 a 60 dias",
+      "30 a 60 días",
+    ])
+  ) {
+    return "Within 30 to 60 days";
+  }
+
+  if (
+    hasAny(lower, [
+      "within 3 months",
+      "next 3 months",
+      "3 months",
+      "3 meses",
+      "within the next three months",
+    ])
+  ) {
+    return "Within 3 months";
+  }
+
+  if (hasAny(lower, ["next month", "próximo mês", "próximo mes"])) {
+    return "Next month";
+  }
+
+  if (hasAny(lower, ["this month", "este mês", "este mes"])) {
+    return "This month";
+  }
+
+  return normalizeWhitespace(value || "");
+}
+
+function normalizeFundsSourceValue(value?: string): string | undefined {
+  const lower = (value || "").toLowerCase().trim();
+  if (!lower) return undefined;
+
+  if (
+    hasAny(lower, [
+      "savings",
+      "savings account",
+      "bank account",
+      "economias",
+      "poupança",
+      "ahorros",
+    ])
+  ) {
+    return "Savings";
+  }
+
+  if (hasAny(lower, ["gift", "gift funds", "doação", "regalo"])) {
+    return "Gift funds";
+  }
+
+  if (
+    hasAny(lower, [
+      "sale of another property",
+      "sale of property",
+      "venda de imóvel",
+      "venta de propiedad",
+    ])
+  ) {
+    return "Sale of another property";
+  }
+
+  if (hasAny(lower, ["business funds", "fundos da empresa", "fondos del negocio"])) {
+    return "Business funds";
+  }
+
+  return normalizeWhitespace(value || "");
+}
+
+function normalizeIncomeTypeValue(value?: string): string | undefined {
+  const lower = (value || "").toLowerCase().trim();
+  if (!lower) return undefined;
+
+  if (hasAny(lower, ["w2", "w-2", "salary", "salaried", "salário", "asalariado"])) {
+    return "W-2 / Salaried";
+  }
+
+  if (hasAny(lower, ["hourly", "por hora"])) {
+    return "Hourly";
+  }
+
+  if (hasAny(lower, ["self-employed", "self employed", "autônomo", "autonomo", "independiente"])) {
+    return "Self-Employed";
+  }
+
+  if (hasAny(lower, ["1099"])) {
+    return "1099";
+  }
+
+  if (hasAny(lower, ["commission", "comissão", "comision"])) {
+    return "Commission";
+  }
+
+  if (hasAny(lower, ["bonus", "bônus", "bono"])) {
+    return "Bonus";
+  }
+
+  if (hasAny(lower, ["rental income", "aluguéis", "alquileres"])) {
+    return "Rental Income";
+  }
+
+  if (hasAny(lower, ["social security", "retirement", "aposentadoria", "jubilación"])) {
+    return "Retirement / Fixed Income";
+  }
+
+  return normalizeWhitespace(value || "");
+}
+
+function extractNamedPattern(
+  text: string,
+  patterns: RegExp[]
+): string | undefined {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return normalizeWhitespace(match[1]);
+    }
+  }
+  return undefined;
+}
+
+function extractStructuredAnswers(
+  latestUserMessage: string,
+  routing?: RoutingPayload
+): ExtractedStructuredAnswers {
+  const lower = latestUserMessage.toLowerCase();
+  const extracted: ExtractedStructuredAnswers = {
+    borrower: {},
+    scenario: {},
+  };
+
+  const occupancy = normalizeOccupancy(latestUserMessage);
+  if (occupancy !== "other") {
+    extracted.scenario!.occupancy =
+      occupancy === "primary"
+        ? "Primary residence"
+        : occupancy === "second"
+        ? "Second home"
+        : occupancy === "investment"
+        ? "Investment property"
+        : "Mixed-use";
+  }
+
+  const timeline = normalizeTimelineValue(latestUserMessage);
+  if (timeline) {
+    extracted.scenario!.timeline = timeline;
+  }
+
+  const fundsSource = normalizeFundsSourceValue(latestUserMessage);
+  if (fundsSource) {
+    extracted.scenario!.fundsSource = fundsSource;
+  }
+
+  const communicationPreference = detectCommunicationPreferenceValue(latestUserMessage);
+  if (communicationPreference) {
+    extracted.scenario!.communicationPreference = communicationPreference;
+  }
+
+  const transactionType = normalizeTransactionType(latestUserMessage);
+  if (
+    transactionType &&
+    hasAny(lower, [
+      "purchase",
+      "buy",
+      "compra",
+      "comprar",
+      "refinance",
+      "refi",
+      "cash-out",
+      "cash out",
+    ])
+  ) {
+    extracted.scenario!.transactionType = transactionType;
+  }
+
+  const incomeType = normalizeIncomeTypeValue(latestUserMessage);
+  if (incomeType) {
+    extracted.scenario!.incomeType = incomeType;
+    if (incomeType === "Self-Employed" || incomeType === "1099") {
+      extracted.scenario!.selfEmployed = "Yes";
+    }
+  }
+
+  const citizenshipStatus = extractNamedPattern(latestUserMessage, [
+    /(?:i am|i'm)\s+a\s+(u\.?s\.?\s+citizen|permanent resident|green card holder|itin borrower|foreign national)/i,
+    /(?:sou|soy)\s+(cidad[aã]o americano|residente permanente|titular de green card|foreign national|itin borrower)/i,
+  ]);
+  if (citizenshipStatus) {
+    extracted.scenario!.citizenshipStatus = citizenshipStatus;
+  }
+
+  const visaType = extractNamedPattern(latestUserMessage, [
+    /(?:visa|status)\s+(h1b|l1|o1|c08|e2|f1|tn|h-1b|l-1|o-1)/i,
+    /(?:my visa is|i have an?)\s+(h1b|l1|o1|c08|e2|f1|tn|h-1b|l-1|o-1)/i,
+  ]);
+  if (visaType) {
+    extracted.scenario!.visaType = visaType.toUpperCase();
+  }
+
+  const phone = extractNamedPattern(latestUserMessage, [
+    /(?:my phone is|best number is|phone number is)\s+([\d\-\+\(\)\s]+)/i,
+    /(?:meu telefone é|meu número é)\s+([\d\-\+\(\)\s]+)/i,
+  ]);
+  if (phone) {
+    extracted.borrower!.phone = phone;
+  }
+
+  const email = extractNamedPattern(latestUserMessage, [
+    /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i,
+  ]);
+  if (email) {
+    extracted.borrower!.email = email;
+  }
+
+  const name = extractNamedPattern(latestUserMessage, [
+    /(?:my name is|i am|i'm)\s+([a-z ,.'-]{3,60})/i,
+    /(?:meu nome é|eu sou)\s+([a-z ,.'-]{3,60})/i,
+    /(?:mi nombre es|soy)\s+([a-z ,.'-]{3,60})/i,
+  ]);
+  if (name && !hasAny(name.toLowerCase(), ["ready to apply", "ready to move", "self-employed"])) {
+    extracted.borrower!.name = name
+      .split(" ")
+      .map((part) =>
+        part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part
+      )
+      .join(" ");
+  }
+
+  const firstTimeBuyer =
+    hasAny(lower, [
+      "first-time buyer",
+      "first time buyer",
+      "primeira casa",
+      "primeiro imóvel",
+      "primer comprador",
+    ])
+      ? "Yes"
+      : hasAny(lower, [
+          "not first-time buyer",
+          "not a first time buyer",
+          "não sou comprador pela primeira vez",
+          "no soy comprador por primera vez",
+        ])
+      ? "No"
+      : undefined;
+  if (firstTimeBuyer) {
+    extracted.scenario!.firstTimeBuyer = firstTimeBuyer;
+  }
+
+  const experienceLevel = normalizeExperience(latestUserMessage);
+  if (experienceLevel) {
+    extracted.scenario!.experienceLevel =
+      experienceLevel === "first-time-investor"
+        ? "First-time investor"
+        : "Experienced investor";
+  }
+
+  const unitsMatch = latestUserMessage.match(
+    /(?:^|\s)([2-9]|[1-9][0-9]+)\s*(?:units?|unit property|doors?)\b/i
+  );
+  if (unitsMatch?.[1]) {
+    extracted.scenario!.units = unitsMatch[1];
+  }
+
+  const dscrMatch = latestUserMessage.match(
+    /\bdscr\b[^0-9]{0,10}(\d+(?:\.\d+)?)\b/i
+  );
+  if (dscrMatch?.[1]) {
+    extracted.scenario!.dscr = dscrMatch[1];
+  }
+
+  if (
+    hasAny(lower, [
+      "single-family",
+      "single family",
+      "single family home",
+      "casa unifamiliar",
+      "single-family home",
+    ])
+  ) {
+    extracted.scenario!.propertyType = "Single-family";
+  } else if (
+    hasAny(lower, ["condo", "condominium", "condomínio", "condominio"])
+  ) {
+    extracted.scenario!.propertyType = "Condo";
+  } else if (
+    hasAny(lower, [
+      "multi-family",
+      "multifamily",
+      "multifamiliar",
+      "apartment building",
+    ])
+  ) {
+    extracted.scenario!.propertyType = "Multi-family";
+  } else if (hasAny(lower, ["mixed-use", "mixed use"])) {
+    extracted.scenario!.propertyType = "Mixed-use";
+  }
+
+  if (hasAny(lower, ["gift funds", "gift", "doação", "regalo"])) {
+    extracted.scenario!.giftFunds = "Yes";
+  }
+
+  if (hasAny(lower, ["i own", "own other properties", "rental property", "investment property I own"])) {
+    extracted.scenario!.reoCount = "Yes";
+  }
+
+  return extracted;
+}
+
+function mergeRoutingWithExtractedAnswers(
+  routing: RoutingPayload | undefined,
+  extracted: ExtractedStructuredAnswers
+): RoutingPayload | undefined {
+  if (!routing) return routing;
+
+  return {
+    ...routing,
+    borrower: {
+      ...(routing.borrower || {}),
+      ...(extracted.borrower || {}),
+    },
+    scenario: {
+      ...(routing.scenario || {}),
+      ...(extracted.scenario || {}),
+    },
+  };
 }
 
 function buildContextBlock(
@@ -345,6 +844,7 @@ Borrower details:
 - Monthly debt: ${borrower.debt || "Not provided"}
 
 Scenario details:
+- Transaction type: ${scenario.transactionType || "Not provided"}
 - Estimated home price: ${scenario.homePrice || "Not provided"}
 - Estimated down payment: ${scenario.downPayment || "Not provided"}
 - Estimated loan amount: ${scenario.estimatedLoanAmount || "Not provided"}
@@ -352,6 +852,15 @@ Scenario details:
 - Occupancy: ${scenario.occupancy || "Not provided"}
 - Timeline: ${scenario.timeline || "Not provided"}
 - Funds source: ${scenario.fundsSource || "Not provided"}
+- Communication preference: ${scenario.communicationPreference || "Not provided"}
+- Income type: ${scenario.incomeType || "Not provided"}
+- Property type: ${scenario.propertyType || "Not provided"}
+- Units: ${scenario.units || "Not provided"}
+- DSCR: ${scenario.dscr || "Not provided"}
+- First-time buyer: ${scenario.firstTimeBuyer || "Not provided"}
+- Experience level: ${scenario.experienceLevel || "Not provided"}
+- Citizenship status: ${scenario.citizenshipStatus || "Not provided"}
+- Visa type: ${scenario.visaType || "Not provided"}
 
 Conversation transcript so far:
 ${transcript || "No prior transcript yet."}
@@ -390,6 +899,8 @@ function analyzeAnsweredState(routing?: RoutingPayload): AnswerState {
     "this month",
     "next month",
     "in a few months",
+    "within 3 months",
+    "next 3 months",
     "o quanto antes",
     "o mais rápido possível",
     "30 dias",
@@ -397,6 +908,7 @@ function analyzeAnsweredState(routing?: RoutingPayload): AnswerState {
     "90 dias",
     "este mês",
     "próximo mês",
+    "3 meses",
     "lo antes posible",
     "este mes",
     "próximo mes",
@@ -424,6 +936,9 @@ function analyzeAnsweredState(routing?: RoutingPayload): AnswerState {
   ]);
 
   const propertyIntentAnsweredFromConversation = occupancyAnsweredFromConversation;
+  const communicationPreferenceAnsweredFromConversation = !!detectCommunicationPreferenceValue(convo);
+  const incomeTypeAnsweredFromConversation = !!normalizeIncomeTypeValue(convo);
+  const transactionTypeAnsweredFromConversation = !!normalizeTransactionType(convo);
 
   return {
     hasName: hasValue(borrower.name),
@@ -442,7 +957,13 @@ function analyzeAnsweredState(routing?: RoutingPayload): AnswerState {
     hasFundsSource:
       hasValue(scenario.fundsSource) || fundsSourceAnsweredFromConversation,
     hasPropertyTypeIntent: propertyIntentAnsweredFromConversation,
-    hasCommunicationPreference: detectCommunicationPreference(convo),
+    hasCommunicationPreference:
+      hasValue(scenario.communicationPreference) ||
+      communicationPreferenceAnsweredFromConversation,
+    hasIncomeType:
+      hasValue(scenario.incomeType) || incomeTypeAnsweredFromConversation,
+    hasTransactionType:
+      hasValue(scenario.transactionType) || transactionTypeAnsweredFromConversation,
   };
 }
 
@@ -480,6 +1001,16 @@ function getNextUsefulQuestion(
       return "¿Los fondos para el pago inicial y el cierre provendrán principalmente de ahorros, gift funds, venta de otra propiedad u otra fuente?";
     }
     return "Will your down payment and closing funds come mainly from savings, gift funds, the sale of another property, or another source?";
+  }
+
+  if (!state.hasIncomeType) {
+    if (language === "pt") {
+      return "Sua renda principal hoje vem de salário W-2, trabalho autônomo, 1099, comissão, aluguel ou outra fonte?";
+    }
+    if (language === "es") {
+      return "¿Su ingreso principal proviene hoy de salario W-2, trabajo independiente, 1099, comisión, renta u otra fuente?";
+    }
+    return "Does your primary income currently come from W-2 employment, self-employment, 1099 work, commission, rental income, or another source?";
   }
 
   if (!state.hasCommunicationPreference) {
@@ -537,7 +1068,7 @@ function buildScenarioFallback(language: LanguageCode, routing?: RoutingPayload)
   const nextQuestion = getNextUsefulQuestion(language, routing);
 
   if (language === "pt") {
-    return `Perfeito.
+    return `Perfect.
 
 Agora tenho um cenário de compra mais claro para enviar ao loan officer designado.
 
@@ -582,13 +1113,11 @@ function buildClosingFallback(
   officerName: string,
   routing?: RoutingPayload
 ): string {
-  const convo = conversationToText(routing?.conversation).toLowerCase();
-  const prefersText = hasAny(convo, ["text me", "text message", "text is better", "mensagem", "texto"]);
-  const prefersCall = hasAny(convo, ["call me", "phone", "ligar", "llamar", "phone call"]);
-  const prefersEmail = hasAny(convo, ["email me", "email is better", "correo", "email"]);
+  const preference = routing?.scenario?.communicationPreference || "";
+  const lower = preference.toLowerCase();
 
   if (language === "pt") {
-    if (prefersText && prefersCall) {
+    if (lower.includes("text") && lower.includes("phone")) {
       return `Perfeito.
 
 Registrei sua preferência por mensagem de texto e ligação.
@@ -596,7 +1125,7 @@ Registrei sua preferência por mensagem de texto e ligação.
 Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
     }
 
-    if (prefersText) {
+    if (lower.includes("text")) {
       return `Perfeito.
 
 Registrei sua preferência por mensagem de texto.
@@ -604,7 +1133,7 @@ Registrei sua preferência por mensagem de texto.
 Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
     }
 
-    if (prefersCall) {
+    if (lower.includes("phone")) {
       return `Perfeito.
 
 Registrei sua preferência por ligação.
@@ -612,7 +1141,7 @@ Registrei sua preferência por ligação.
 Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${officerName}, fará o acompanhamento com os próximos passos.`;
     }
 
-    if (prefersEmail) {
+    if (lower.includes("email")) {
       return `Perfeito.
 
 Registrei sua preferência por email.
@@ -628,7 +1157,7 @@ Clique em "Aplicar Agora" para começar oficialmente. Seu loan officer, ${office
   }
 
   if (language === "es") {
-    if (prefersText && prefersCall) {
+    if (lower.includes("text") && lower.includes("phone")) {
       return `Perfecto.
 
 He registrado su preferencia por mensajes de texto y llamadas.
@@ -636,7 +1165,7 @@ He registrado su preferencia por mensajes de texto y llamadas.
 Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
     }
 
-    if (prefersText) {
+    if (lower.includes("text")) {
       return `Perfecto.
 
 He registrado su preferencia por mensajes de texto.
@@ -644,7 +1173,7 @@ He registrado su preferencia por mensajes de texto.
 Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
     }
 
-    if (prefersCall) {
+    if (lower.includes("phone")) {
       return `Perfecto.
 
 He registrado su preferencia por llamadas.
@@ -652,7 +1181,7 @@ He registrado su preferencia por llamadas.
 Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
     }
 
-    if (prefersEmail) {
+    if (lower.includes("email")) {
       return `Perfecto.
 
 He registrado su preferencia por correo electrónico.
@@ -667,7 +1196,7 @@ Ya está listo para avanzar.
 Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, le dará seguimiento con los próximos pasos.`;
   }
 
-  if (prefersText && prefersCall) {
+  if (lower.includes("text") && lower.includes("phone")) {
     return `Perfect.
 
 I’ve noted your preference for text updates and a phone call.
@@ -675,7 +1204,7 @@ I’ve noted your preference for text updates and a phone call.
 Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
   }
 
-  if (prefersText) {
+  if (lower.includes("text")) {
     return `Perfect.
 
 I’ve noted your preference for text updates.
@@ -683,7 +1212,7 @@ I’ve noted your preference for text updates.
 Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
   }
 
-  if (prefersCall) {
+  if (lower.includes("phone")) {
     return `Perfect.
 
 I’ve noted your preference for a phone call.
@@ -691,7 +1220,7 @@ I’ve noted your preference for a phone call.
 Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up with the next steps.`;
   }
 
-  if (prefersEmail) {
+  if (lower.includes("email")) {
     return `Perfect.
 
 I’ve noted your preference for email updates.
@@ -744,85 +1273,6 @@ ${nextQuestion}` : ""
   }`;
 }
 
-function normalizeOccupancy(
-  occupancy?: string
-): "primary" | "second" | "investment" | "mixed-use" | "other" {
-  const value = (occupancy || "").toLowerCase().trim();
-
-  if (
-    hasAny(value, [
-      "primary",
-      "primary residence",
-      "primary home",
-      "moradia principal",
-      "residência principal",
-      "vivienda principal",
-    ])
-  ) {
-    return "primary";
-  }
-
-  if (
-    hasAny(value, [
-      "second",
-      "second home",
-      "segunda casa",
-      "segunda vivienda",
-    ])
-  ) {
-    return "second";
-  }
-
-  if (
-    hasAny(value, [
-      "investment",
-      "investment property",
-      "investimento",
-      "propiedad de inversión",
-    ])
-  ) {
-    return "investment";
-  }
-
-  if (hasAny(value, ["mixed-use", "mixed use", "mixed"])) {
-    return "mixed-use";
-  }
-
-  return "other";
-}
-
-function normalizeExperience(
-  experienceLevel?: string
-): "first-time-investor" | "experienced-investor" | undefined {
-  const value = (experienceLevel || "").toLowerCase().trim();
-
-  if (
-    hasAny(value, [
-      "first-time-investor",
-      "first time investor",
-      "first investor",
-      "primeiro investidor",
-      "primer inversionista",
-    ])
-  ) {
-    return "first-time-investor";
-  }
-
-  if (
-    hasAny(value, [
-      "experienced-investor",
-      "experienced investor",
-      "seasoned investor",
-      "investidor experiente",
-      "inversionista experimentado",
-    ])
-  ) {
-    return "experienced-investor";
-  }
-
-  return undefined;
-}
-
 function buildProgramSuggestions(routing?: RoutingPayload): InternalProgramMatch[] {
   const borrower = routing?.borrower || {};
   const scenario = routing?.scenario || {};
@@ -872,12 +1322,16 @@ function buildProgramSuggestions(routing?: RoutingPayload): InternalProgramMatch
   const suggestions: InternalProgramMatch[] = [];
 
   if (!isMultifamily) {
+    const sfOccupancy =
+      occupancy === "primary" || occupancy === "second" || occupancy === "investment"
+        ? occupancy
+        : "primary";
+
     const fannie = evaluateFannieMaeSingleFamily({
       creditScore,
       ltv,
       dti,
-      occupancy:
-        occupancy === "mixed-use" || occupancy === "other" ? "primary" : occupancy,
+      occupancy: sfOccupancy,
       firstTimeBuyer,
     });
 
@@ -885,8 +1339,7 @@ function buildProgramSuggestions(routing?: RoutingPayload): InternalProgramMatch
       creditScore,
       ltv,
       dti,
-      occupancy:
-        occupancy === "mixed-use" || occupancy === "other" ? "primary" : occupancy,
+      occupancy: sfOccupancy,
       firstTimeBuyer,
     });
 
@@ -912,16 +1365,18 @@ function buildProgramSuggestions(routing?: RoutingPayload): InternalProgramMatch
         });
       });
   } else {
+    const mfOccupancy =
+      occupancy === "mixed-use"
+        ? "mixed-use"
+        : occupancy === "other"
+        ? "investment"
+        : "investment";
+
     const fannie = evaluateFannieMaeMultifamily({
       creditScore: creditScore || undefined,
       ltv,
       dscr,
-      occupancy:
-        occupancy === "primary" || occupancy === "second"
-          ? "investment"
-          : occupancy === "mixed-use"
-          ? "mixed-use"
-          : "investment",
+      occupancy: mfOccupancy,
       units,
       experienceLevel,
     });
@@ -930,12 +1385,7 @@ function buildProgramSuggestions(routing?: RoutingPayload): InternalProgramMatch
       creditScore: creditScore || undefined,
       ltv,
       dscr,
-      occupancy:
-        occupancy === "primary" || occupancy === "second"
-          ? "investment"
-          : occupancy === "mixed-use"
-          ? "mixed-use"
-          : "investment",
+      occupancy: mfOccupancy,
       units,
       experienceLevel,
     });
@@ -967,7 +1417,103 @@ function buildProgramSuggestions(routing?: RoutingPayload): InternalProgramMatch
 
   return suggestions
     .sort((a, b) => rank[b.strength] - rank[a.strength])
-    .slice(0, 6);
+    .slice(0, 4);
+}
+
+function computeRiskFlags(routing?: RoutingPayload): string[] {
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+
+  const flags: string[] = [];
+  const credit = Number(borrower.credit || 0);
+  const income = Number(borrower.income || 0);
+  const debt = Number(borrower.debt || 0);
+  const homePrice = Number(scenario.homePrice || 0);
+  const down = Number(scenario.downPayment || 0);
+  const ltv =
+    homePrice > 0 && down >= 0
+      ? ((homePrice - down) / homePrice) * 100
+      : Number((scenario.estimatedLtv || "").replace("%", "") || 0);
+
+  if (!scenario.occupancy) flags.push("Occupancy not yet confirmed.");
+  if (!scenario.timeline) flags.push("Timeline not yet fully confirmed.");
+  if (!scenario.fundsSource) flags.push("Funds source not yet fully confirmed.");
+  if (credit > 0 && credit < 680) flags.push("Credit profile may require closer agency review.");
+  if (ltv > 95) flags.push("High LTV may increase risk layering and MI impact.");
+  if (income > 0 && debt > 0 && debt / income > 0.45) {
+    flags.push("DTI may be elevated based on current income and debt entered.");
+  }
+  if (scenario.giftFunds === "Yes") flags.push("Gift funds will require documentation.");
+  if (scenario.visaType) flags.push("Visa / lawful presence documentation review required.");
+  if (scenario.selfEmployed === "Yes") flags.push("Self-employed income analysis may require deeper documentation.");
+
+  return flags;
+}
+
+function computeMissingItems(routing?: RoutingPayload): string[] {
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+  const missing: string[] = [];
+
+  if (!borrower.phone) missing.push("Best contact phone number");
+  if (!scenario.occupancy) missing.push("Occupancy type");
+  if (!scenario.timeline) missing.push("Purchase timeline");
+  if (!scenario.fundsSource) missing.push("Funds source");
+  if (!scenario.communicationPreference) missing.push("Preferred communication method");
+  if (!scenario.incomeType) missing.push("Income type classification");
+
+  return missing;
+}
+
+function buildSuggestedDocuments(routing?: RoutingPayload): string[] {
+  const scenario = routing?.scenario || {};
+  const docs: string[] = [
+    "Government-issued photo ID",
+    "Most recent 2 months of bank statements",
+  ];
+
+  const incomeType = (scenario.incomeType || "").toLowerCase();
+  const isSelfEmployed =
+    scenario.selfEmployed === "Yes" ||
+    hasAny(incomeType, ["self-employed", "1099"]);
+
+  if (isSelfEmployed) {
+    docs.push("Last 2 years personal tax returns");
+    docs.push("Last 2 years business tax returns if applicable");
+    docs.push("Year-to-date profit and loss statement");
+  } else {
+    docs.push("Most recent 30 days of pay stubs");
+    docs.push("Last 2 years W-2s");
+  }
+
+  if (scenario.fundsSource === "Gift funds") {
+    docs.push("Gift letter");
+  }
+
+  if (scenario.visaType || scenario.citizenshipStatus) {
+    docs.push("Passport / visa / lawful presence documents if applicable");
+  }
+
+  if (scenario.units && Number(scenario.units) >= 2) {
+    docs.push("Lease agreements if rental units are occupied");
+  }
+
+  return [...new Set(docs)];
+}
+
+function computeBorrowerReadiness(routing?: RoutingPayload): string {
+  const missing = computeMissingItems(routing);
+  const riskFlags = computeRiskFlags(routing);
+
+  if (missing.length === 0 && riskFlags.length <= 2) {
+    return "Near pre-approval ready";
+  }
+
+  if (missing.length <= 2) {
+    return "Partially documented / progressing well";
+  }
+
+  return "Initial to intermediate intake stage";
 }
 
 async function callOpenAIChat(args: {
@@ -1064,6 +1610,10 @@ Your job:
 - gather mortgage qualification information
 - keep the conversation warm, polished, and human
 - sound like a skilled loan officer assistant, not a bot
+- ask only one useful next question at a time
+- do not ask for information already answered
+- acknowledge borrower answers in a way that sounds mortgage-specific and helpful
+- when possible, translate answers into practical mortgage relevance
 
 Important compliance rules:
 - never promise approval
@@ -1078,9 +1628,8 @@ Important compliance rules:
 - if the borrower is clearly ready to apply, schedule, or be contacted, stop asking more qualification questions and move naturally to a close
 - when closing, be brief and decisive
 - do not reopen the conversation after a clear closing intent
-- do not ask for information that has already been provided in intake, scenario, or prior conversation
-- be state-aware and avoid redundant questions
-- when the borrower is ready, the final close should be short, warm, and action-oriented
+- do not add repetitive filler like "looking forward to assisting you further"
+- if the borrower answered something useful like savings, timeline, W-2, self-employed, primary residence, etc., briefly acknowledge why it matters in mortgage context
 
 Language rule:
 - respond only in ${
@@ -1095,7 +1644,6 @@ Do not ask another qualifying question.
 Close the conversation naturally and briefly.
 Direct the borrower to Apply Now.
 Acknowledge that the assigned loan officer will follow up.
-Do not add extra paragraphs that reopen discussion.
 If communication preference was already provided, acknowledge it briefly and close.
 `
     : stage === "initial_review"
@@ -1136,6 +1684,7 @@ Answered state:
 - hasTimeline: ${answeredState.hasTimeline ? "yes" : "no"}
 - hasFundsSource: ${answeredState.hasFundsSource ? "yes" : "no"}
 - hasCommunicationPreference: ${answeredState.hasCommunicationPreference ? "yes" : "no"}
+- hasIncomeType: ${answeredState.hasIncomeType ? "yes" : "no"}
 
 Preferred next useful question if needed:
 ${nextQuestion || "No additional question is needed right now."}
@@ -1199,6 +1748,14 @@ function buildFallbackSummary(
     );
   }
 
+  if (scenario.timeline) {
+    strengths.push(`Timeline identified (${scenario.timeline}).`);
+  }
+
+  if (scenario.fundsSource) {
+    strengths.push(`Funds source identified (${scenario.fundsSource}).`);
+  }
+
   const provisionalPrograms =
     programMatches.length > 0
       ? programMatches.map(
@@ -1219,16 +1776,20 @@ function buildFallbackSummary(
       strengths.length > 0
         ? strengths
         : ["Borrower engaged and ready to proceed with financing."],
-    openQuestions: [],
+    openQuestions: computeMissingItems(routing),
     provisionalPrograms,
     recommendedNextStep:
       "Borrower is ready to apply. Immediate follow-up is recommended to secure the application, confirm documentation strategy, and select final program direction.",
     loanOfficerActionPlan: [
-      "Contact borrower immediately (high intent).",
+      "Contact borrower immediately based on stated forward intent and timeline.",
       "Guide borrower through full application submission.",
-      "Confirm final structure and documentation strategy.",
-      "Review agency-aligned provisional program matches and select best execution path.",
+      "Confirm missing structured items and documentation strategy.",
+      "Review top provisional program matches and select best execution path.",
     ],
+    riskFlags: computeRiskFlags(routing),
+    missingItems: computeMissingItems(routing),
+    borrowerReadiness: computeBorrowerReadiness(routing),
+    suggestedDocuments: buildSuggestedDocuments(routing),
   };
 }
 
@@ -1252,7 +1813,11 @@ Return valid JSON only with this exact shape:
   "openQuestions": ["string"],
   "provisionalPrograms": ["string"],
   "recommendedNextStep": "string",
-  "loanOfficerActionPlan": ["string"]
+  "loanOfficerActionPlan": ["string"],
+  "riskFlags": ["string"],
+  "missingItems": ["string"],
+  "borrowerReadiness": "string",
+  "suggestedDocuments": ["string"]
 }
 
 Rules:
@@ -1264,6 +1829,7 @@ Rules:
 - if the borrower is clearly ready to apply or move forward, do not create unnecessary open questions
 - make the likelyDirection stronger and more useful for the loan officer
 - prefer urgent follow-up language when borrower intent is high
+- if an item was already answered in the structured context, do not list it as missing
   `.trim();
 
   const user = `
@@ -1303,7 +1869,9 @@ ${
         ? aiSummary.strengths
         : fallback.strengths,
     openQuestions:
-      Array.isArray(aiSummary.openQuestions) ? aiSummary.openQuestions : fallback.openQuestions,
+      Array.isArray(aiSummary.openQuestions)
+        ? aiSummary.openQuestions
+        : fallback.openQuestions,
     provisionalPrograms:
       Array.isArray(aiSummary.provisionalPrograms) &&
       aiSummary.provisionalPrograms.length > 0
@@ -1316,6 +1884,21 @@ ${
       aiSummary.loanOfficerActionPlan.length > 0
         ? aiSummary.loanOfficerActionPlan
         : fallback.loanOfficerActionPlan,
+    riskFlags:
+      Array.isArray(aiSummary.riskFlags) && aiSummary.riskFlags.length > 0
+        ? aiSummary.riskFlags
+        : fallback.riskFlags,
+    missingItems:
+      Array.isArray(aiSummary.missingItems)
+        ? aiSummary.missingItems
+        : fallback.missingItems,
+    borrowerReadiness:
+      aiSummary.borrowerReadiness || fallback.borrowerReadiness,
+    suggestedDocuments:
+      Array.isArray(aiSummary.suggestedDocuments) &&
+      aiSummary.suggestedDocuments.length > 0
+        ? aiSummary.suggestedDocuments
+        : fallback.suggestedDocuments,
   };
 }
 
@@ -1340,10 +1923,10 @@ function buildSummaryHtml(args: {
       summary.likelyDirection.toLowerCase().includes("ready")
     );
 
-  const potentialProgramDirectionHtml =
+  const recommendedProgramDirectionHtml =
     programMatches.length > 0
       ? `
-      <h3 style="margin:18px 0 8px 0;">Potential Program Direction</h3>
+      <h3 style="margin:18px 0 8px 0;">Recommended Program Direction</h3>
       <ul style="line-height:1.8;">
         ${programMatches
           .map(
@@ -1392,6 +1975,9 @@ function buildSummaryHtml(args: {
 
       <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
         <h2 style="margin:0 0 12px 0;font-size:20px;">Scenario Snapshot</h2>
+        <p><strong>Transaction Type:</strong> ${escapeHtml(
+          scenario.transactionType || "Not provided"
+        )}</p>
         <p><strong>Estimated Home Price:</strong> ${escapeHtml(
           scenario.homePrice || "Not provided"
         )}</p>
@@ -1409,6 +1995,18 @@ function buildSummaryHtml(args: {
         <p><strong>Funds Source:</strong> ${escapeHtml(
           scenario.fundsSource || "Not provided"
         )}</p>
+        <p><strong>Communication Preference:</strong> ${escapeHtml(
+          scenario.communicationPreference || "Not provided"
+        )}</p>
+        <p><strong>Income Type:</strong> ${escapeHtml(
+          scenario.incomeType || "Not provided"
+        )}</p>
+        <p><strong>Property Type:</strong> ${escapeHtml(
+          scenario.propertyType || "Not provided"
+        )}</p>
+        <p><strong>First-Time Buyer:</strong> ${escapeHtml(
+          scenario.firstTimeBuyer || "Not provided"
+        )}</p>
       </div>
 
       <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
@@ -1418,14 +2016,10 @@ function buildSummaryHtml(args: {
         <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
         <p style="line-height:1.7;">${nl2br(summary.likelyDirection)}</p>
 
-        ${potentialProgramDirectionHtml}
+        ${recommendedProgramDirectionHtml}
 
-        <h3 style="margin:18px 0 8px 0;">Provisional Program Directions</h3>
-        <ul style="line-height:1.8;">
-          ${summary.provisionalPrograms
-            .map((item) => `<li>${escapeHtml(item)}</li>`)
-            .join("")}
-        </ul>
+        <h3 style="margin:18px 0 8px 0;">Borrower Readiness</h3>
+        <p style="line-height:1.7;">${escapeHtml(summary.borrowerReadiness)}</p>
 
         <h3 style="margin:18px 0 8px 0;">Strengths</h3>
         <ul style="line-height:1.8;">
@@ -1433,13 +2027,46 @@ function buildSummaryHtml(args: {
         </ul>
 
         ${
+          summary.riskFlags && summary.riskFlags.length > 0
+            ? `
+        <h3 style="margin:18px 0 8px 0;">Risk Flags</h3>
+        <ul style="line-height:1.8;">
+          ${summary.riskFlags.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+        `
+            : ""
+        }
+
+        ${
+          summary.missingItems && summary.missingItems.length > 0
+            ? `
+        <h3 style="margin:18px 0 8px 0;">Missing Items</h3>
+        <ul style="line-height:1.8;">
+          ${summary.missingItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+        `
+            : ""
+        }
+
+        ${
+          summary.suggestedDocuments && summary.suggestedDocuments.length > 0
+            ? `
+        <h3 style="margin:18px 0 8px 0;">Suggested Document Request</h3>
+        <ul style="line-height:1.8;">
+          ${summary.suggestedDocuments
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("")}
+        </ul>
+        `
+            : ""
+        }
+
+        ${
           summary.openQuestions && summary.openQuestions.length > 0
             ? `
         <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
         <ul style="line-height:1.8;">
-          ${summary.openQuestions
-            .map((item) => `<li>${escapeHtml(item)}</li>`)
-            .join("")}
+          ${summary.openQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
         </ul>
         `
             : ""
@@ -1591,7 +2218,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as RequestBody;
     const messages = body?.messages;
-    const routing = body?.routing;
+    const incomingRouting = body?.routing;
     const stage = body?.stage || "follow_up";
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -1609,6 +2236,16 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const extractedAnswers = extractStructuredAnswers(
+      latestUserMessage,
+      incomingRouting
+    );
+
+    const routing = mergeRoutingWithExtractedAnswers(
+      incomingRouting,
+      extractedAnswers
+    );
 
     const language = getLanguage(routing);
     const assignedOfficer = resolveLoanOfficer(routing);
@@ -1629,25 +2266,26 @@ export async function POST(req: Request) {
           ]
         : [{ role: "assistant", content: borrowerReply.reply }];
 
+    const finalRouting: RoutingPayload | undefined = routing
+      ? {
+          ...routing,
+          conversation: updatedConversation,
+        }
+      : undefined;
+
     let internalSummaryPrepared = false;
 
     if (borrowerReply.shouldClose) {
       const summary = await generateInternalSummary({
         stage,
         assignedOfficer,
-        routing: {
-          ...routing,
-          conversation: updatedConversation,
-        },
+        routing: finalRouting,
       });
 
       await queueInternalNotifications({
         stage,
         assignedOfficer,
-        routing: {
-          ...routing,
-          conversation: updatedConversation,
-        },
+        routing: finalRouting,
         summary,
       });
 
@@ -1664,6 +2302,8 @@ export async function POST(req: Request) {
         applyUrl: assignedOfficer.applyUrl,
         scheduleUrl: assignedOfficer.scheduleUrl,
       },
+      routing: finalRouting,
+      extractedAnswers,
       internalSummaryPrepared,
       conversationClosed: borrowerReply.shouldClose,
     });
