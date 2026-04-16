@@ -124,6 +124,36 @@ function parseJsonSafely<T>(value: string): T | null {
   }
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function nl2br(value: string): string {
+  return escapeHtml(value).replace(/\n/g, "<br />");
+}
+
+function buildTranscriptHtml(messages: ConversationMessage[]): string {
+  return messages
+    .map((msg, index) => {
+      const roleLabel = msg.role === "user" ? "Borrower" : "Finley Beyond";
+
+      return `
+        <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;background:${
+          msg.role === "user" ? "#DCEAFE" : "#F3F4F6"
+        };color:#263366;">
+          <div style="font-weight:700;margin-bottom:6px;">${roleLabel} ${index + 1}</div>
+          <div style="line-height:1.6;">${nl2br(msg.content || "")}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function getLatestUserMessage(messages: ChatMessage[]) {
   const reversed = [...messages].reverse();
   return reversed.find((message) => message.role === "user")?.content ?? "";
@@ -185,34 +215,51 @@ function conversationToText(conversation?: ConversationMessage[]) {
     .join("\n");
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+function hasAny(text: string, patterns: string[]) {
+  return patterns.some((pattern) => text.includes(pattern));
 }
 
-function nl2br(value: string): string {
-  return escapeHtml(value).replace(/\n/g, "<br />");
-}
+function detectClosingIntent(text: string) {
+  const lower = text.toLowerCase();
 
-function buildTranscriptHtml(messages: ConversationMessage[]): string {
-  return messages
-    .map((msg, index) => {
-      const roleLabel = msg.role === "user" ? "Borrower" : "Finley Beyond";
-
-      return `
-        <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;background:${
-          msg.role === "user" ? "#DCEAFE" : "#F3F4F6"
-        };color:#263366;">
-          <div style="font-weight:700;margin-bottom:6px;">${roleLabel} ${index + 1}</div>
-          <div style="line-height:1.6;">${nl2br(msg.content || "")}</div>
-        </div>
-      `;
-    })
-    .join("");
+  return hasAny(lower, [
+    "i am ready to apply",
+    "i'm ready to apply",
+    "ready to apply",
+    "i want to apply",
+    "send me the application",
+    "application link",
+    "i want to move forward",
+    "i'm ready to move forward",
+    "lets move forward",
+    "let's move forward",
+    "schedule",
+    "book a time",
+    "book a call",
+    "call me",
+    "text me",
+    "email me",
+    "have him call me",
+    "have her call me",
+    "i am ready",
+    "i'm ready",
+    "vamos aplicar",
+    "quero aplicar",
+    "quero seguir",
+    "quero prosseguir",
+    "vamos prosseguir",
+    "agendar",
+    "marcar horário",
+    "pode me ligar",
+    "pode me mandar mensagem",
+    "estoy listo para aplicar",
+    "quiero aplicar",
+    "quiero seguir",
+    "quiero avanzar",
+    "agendar",
+    "llámame",
+    "mándame mensaje",
+  ]);
 }
 
 function buildContextBlock(
@@ -254,10 +301,7 @@ ${transcript || "No prior transcript yet."}
   `.trim();
 }
 
-function buildInitialFallback(
-  language: LanguageCode,
-  officerName: string
-): string {
+function buildInitialFallback(language: LanguageCode): string {
   if (language === "pt") {
     return `Obrigado por compartilhar estas informações iniciais.
 
@@ -293,10 +337,7 @@ I will ask you a few questions to help with the preliminary qualification proces
 Would this purchase be for a primary residence, a second home, or an investment property?`;
 }
 
-function buildScenarioFallback(
-  language: LanguageCode,
-  officerName: string
-): string {
+function buildScenarioFallback(language: LanguageCode): string {
   if (language === "pt") {
     return `Perfeito.
 
@@ -330,6 +371,36 @@ This information will be reviewed personally, and you will be guided on the next
 I also recommend clicking Apply Now to help move the process forward.
 
 To help me guide the next step, what is your ideal timeline to buy or go under contract: as soon as possible, within the next 30 to 60 days, or later on?`;
+}
+
+function buildClosingFallback(language: LanguageCode, officerName: string): string {
+  if (language === "pt") {
+    return `Perfeito.
+
+Se você já está pronto para seguir, este é um bom momento para encerrar esta etapa e avançar.
+
+Recomendo clicar em Aplicar Agora para iniciar oficialmente, ou usar Agendar com o Loan Officer se preferir falar primeiro com ${officerName}.
+
+Seu cenário será encaminhado para acompanhamento.`;
+  }
+
+  if (language === "es") {
+    return `Perfecto.
+
+Si ya está listo para avanzar, este es un buen momento para cerrar esta etapa y seguir al siguiente paso.
+
+Le recomiendo hacer clic en Aplicar Ahora para iniciar oficialmente, o usar Agendar con el Loan Officer si prefiere hablar primero con ${officerName}.
+
+Su escenario quedará encaminado para seguimiento.`;
+  }
+
+  return `Perfect.
+
+If you are ready to move forward, this is the right point to close this step and proceed.
+
+I recommend clicking Apply Now to begin officially, or using Schedule with Loan Officer if you would prefer to speak first with ${officerName}.
+
+Your scenario will be routed for follow-up.`;
 }
 
 function buildFollowUpFallback(language: LanguageCode): string {
@@ -384,7 +455,7 @@ async function callOpenAIChat(args: {
       },
       body: JSON.stringify({
         model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
-        temperature: 0.45,
+        temperature: 0.4,
         messages: [
           { role: "system", content: args.system },
           { role: "user", content: args.user },
@@ -432,6 +503,7 @@ async function callOpenAIJson<T>(args: {
 
     const data = await response.json();
     const raw = data?.choices?.[0]?.message?.content;
+
     if (typeof raw !== "string" || !raw.trim()) return null;
 
     return parseJsonSafely<T>(raw);
@@ -446,8 +518,10 @@ async function generateBorrowerReply(args: {
   latestUserMessage: string;
   routing?: RoutingPayload;
   assignedOfficer: LoanOfficerRecord;
-}): Promise<string> {
+}): Promise<{ reply: string; shouldClose: boolean }> {
   const { stage, language, latestUserMessage, routing, assignedOfficer } = args;
+
+  const closingIntent = detectClosingIntent(latestUserMessage);
 
   const system = `
 You are Finley Beyond, an AI-powered mortgage advisor assistant for Beyond Financing.
@@ -455,58 +529,67 @@ You are Finley Beyond, an AI-powered mortgage advisor assistant for Beyond Finan
 Your job:
 - speak naturally and professionally
 - gather mortgage qualification information
-- keep the conversation helpful and warm
-- sound like a real, polished mortgage loan officer assistant
-- tailor the response to the borrower's language
+- keep the conversation warm, polished, and human
+- sound like a skilled loan officer assistant, not a bot
 
 Important compliance rules:
 - never promise approval
 - never state that the borrower is definitively qualified
-- never give a commitment to lend
-- never give personalized interest rates
-- never state a final underwriting decision
-- you may discuss likely or possible mortgage directions only in broad, careful language when useful
-- you may mention that the assigned licensed loan officer will personally review the scenario
-- encourage the borrower to click Apply Now when appropriate
-- keep responses concise but human
-- always end with one useful next question unless the borrower is clearly asking to speak with the loan officer right away
+- never make a commitment to lend
+- never provide personalized rates
+- never provide a final underwriting decision
+- you may reference broad possible mortgage directions carefully, only when useful
+- you may encourage Apply Now and Schedule with Loan Officer
+- do not ask the borrower to choose a lender, bank, or investor
+- lender-channel decisions belong internally to the assigned loan officer
+- if the borrower is clearly ready to apply, schedule, or be contacted, stop asking more qualification questions and move naturally to a close
 
 Language rule:
 - respond only in ${language === "pt" ? "Portuguese" : language === "es" ? "Spanish" : "English"}
   `.trim();
 
   const stageInstruction =
-    stage === "initial_review"
+    closingIntent
+      ? `
+The borrower has expressed clear intent to move forward.
+Do not ask another qualifying question.
+Close the conversation naturally.
+Direct the borrower to Apply Now or Schedule with Loan Officer.
+Acknowledge that the assigned loan officer will follow up.
+`
+      : stage === "initial_review"
       ? `
 The borrower has just completed the first intake.
 Acknowledge the information.
 Mention that the assigned loan officer will review it personally.
-Do not sound robotic.
-Then ask the next best qualification question.
-`.trim()
+Then ask the next best borrower-relevant qualification question.
+Do not ask about lender or bank preference.
+`
       : stage === "scenario_review"
       ? `
-The borrower has now added a property target scenario.
-Acknowledge the scenario in a natural way.
+The borrower has added a property scenario.
+Acknowledge it naturally.
 Mention that the assigned loan officer will review it personally.
 If helpful, briefly mention broad possible direction without promising anything.
-Then ask the next best qualification question.
-`.trim()
+Then ask the next best borrower-relevant qualification question.
+Do not ask about lender or bank preference.
+`
       : `
-Continue the live borrower-facing mortgage conversation naturally.
-Answer the borrower's message in a human way.
-You may reference broad mortgage directions carefully if the borrower asks.
-Do not overuse repeated phrases.
-Then ask the next best qualification question unless the borrower clearly wants direct contact only.
-`.trim();
+Continue the borrower-facing mortgage conversation naturally.
+Answer the borrower clearly and humanly.
+Do not ask about lender or bank preference.
+If the borrower signals readiness to move forward, stop asking questions and close naturally to CTA.
+Otherwise, ask only one useful next question.
+`;
 
   const user = `
 ${buildContextBlock(language, routing, assignedOfficer)}
 
 Current stage: ${stage}
 Assigned loan officer name: ${assignedOfficer.name}
+Borrower expressed closing intent: ${closingIntent ? "yes" : "no"}
 
-Latest user-facing input:
+Latest borrower message:
 ${latestUserMessage}
 
 Instruction:
@@ -515,17 +598,26 @@ ${stageInstruction}
 
   const aiReply = await callOpenAIChat({ system, user });
 
-  if (aiReply) return aiReply;
+  if (aiReply) {
+    return { reply: aiReply, shouldClose: closingIntent };
+  }
+
+  if (closingIntent) {
+    return {
+      reply: buildClosingFallback(language, assignedOfficer.name),
+      shouldClose: true,
+    };
+  }
 
   if (stage === "initial_review") {
-    return buildInitialFallback(language, assignedOfficer.name);
+    return { reply: buildInitialFallback(language), shouldClose: false };
   }
 
   if (stage === "scenario_review") {
-    return buildScenarioFallback(language, assignedOfficer.name);
+    return { reply: buildScenarioFallback(language), shouldClose: false };
   }
 
-  return buildFollowUpFallback(language);
+  return { reply: buildFollowUpFallback(language), shouldClose: false };
 }
 
 function buildFallbackSummary(
@@ -557,7 +649,7 @@ function buildFallbackSummary(
   return {
     borrowerSummary:
       transcript ||
-      "Borrower engaged with Finley Beyond and submitted an initial mortgage scenario.",
+      "Borrower engaged with Finley Beyond and submitted a mortgage scenario.",
     likelyDirection:
       "Borrower appears to be in an early mortgage review stage and should receive licensed loan officer follow-up.",
     strengths:
@@ -568,11 +660,11 @@ function buildFallbackSummary(
       "Confirm occupancy intent.",
       "Confirm timeline to purchase.",
       "Confirm funds source for down payment and closing.",
-      "Confirm supporting documentation strategy.",
+      "Confirm documentation strategy.",
     ],
     provisionalPrograms,
     recommendedNextStep:
-      "Loan officer should review the scenario personally and guide the borrower toward full application and documentation collection.",
+      "Loan officer should review the scenario personally and guide the borrower toward application and next steps.",
     loanOfficerActionPlan: [
       `Review this ${stage} interaction.`,
       "Contact the borrower directly.",
@@ -588,7 +680,6 @@ async function generateInternalSummary(args: {
   routing?: RoutingPayload;
 }): Promise<SummaryPayload> {
   const { stage, assignedOfficer, routing } = args;
-
   const fallback = buildFallbackSummary(stage, assignedOfficer, routing);
 
   const system = `
@@ -611,9 +702,8 @@ Rules:
 - use only the borrower data and transcript provided
 - do not promise approval
 - do not claim certainty where the data does not support it
-- "provisionalPrograms" should be directional, not guaranteed
-- acceptable directional examples include Conventional review, FHA review, VA review, Jumbo review, Self-employed review, ITIN review, Alternative documentation review, etc.
-- mention likely program directions only when supported by the intake and conversation
+- provisional programs should be directional only
+- do not mention lender selection questions to the borrower
   `.trim();
 
   const user = `
@@ -878,6 +968,77 @@ async function queueInternalNotifications(args: {
   });
 }
 
+async function generateInternalSummary(args: {
+  stage: string;
+  assignedOfficer: LoanOfficerRecord;
+  routing?: RoutingPayload;
+}): Promise<SummaryPayload> {
+  const { stage, assignedOfficer, routing } = args;
+  const fallback = buildFallbackSummary(stage, assignedOfficer, routing);
+
+  const system = `
+You create concise internal mortgage loan officer briefings for Beyond Financing.
+
+Return valid JSON only with this exact shape:
+{
+  "borrowerSummary": "string",
+  "likelyDirection": "string",
+  "strengths": ["string"],
+  "openQuestions": ["string"],
+  "provisionalPrograms": ["string"],
+  "recommendedNextStep": "string",
+  "loanOfficerActionPlan": ["string"]
+}
+
+Rules:
+- write for an internal licensed mortgage loan officer
+- be practical and concise
+- use only the borrower data and transcript provided
+- do not promise approval
+- provisional programs should be directional only
+  `.trim();
+
+  const user = `
+Assigned loan officer:
+- Name: ${assignedOfficer.name}
+- NMLS: ${assignedOfficer.nmls}
+
+Stage:
+${stage}
+
+${buildContextBlock(getLanguage(routing), routing, assignedOfficer)}
+  `.trim();
+
+  const aiSummary = await callOpenAIJson<SummaryPayload>({ system, user });
+
+  if (!aiSummary) return fallback;
+
+  return {
+    borrowerSummary: aiSummary.borrowerSummary || fallback.borrowerSummary,
+    likelyDirection: aiSummary.likelyDirection || fallback.likelyDirection,
+    strengths:
+      Array.isArray(aiSummary.strengths) && aiSummary.strengths.length > 0
+        ? aiSummary.strengths
+        : fallback.strengths,
+    openQuestions:
+      Array.isArray(aiSummary.openQuestions) && aiSummary.openQuestions.length > 0
+        ? aiSummary.openQuestions
+        : fallback.openQuestions,
+    provisionalPrograms:
+      Array.isArray(aiSummary.provisionalPrograms) &&
+      aiSummary.provisionalPrograms.length > 0
+        ? aiSummary.provisionalPrograms
+        : fallback.provisionalPrograms,
+    recommendedNextStep:
+      aiSummary.recommendedNextStep || fallback.recommendedNextStep,
+    loanOfficerActionPlan:
+      Array.isArray(aiSummary.loanOfficerActionPlan) &&
+      aiSummary.loanOfficerActionPlan.length > 0
+        ? aiSummary.loanOfficerActionPlan
+        : fallback.loanOfficerActionPlan,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as RequestBody;
@@ -904,7 +1065,7 @@ export async function POST(req: Request) {
     const language = getLanguage(routing);
     const assignedOfficer = resolveLoanOfficer(routing);
 
-    const reply = await generateBorrowerReply({
+    const borrowerReply = await generateBorrowerReply({
       stage,
       language,
       latestUserMessage,
@@ -912,38 +1073,38 @@ export async function POST(req: Request) {
       assignedOfficer,
     });
 
-    const summary = await generateInternalSummary({
-      stage,
-      assignedOfficer,
-      routing: {
-        ...routing,
-        conversation:
-          routing?.conversation && routing.conversation.length > 0
-            ? routing.conversation
-            : stage === "follow_up"
-            ? routing?.conversation || []
-            : [
-                ...(routing?.conversation || []),
-                { role: "assistant", content: reply },
-              ],
-      },
-    });
+    const updatedConversation =
+      routing?.conversation && routing.conversation.length > 0
+        ? [...routing.conversation, { role: "assistant", content: borrowerReply.reply }]
+        : [{ role: "assistant", content: borrowerReply.reply }];
 
-    await queueInternalNotifications({
-      stage,
-      assignedOfficer,
-      routing: {
-        ...routing,
-        conversation:
-          routing?.conversation && routing.conversation.length > 0
-            ? routing.conversation
-            : [{ role: "assistant", content: reply }],
-      },
-      summary,
-    });
+    let internalSummaryPrepared = false;
+
+    if (borrowerReply.shouldClose) {
+      const summary = await generateInternalSummary({
+        stage,
+        assignedOfficer,
+        routing: {
+          ...routing,
+          conversation: updatedConversation,
+        },
+      });
+
+      await queueInternalNotifications({
+        stage,
+        assignedOfficer,
+        routing: {
+          ...routing,
+          conversation: updatedConversation,
+        },
+        summary,
+      });
+
+      internalSummaryPrepared = true;
+    }
 
     return NextResponse.json({
-      reply,
+      reply: borrowerReply.reply,
       assignedOfficer: {
         name: assignedOfficer.name,
         nmls: assignedOfficer.nmls,
@@ -952,8 +1113,8 @@ export async function POST(req: Request) {
         applyUrl: assignedOfficer.applyUrl,
         scheduleUrl: assignedOfficer.scheduleUrl,
       },
-      internalSummaryPrepared: true,
-      summaryPreview: summary,
+      internalSummaryPrepared,
+      conversationClosed: borrowerReply.shouldClose,
     });
   } catch {
     return NextResponse.json(
