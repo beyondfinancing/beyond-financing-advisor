@@ -76,6 +76,23 @@ type SummaryPayload = {
   loanOfficerActionPlan: string[];
 };
 
+type AnswerState = {
+  hasName: boolean;
+  hasEmail: boolean;
+  hasCredit: boolean;
+  hasIncome: boolean;
+  hasDebt: boolean;
+  hasHomePrice: boolean;
+  hasDownPayment: boolean;
+  hasLoanAmount: boolean;
+  hasLtv: boolean;
+  hasOccupancy: boolean;
+  hasTimeline: boolean;
+  hasFundsSource: boolean;
+  hasPropertyTypeIntent: boolean;
+  hasCommunicationPreference: boolean;
+};
+
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
   {
     id: "sandro-pansini-souza",
@@ -219,6 +236,10 @@ function hasAny(text: string, patterns: string[]) {
   return patterns.some((pattern) => text.includes(pattern));
 }
 
+function hasValue(value?: string) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function detectClosingIntent(text: string) {
   const lower = text.toLowerCase();
 
@@ -261,6 +282,26 @@ function detectClosingIntent(text: string) {
   ]);
 }
 
+function detectCommunicationPreference(text: string) {
+  const lower = text.toLowerCase();
+  return hasAny(lower, [
+    "text me",
+    "text message",
+    "email me",
+    "call me",
+    "phone is better",
+    "email is better",
+    "text is better",
+    "mensagem",
+    "texto",
+    "ligar",
+    "email",
+    "correo",
+    "mensaje",
+    "llamar",
+  ]);
+}
+
 function buildContextBlock(
   language: LanguageCode,
   routing: RoutingPayload | undefined,
@@ -300,17 +341,156 @@ ${transcript || "No prior transcript yet."}
   `.trim();
 }
 
-function buildInitialFallback(language: LanguageCode): string {
+function analyzeAnsweredState(routing?: RoutingPayload): AnswerState {
+  const borrower = routing?.borrower || {};
+  const scenario = routing?.scenario || {};
+  const convo = conversationToText(routing?.conversation).toLowerCase();
+
+  const occupancyAnsweredFromConversation = hasAny(convo, [
+    "primary residence",
+    "primary home",
+    "owner occupied",
+    "owner-occupied",
+    "second home",
+    "vacation home",
+    "investment property",
+    "investment",
+    "moradia principal",
+    "residência principal",
+    "segunda casa",
+    "investimento",
+    "vivienda principal",
+    "segunda vivienda",
+    "propiedad de inversión",
+    "inversión",
+  ]);
+
+  const timelineAnsweredFromConversation = hasAny(convo, [
+    "as soon as possible",
+    "30 days",
+    "60 days",
+    "90 days",
+    "this month",
+    "next month",
+    "in a few months",
+    "o quanto antes",
+    "o mais rápido possível",
+    "30 dias",
+    "60 dias",
+    "90 dias",
+    "este mês",
+    "próximo mês",
+    "lo antes posible",
+    "este mes",
+    "próximo mes",
+    "30 a 60 días",
+    "30 to 60 days",
+  ]);
+
+  const fundsSourceAnsweredFromConversation = hasAny(convo, [
+    "savings",
+    "saved",
+    "gift funds",
+    "gift",
+    "sale of another property",
+    "sale of home",
+    "retirement account",
+    "bank account",
+    "economias",
+    "poupança",
+    "doação",
+    "gift funds",
+    "venda de imóvel",
+    "ahorros",
+    "regalo",
+    "venta de propiedad",
+  ]);
+
+  const propertyIntentAnsweredFromConversation = occupancyAnsweredFromConversation;
+
+  return {
+    hasName: hasValue(borrower.name),
+    hasEmail: hasValue(borrower.email),
+    hasCredit: hasValue(borrower.credit),
+    hasIncome: hasValue(borrower.income),
+    hasDebt: hasValue(borrower.debt),
+    hasHomePrice: hasValue(scenario.homePrice),
+    hasDownPayment: hasValue(scenario.downPayment),
+    hasLoanAmount: hasValue(scenario.estimatedLoanAmount),
+    hasLtv: hasValue(scenario.estimatedLtv),
+    hasOccupancy:
+      hasValue(scenario.occupancy) || occupancyAnsweredFromConversation,
+    hasTimeline:
+      hasValue(scenario.timeline) || timelineAnsweredFromConversation,
+    hasFundsSource:
+      hasValue(scenario.fundsSource) || fundsSourceAnsweredFromConversation,
+    hasPropertyTypeIntent: propertyIntentAnsweredFromConversation,
+    hasCommunicationPreference: detectCommunicationPreference(convo),
+  };
+}
+
+function getNextUsefulQuestion(
+  language: LanguageCode,
+  routing?: RoutingPayload
+): string | null {
+  const state = analyzeAnsweredState(routing);
+
+  if (!state.hasPropertyTypeIntent || !state.hasOccupancy) {
+    if (language === "pt") {
+      return "Esta compra seria para moradia principal, segunda casa ou imóvel de investimento?";
+    }
+    if (language === "es") {
+      return "¿Esta compra sería para vivienda principal, segunda vivienda o propiedad de inversión?";
+    }
+    return "Would this purchase be for a primary residence, a second home, or an investment property?";
+  }
+
+  if (!state.hasTimeline) {
+    if (language === "pt") {
+      return "Qual é o seu prazo ideal para comprar ou entrar em contrato: o quanto antes, nos próximos 30 a 60 dias, ou mais adiante?";
+    }
+    if (language === "es") {
+      return "¿Cuál es su plazo ideal para comprar o entrar en contrato: lo antes posible, dentro de los próximos 30 a 60 días, o más adelante?";
+    }
+    return "What is your ideal timeline to buy or go under contract: as soon as possible, within the next 30 to 60 days, or later on?";
+  }
+
+  if (!state.hasFundsSource) {
+    if (language === "pt") {
+      return "Os fundos para entrada e fechamento virão principalmente de economias, gift funds, venda de outro imóvel ou outra fonte?";
+    }
+    if (language === "es") {
+      return "¿Los fondos para el pago inicial y el cierre provendrán principalmente de ahorros, gift funds, venta de otra propiedad u otra fuente?";
+    }
+    return "Will your down payment and closing funds come mainly from savings, gift funds, the sale of another property, or another source?";
+  }
+
+  if (!state.hasCommunicationPreference) {
+    if (language === "pt") {
+      return "Qual é a melhor forma de contato para atualizações, email, ligação ou mensagem de texto?";
+    }
+    if (language === "es") {
+      return "¿Cuál es la mejor forma de contacto para actualizaciones, correo, llamada o mensaje de texto?";
+    }
+    return "What is the best way for your loan officer to keep you updated: email, phone call, or text message?";
+  }
+
+  return null;
+}
+
+function buildInitialFallback(language: LanguageCode, routing?: RoutingPayload): string {
+  const nextQuestion = getNextUsefulQuestion(language, routing);
+
   if (language === "pt") {
     return `Obrigado por compartilhar estas informações iniciais.
 
 Vou organizar este cenário para o loan officer designado, que fará a análise pessoal e orientará os próximos passos.
 
-Para adiantar o processo, recomendo também clicar em Aplicar Agora.
+Para adiantar o processo, recomendo também clicar em Aplicar Agora.${
+      nextQuestion ? `
 
-Vou fazer algumas perguntas para ajudar na qualificação preliminar:
-
-Esta compra seria para moradia principal, segunda casa ou imóvel de investimento?`;
+${nextQuestion}` : ""
+    }`;
   }
 
   if (language === "es") {
@@ -318,25 +498,27 @@ Esta compra seria para moradia principal, segunda casa ou imóvel de investiment
 
 Voy a organizar este escenario para el loan officer asignado, quien realizará la revisión personal y le orientará sobre los próximos pasos.
 
-Para adelantar el proceso, también le recomiendo hacer clic en Aplicar Ahora.
+Para adelantar el proceso, también le recomiendo hacer clic en Aplicar Ahora.${
+      nextQuestion ? `
 
-Voy a hacerle algunas preguntas para ayudar con la calificación preliminar:
-
-¿Esta compra sería para vivienda principal, segunda vivienda o propiedad de inversión?`;
+${nextQuestion}` : ""
+    }`;
   }
 
   return `Thank you for sharing this initial information.
 
 I will organize this scenario for the assigned loan officer, who will review it personally and advise the next steps.
 
-To help move things forward, I also recommend clicking Apply Now.
+To help move things forward, I also recommend clicking Apply Now.${
+    nextQuestion ? `
 
-I will ask you a few questions to help with the preliminary qualification process:
-
-Would this purchase be for a primary residence, a second home, or an investment property?`;
+${nextQuestion}` : ""
+  }`;
 }
 
-function buildScenarioFallback(language: LanguageCode): string {
+function buildScenarioFallback(language: LanguageCode, routing?: RoutingPayload): string {
+  const nextQuestion = getNextUsefulQuestion(language, routing);
+
   if (language === "pt") {
     return `Perfeito.
 
@@ -344,9 +526,11 @@ Agora tenho um cenário de compra mais claro para enviar ao loan officer designa
 
 Estas informações serão analisadas pessoalmente, e você receberá orientação sobre os próximos passos.
 
-Também recomendo clicar em Aplicar Agora para adiantar o processo.
+Também recomendo clicar em Aplicar Agora para adiantar o processo.${
+      nextQuestion ? `
 
-Para eu ajudar melhor, qual é o seu prazo ideal para comprar ou entrar em contrato: o quanto antes, nos próximos 30 a 60 dias, ou mais adiante?`;
+${nextQuestion}` : ""
+    }`;
   }
 
   if (language === "es") {
@@ -356,9 +540,11 @@ Ahora tengo un escenario de compra más claro para enviar al loan officer asigna
 
 Esta información será revisada personalmente, y usted recibirá orientación sobre los próximos pasos.
 
-También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.
+También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.${
+      nextQuestion ? `
 
-Para ayudarle mejor, ¿cuál es su plazo ideal para comprar o entrar en contrato: lo antes posible, dentro de los próximos 30 a 60 días, o más adelante?`;
+${nextQuestion}` : ""
+    }`;
   }
 
   return `Perfect.
@@ -367,9 +553,11 @@ I now have a clearer purchase scenario to send to the assigned loan officer.
 
 This information will be reviewed personally, and you will be guided on the next steps.
 
-I also recommend clicking Apply Now to help move the process forward.
+I also recommend clicking Apply Now to help move the process forward.${
+    nextQuestion ? `
 
-To help me guide the next step, what is your ideal timeline to buy or go under contract: as soon as possible, within the next 30 to 60 days, or later on?`;
+${nextQuestion}` : ""
+  }`;
 }
 
 function buildClosingFallback(language: LanguageCode, officerName: string): string {
@@ -402,17 +590,19 @@ Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will f
 If you prefer to speak first, you can schedule directly using the button below.`;
 }
 
-function buildFollowUpFallback(language: LanguageCode): string {
+function buildFollowUpFallback(language: LanguageCode, routing?: RoutingPayload): string {
+  const nextQuestion = getNextUsefulQuestion(language, routing);
+
   if (language === "pt") {
     return `Obrigado. Isso já ajuda bastante.
 
 Vou registrar isso para que o loan officer designado tenha um quadro mais claro do seu cenário.
 
-Também recomendo clicar em Aplicar Agora para adiantar o processo.
+Também recomendo clicar em Aplicar Agora para adiantar o processo.${
+      nextQuestion ? `
 
-Próxima pergunta útil:
-
-Os fundos para entrada e fechamento virão principalmente de economias, gift funds, venda de outro imóvel ou outra fonte?`;
+${nextQuestion}` : ""
+    }`;
   }
 
   if (language === "es") {
@@ -420,22 +610,22 @@ Os fundos para entrada e fechamento virão principalmente de economias, gift fun
 
 Voy a registrar eso para que el loan officer asignado tenga un panorama más claro de su escenario.
 
-También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.
+También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.${
+      nextQuestion ? `
 
-Siguiente pregunta útil:
-
-¿Los fondos para el pago inicial y el cierre provendrán principalmente de ahorros, gift funds, venta de otra propiedad u otra fuente?`;
+${nextQuestion}` : ""
+    }`;
   }
 
   return `Thank you. That helps a lot.
 
 I will note that so the assigned loan officer has a clearer picture of your scenario.
 
-I also recommend clicking Apply Now to help move things forward.
+I also recommend clicking Apply Now to help move things forward.${
+    nextQuestion ? `
 
-Helpful next question:
-
-Will your down payment and closing funds come mainly from savings, gift funds, the sale of another property, or another source?`;
+${nextQuestion}` : ""
+  }`;
 }
 
 async function callOpenAIChat(args: {
@@ -454,7 +644,7 @@ async function callOpenAIChat(args: {
       },
       body: JSON.stringify({
         model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
-        temperature: 0.35,
+        temperature: 0.3,
         messages: [
           { role: "system", content: args.system },
           { role: "user", content: args.user },
@@ -521,6 +711,8 @@ async function generateBorrowerReply(args: {
   const { stage, language, latestUserMessage, routing, assignedOfficer } = args;
 
   const closingIntent = detectClosingIntent(latestUserMessage);
+  const nextQuestion = getNextUsefulQuestion(language, routing);
+  const answeredState = analyzeAnsweredState(routing);
 
   const system = `
 You are Finley Beyond, an AI-powered mortgage advisor assistant for Beyond Financing.
@@ -544,7 +736,8 @@ Important compliance rules:
 - if the borrower is clearly ready to apply, schedule, or be contacted, stop asking more qualification questions and move naturally to a close
 - when closing, be brief and decisive
 - do not reopen the conversation after a clear closing intent
-- do not ask for more information after the borrower is ready to apply
+- do not ask for information that has already been provided in intake, scenario, or prior conversation
+- be state-aware and avoid redundant questions
 
 Language rule:
 - respond only in ${
@@ -566,7 +759,7 @@ Do not add extra paragraphs that reopen discussion.
 The borrower has just completed the first intake.
 Acknowledge the information.
 Mention that the assigned loan officer will review it personally.
-Then ask the next best borrower-relevant qualification question.
+Ask only one useful next question, and only if it has not already been answered.
 Do not ask about lender or bank preference.
 `
     : stage === "scenario_review"
@@ -575,7 +768,7 @@ The borrower has added a property scenario.
 Acknowledge it naturally.
 Mention that the assigned loan officer will review it personally.
 If helpful, briefly mention broad possible direction without promising anything.
-Then ask the next best borrower-relevant qualification question.
+Ask only one useful next question, and only if it has not already been answered.
 Do not ask about lender or bank preference.
 `
     : `
@@ -583,7 +776,7 @@ Continue the borrower-facing mortgage conversation naturally.
 Answer the borrower clearly and humanly.
 Do not ask about lender or bank preference.
 If the borrower signals readiness to move forward, stop asking questions and close naturally to CTA.
-Otherwise, ask only one useful next question.
+Otherwise, ask only one useful next question, and only if it has not already been answered.
 `;
 
   const user = `
@@ -592,6 +785,16 @@ ${buildContextBlock(language, routing, assignedOfficer)}
 Current stage: ${stage}
 Assigned loan officer name: ${assignedOfficer.name}
 Borrower expressed closing intent: ${closingIntent ? "yes" : "no"}
+
+Answered state:
+- hasPropertyTypeIntent: ${answeredState.hasPropertyTypeIntent ? "yes" : "no"}
+- hasOccupancy: ${answeredState.hasOccupancy ? "yes" : "no"}
+- hasTimeline: ${answeredState.hasTimeline ? "yes" : "no"}
+- hasFundsSource: ${answeredState.hasFundsSource ? "yes" : "no"}
+- hasCommunicationPreference: ${answeredState.hasCommunicationPreference ? "yes" : "no"}
+
+Preferred next useful question if needed:
+${nextQuestion || "No additional question is needed right now."}
 
 Latest borrower message:
 ${latestUserMessage}
@@ -614,14 +817,14 @@ ${stageInstruction}
   }
 
   if (stage === "initial_review") {
-    return { reply: buildInitialFallback(language), shouldClose: false };
+    return { reply: buildInitialFallback(language, routing), shouldClose: false };
   }
 
   if (stage === "scenario_review") {
-    return { reply: buildScenarioFallback(language), shouldClose: false };
+    return { reply: buildScenarioFallback(language, routing), shouldClose: false };
   }
 
-  return { reply: buildFollowUpFallback(language), shouldClose: false };
+  return { reply: buildFollowUpFallback(language, routing), shouldClose: false };
 }
 
 function buildFallbackSummary(
@@ -667,22 +870,16 @@ function buildFallbackSummary(
     borrowerSummary:
       transcript ||
       "Borrower completed initial intake and is actively moving forward with financing.",
-
     likelyDirection:
       "Borrower demonstrates strong forward intent and should be prioritized for immediate loan officer engagement.",
-
     strengths:
       strengths.length > 0
         ? strengths
         : ["Borrower engaged and ready to proceed with financing."],
-
     openQuestions: [],
-
     provisionalPrograms,
-
     recommendedNextStep:
       "Borrower is ready to apply. Immediate follow-up is recommended to secure the application and structure the file.",
-
     loanOfficerActionPlan: [
       "Contact borrower immediately (high intent).",
       "Guide borrower through full application submission.",
