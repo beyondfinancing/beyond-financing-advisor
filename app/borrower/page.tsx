@@ -118,7 +118,6 @@ const COPY = {
     accept: "I acknowledge and accept this disclaimer.",
     backHome: "Back to Beyond Intelligence",
     language: "Language",
-    purpose: "Loan Purpose",
     borrowerName: "Borrower Name",
     email: "Email",
     phone: "Phone Number",
@@ -130,7 +129,6 @@ const COPY = {
     realtorQuestion: "Are you working with a Realtor?",
     realtorName: "Realtor Name",
     realtorPhone: "Realtor Phone Number",
-    loanOfficer: "Loan Officer Name or NMLS #",
     loanOfficerPlaceholder: "Type loan officer name or NMLS #",
     confirmOfficer: "Confirm Loan Officer",
     unknownOfficer: "I Do Not Know My Loan Officer",
@@ -159,7 +157,6 @@ const COPY = {
     accept: "Reconheço e aceito este aviso.",
     backHome: "Voltar para Beyond Intelligence",
     language: "Idioma",
-    purpose: "Objetivo do Empréstimo",
     borrowerName: "Nome do Cliente",
     email: "Email",
     phone: "Telefone",
@@ -171,7 +168,6 @@ const COPY = {
     realtorQuestion: "Você está trabalhando com um Realtor?",
     realtorName: "Nome do Realtor",
     realtorPhone: "Telefone do Realtor",
-    loanOfficer: "Nome do Loan Officer ou NMLS #",
     loanOfficerPlaceholder: "Digite o nome do loan officer ou o NMLS #",
     confirmOfficer: "Confirmar Loan Officer",
     unknownOfficer: "Não Sei Meu Loan Officer",
@@ -200,7 +196,6 @@ const COPY = {
     accept: "Reconozco y acepto este aviso.",
     backHome: "Volver a Beyond Intelligence",
     language: "Idioma",
-    purpose: "Objetivo del Préstamo",
     borrowerName: "Nombre del Cliente",
     email: "Correo Electrónico",
     phone: "Teléfono",
@@ -212,7 +207,6 @@ const COPY = {
     realtorQuestion: "¿Está trabajando con un Realtor?",
     realtorName: "Nombre del Realtor",
     realtorPhone: "Teléfono del Realtor",
-    loanOfficer: "Nombre del Loan Officer o NMLS #",
     loanOfficerPlaceholder: "Escriba el nombre del loan officer o el NMLS #",
     confirmOfficer: "Confirmar Loan Officer",
     unknownOfficer: "No Conozco Mi Loan Officer",
@@ -233,13 +227,14 @@ const COPY = {
   },
 };
 
-function cardStyle(): React.CSSProperties {
+function cardStyle(opacity = 1): React.CSSProperties {
   return {
     background: "#fff",
     border: "1px solid #D9E1EC",
     borderRadius: 22,
-    padding: 22,
+    padding: 20,
     boxShadow: "0 10px 28px rgba(38,51,102,0.06)",
+    opacity,
   };
 }
 
@@ -251,10 +246,12 @@ function inputStyle(): React.CSSProperties {
     border: "1px solid #C8D3E3",
     fontSize: 16,
     outline: "none",
+    minWidth: 0,
+    boxSizing: "border-box",
   };
 }
 
-function buttonPrimaryStyle(): React.CSSProperties {
+function buttonPrimaryStyle(disabled = false): React.CSSProperties {
   return {
     background: "#263366",
     color: "#fff",
@@ -262,7 +259,8 @@ function buttonPrimaryStyle(): React.CSSProperties {
     borderRadius: 12,
     padding: "14px 18px",
     fontWeight: 700,
-    cursor: "pointer",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.55 : 1,
   };
 }
 
@@ -518,18 +516,18 @@ export default function BorrowerPage() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 20 }}>
         <div
           style={{
             display: "flex",
             flexWrap: "wrap",
-            gap: 14,
+            gap: 16,
             justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 24,
+            alignItems: "flex-start",
+            marginBottom: 22,
           }}
         >
-          <div>
+          <div style={{ flex: "1 1 420px", minWidth: 0 }}>
             <div
               style={{
                 display: "inline-block",
@@ -544,18 +542,43 @@ export default function BorrowerPage() {
             >
               BEYOND INTELLIGENCE™
             </div>
-            <h1 style={{ margin: 0, fontSize: 36 }}>{t.title}</h1>
-            <p style={{ margin: "10px 0 0", color: "#5A6A84", lineHeight: 1.6 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "clamp(34px, 6vw, 54px)",
+                lineHeight: 1.15,
+              }}
+            >
+              {t.title}
+            </h1>
+            <p
+              style={{
+                margin: "12px 0 0",
+                color: "#5A6A84",
+                lineHeight: 1.7,
+                fontSize: "clamp(16px, 2.5vw, 18px)",
+              }}
+            >
               {t.subtitle}
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+              alignItems: "center",
+              justifyContent: "flex-start",
+              flex: "1 1 320px",
+              minWidth: 0,
+            }}
+          >
             <label style={{ fontWeight: 700 }}>{t.language}</label>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-              style={{ ...inputStyle(), width: 140, padding: "10px 12px" }}
+              style={{ ...inputStyle(), width: 160, padding: "10px 12px" }}
             >
               <option value="en">English</option>
               <option value="pt">Português</option>
@@ -578,14 +601,16 @@ export default function BorrowerPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.1fr 0.9fr",
-            gap: 22,
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 20,
           }}
         >
-          <div style={{ display: "grid", gap: 22 }}>
+          <div style={{ display: "grid", gap: 20 }}>
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>{t.disclaimerTitle}</h2>
-              <p style={{ lineHeight: 1.7, color: "#4B5C78" }}>{t.disclaimer}</p>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.disclaimerTitle}</h2>
+              <p style={{ lineHeight: 1.8, color: "#4B5C78", marginBottom: 0 }}>
+                {t.disclaimer}
+              </p>
 
               <label
                 style={{
@@ -604,12 +629,12 @@ export default function BorrowerPage() {
               </label>
             </section>
 
-            <section style={{ ...cardStyle(), opacity: accepted ? 1 : 0.55 }}>
+            <section style={cardStyle(accepted ? 1 : 0.55)}>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 14,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                  gap: 12,
                 }}
               >
                 {(["Purchase", "Refinance", "Investment"] as LoanPurpose[]).map(
@@ -630,7 +655,7 @@ export default function BorrowerPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                   gap: 14,
                   marginTop: 18,
                 }}
@@ -758,7 +783,7 @@ export default function BorrowerPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 14,
                       marginTop: 14,
                     }}
@@ -807,7 +832,6 @@ export default function BorrowerPage() {
                   flexWrap: "wrap",
                   gap: 10,
                   marginTop: 14,
-                  alignItems: "center",
                 }}
               >
                 <button
@@ -849,10 +873,16 @@ export default function BorrowerPage() {
                 >
                   {t.assigned}
                 </div>
-                <div style={{ fontWeight: 800, fontSize: 18 }}>
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: "clamp(18px, 3vw, 24px)",
+                    lineHeight: 1.4,
+                  }}
+                >
                   {selectedOfficer.name} — NMLS {selectedOfficer.nmls}
                 </div>
-                <div style={{ color: "#5A6A84", marginTop: 6 }}>
+                <div style={{ color: "#5A6A84", marginTop: 6, lineHeight: 1.7 }}>
                   Internal summary will route to {selectedOfficer.email} and{" "}
                   {selectedOfficer.assistantEmail}.
                 </div>
@@ -863,15 +893,15 @@ export default function BorrowerPage() {
                   type="button"
                   disabled={!accepted || reviewing}
                   onClick={runPreliminaryReview}
-                  style={buttonPrimaryStyle()}
+                  style={buttonPrimaryStyle(!accepted || reviewing)}
                 >
                   {reviewing ? "Reviewing..." : t.review}
                 </button>
               </div>
             </section>
 
-            <section style={{ ...cardStyle(), opacity: accepted ? 1 : 0.55 }}>
-              <h2 style={{ marginTop: 0 }}>{t.scenarioTitle}</h2>
+            <section style={cardStyle(accepted ? 1 : 0.55)}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.scenarioTitle}</h2>
 
               <div
                 style={{
@@ -949,7 +979,7 @@ export default function BorrowerPage() {
                   type="button"
                   disabled={!accepted || reviewing}
                   onClick={continueScenario}
-                  style={buttonPrimaryStyle()}
+                  style={buttonPrimaryStyle(!accepted || reviewing)}
                 >
                   {reviewing ? "Updating..." : t.continueScenario}
                 </button>
@@ -957,14 +987,14 @@ export default function BorrowerPage() {
             </section>
           </div>
 
-          <div style={{ display: "grid", gap: 22 }}>
+          <div style={{ display: "grid", gap: 20 }}>
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>{t.conversation}</h2>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.conversation}</h2>
 
               <div
                 style={{
-                  minHeight: 420,
-                  maxHeight: 620,
+                  minHeight: 320,
+                  maxHeight: 560,
                   overflowY: "auto",
                   padding: 14,
                   borderRadius: 16,
@@ -1013,13 +1043,17 @@ export default function BorrowerPage() {
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder={t.chatPlaceholder}
                   rows={5}
-                  style={{ ...inputStyle(), resize: "vertical" }}
+                  style={{
+                    ...inputStyle(),
+                    resize: "vertical",
+                    minHeight: 120,
+                  }}
                 />
                 <button
                   type="button"
                   onClick={sendMessage}
                   disabled={sending || !accepted}
-                  style={buttonPrimaryStyle()}
+                  style={buttonPrimaryStyle(sending || !accepted)}
                 >
                   {sending ? "Sending..." : t.send}
                 </button>
@@ -1027,7 +1061,7 @@ export default function BorrowerPage() {
             </section>
 
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>Next Actions</h2>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>Next Actions</h2>
 
               <div style={{ display: "grid", gap: 12 }}>
                 <a
@@ -1035,7 +1069,7 @@ export default function BorrowerPage() {
                   target="_blank"
                   rel="noreferrer"
                   style={{
-                    ...buttonPrimaryStyle(),
+                    ...buttonPrimaryStyle(false),
                     textAlign: "center",
                     textDecoration: "none",
                   }}
