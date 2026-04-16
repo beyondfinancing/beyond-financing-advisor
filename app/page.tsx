@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type LanguageCode = "en" | "pt" | "es";
 
@@ -127,6 +127,9 @@ const COPY = {
     scheduleLoanOfficer: "Schedule with Loan Officer",
     emailLoanOfficer: "Email Loan Officer",
     actionTitle: "Next Actions",
+    sessionClosed:
+      "This session has been completed. If you return after using one of the next steps, a new session will begin.",
+    startNewSession: "Start New Session",
   },
   pt: {
     heroTitle: "Finley Beyond com tecnologia Beyond Intelligence™",
@@ -178,6 +181,9 @@ const COPY = {
     scheduleLoanOfficer: "Agendar com o Loan Officer",
     emailLoanOfficer: "Enviar Email ao Loan Officer",
     actionTitle: "Próximos Passos",
+    sessionClosed:
+      "Esta sessão foi concluída. Se você voltar depois de usar um dos próximos passos, uma nova sessão será iniciada.",
+    startNewSession: "Iniciar Nova Sessão",
   },
   es: {
     heroTitle: "Finley Beyond impulsado por Beyond Intelligence™",
@@ -229,6 +235,9 @@ const COPY = {
     scheduleLoanOfficer: "Agendar con el Loan Officer",
     emailLoanOfficer: "Enviar Correo al Loan Officer",
     actionTitle: "Próximos Pasos",
+    sessionClosed:
+      "Esta sesión ha finalizado. Si regresa después de usar uno de los próximos pasos, comenzará una nueva sesión.",
+    startNewSession: "Iniciar Nueva Sesión",
   },
 } as const;
 
@@ -316,6 +325,7 @@ export default function Page() {
   const [loanOfficerError, setLoanOfficerError] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [conversationClosed, setConversationClosed] = useState(false);
 
   const [loanOfficerQuery, setLoanOfficerQuery] = useState("");
   const [selectedOfficer, setSelectedOfficer] =
@@ -369,6 +379,44 @@ export default function Page() {
 
   const activeOfficer = selectedOfficer || DEFAULT_LOAN_OFFICER;
 
+  const resetSession = () => {
+    setSubmitted(false);
+    setScenarioUnlocked(false);
+    setLoading(false);
+    setChatLoading(false);
+    setErrorMessage("");
+    setChatError("");
+    setChatInput("");
+    setConversation([]);
+    setConversationClosed(false);
+  };
+
+  const closeAndResetSession = () => {
+    setConversationClosed(true);
+    setChatInput("");
+    setChatLoading(false);
+
+    window.setTimeout(() => {
+      resetSession();
+    }, 250);
+  };
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && conversationClosed) {
+        resetSession();
+      }
+    };
+
+    window.addEventListener("pagehide", resetSession);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", resetSession);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [conversationClosed]);
+
   const buildBorrowerContext = () => {
     return `
 Borrower profile for context:
@@ -395,9 +443,7 @@ Conversation role:
 You are Finley Beyond acting like a professional mortgage loan officer assistant.
 Your job is to gather qualification-oriented information, answer appropriate borrower questions, and help move the borrower toward the assigned loan officer.
 You must never disclose specific loan programs, specific loan terms, personalized interest rates, or definitive qualification determinations to the borrower.
-You may say that rates change and that national average mortgage rates are publicly available, but personalized rate, term, and program determination must come from the licensed loan officer.
 You should encourage the borrower to click Apply Now and advise that the assigned licensed loan officer will review the information personally and advise next steps.
-When helpful, ask the next qualification-style question a loan officer assistant would ask.
 Respond in ${
       language === "pt"
         ? "Portuguese"
@@ -469,6 +515,7 @@ Respond in ${
     setErrorMessage("");
     setChatError("");
     setConversation([]);
+    setConversationClosed(false);
 
     const resolvedOfficer =
       selectedOfficer ||
@@ -526,25 +573,23 @@ Then ask the next logical qualification-style question.
         }),
       });
 
-      const data: unknown = await response.json();
+      const data: any = await response.json();
 
       if (!response.ok) {
-        const extracted = extractAiText(data);
         throw new Error(
-          extracted || "The AI request did not complete successfully."
+          extractAiText(data) || "The AI request did not complete successfully."
         );
       }
 
       const finalText =
         extractAiText(data) || "No response was returned from the AI system.";
 
-      setConversation([
-        {
-          role: "assistant",
-          content: finalText,
-        },
-      ]);
+      setConversation([{ role: "assistant", content: finalText }]);
       setScenarioUnlocked(true);
+
+      if (data?.conversationClosed) {
+        setConversationClosed(true);
+      }
     } catch (error: unknown) {
       const message =
         error instanceof Error
@@ -559,7 +604,7 @@ Then ask the next logical qualification-style question.
   };
 
   const updateScenarioAndContinue = async () => {
-    if (!submitted || !scenarioUnlocked) return;
+    if (!submitted || !scenarioUnlocked || conversationClosed) return;
 
     setChatLoading(true);
     setChatError("");
@@ -584,21 +629,15 @@ Then ask the next logical qualification-style question.
         body: JSON.stringify({
           stage: "scenario_review",
           routing: buildRoutingPayload(),
-          messages: [
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
+          messages: [{ role: "user", content: prompt }],
         }),
       });
 
-      const data: unknown = await response.json();
+      const data: any = await response.json();
 
       if (!response.ok) {
-        const extracted = extractAiText(data);
         throw new Error(
-          extracted || "The scenario update did not complete successfully."
+          extractAiText(data) || "The scenario update did not complete successfully."
         );
       }
 
@@ -607,11 +646,12 @@ Then ask the next logical qualification-style question.
 
       setConversation((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content: finalText,
-        },
+        { role: "assistant", content: finalText },
       ]);
+
+      if (data?.conversationClosed) {
+        setConversationClosed(true);
+      }
     } catch (error: unknown) {
       const message =
         error instanceof Error
@@ -626,7 +666,7 @@ Then ask the next logical qualification-style question.
   const sendChatMessage = async () => {
     const trimmed = chatInput.trim();
 
-    if (!trimmed || !submitted) return;
+    if (!trimmed || !submitted || conversationClosed) return;
 
     setChatLoading(true);
     setChatError("");
@@ -658,10 +698,8 @@ Then ask the next logical qualification-style question.
 
 Continue the borrower-facing conversation naturally.
 Answer what can properly be answered.
-Never disclose exact loan programs, specific terms, or personalized rates.
 Encourage Apply Now when appropriate.
-Advise that the assigned loan officer will personally review the scenario and advise next steps.
-After answering, ask the next useful qualification-style question if appropriate.`,
+Advise that the assigned loan officer will personally review the scenario and advise next steps.`,
             },
             ...nextConversation.map((message) => ({
               role: message.role,
@@ -671,12 +709,11 @@ After answering, ask the next useful qualification-style question if appropriate
         }),
       });
 
-      const data: unknown = await response.json();
+      const data: any = await response.json();
 
       if (!response.ok) {
-        const extracted = extractAiText(data);
         throw new Error(
-          extracted || "The chat request did not complete successfully."
+          extractAiText(data) || "The chat request did not complete successfully."
         );
       }
 
@@ -687,6 +724,10 @@ After answering, ask the next useful qualification-style question if appropriate
         ...prev,
         { role: "assistant", content: finalText },
       ]);
+
+      if (data?.conversationClosed) {
+        setConversationClosed(true);
+      }
     } catch (error: unknown) {
       const message =
         error instanceof Error
@@ -697,6 +738,10 @@ After answering, ask the next useful qualification-style question if appropriate
     } finally {
       setChatLoading(false);
     }
+  };
+
+  const handleCtaClick = () => {
+    closeAndResetSession();
   };
 
   const mailtoHref = `mailto:${activeOfficer.email}?subject=${encodeURIComponent(
@@ -1030,6 +1075,7 @@ After answering, ask the next useful qualification-style question if appropriate
                     className="bf-button"
                     onClick={updateScenarioAndContinue}
                     disabled={
+                      conversationClosed ||
                       chatLoading ||
                       !scenarioForm.homePrice.trim() ||
                       !scenarioForm.downPayment.trim()
@@ -1037,12 +1083,14 @@ After answering, ask the next useful qualification-style question if appropriate
                     style={{
                       ...styles.secondaryButton,
                       backgroundColor:
+                        conversationClosed ||
                         chatLoading ||
                         !scenarioForm.homePrice.trim() ||
                         !scenarioForm.downPayment.trim()
                           ? "#7c8aa8"
                           : "#0096C7",
                       cursor:
+                        conversationClosed ||
                         chatLoading ||
                         !scenarioForm.homePrice.trim() ||
                         !scenarioForm.downPayment.trim()
@@ -1102,6 +1150,19 @@ After answering, ask the next useful qualification-style question if appropriate
                 <div style={styles.errorBox}>{errorMessage}</div>
               )}
 
+              {conversationClosed && (
+                <div style={styles.infoCloseBox}>
+                  <div style={{ marginBottom: 12 }}>{t.sessionClosed}</div>
+                  <button
+                    type="button"
+                    onClick={resetSession}
+                    style={styles.outlineButton}
+                  >
+                    {t.startNewSession}
+                  </button>
+                </div>
+              )}
+
               {submitted && !errorMessage && (
                 <>
                   <div className="bf-chat-scroll" style={styles.chatScroll}>
@@ -1142,37 +1203,41 @@ After answering, ask the next useful qualification-style question if appropriate
 
                   {chatError && <div style={styles.errorMiniBox}>{chatError}</div>}
 
-                  <div style={styles.chatComposerWrap}>
-                    <label style={styles.label}>{t.continueChatting}</label>
+                  {!conversationClosed && (
+                    <div style={styles.chatComposerWrap}>
+                      <label style={styles.label}>{t.continueChatting}</label>
 
-                    <textarea
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder={t.chatPlaceholder}
-                      rows={4}
-                      style={styles.textarea}
-                      disabled={chatLoading}
-                    />
+                      <textarea
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        placeholder={t.chatPlaceholder}
+                        rows={4}
+                        style={styles.textarea}
+                        disabled={chatLoading || conversationClosed}
+                      />
 
-                    <button
-                      className="bf-button"
-                      onClick={sendChatMessage}
-                      disabled={chatLoading || !chatInput.trim()}
-                      style={{
-                        ...styles.secondaryButton,
-                        backgroundColor:
-                          chatLoading || !chatInput.trim()
-                            ? "#7c8aa8"
-                            : "#0096C7",
-                        cursor:
-                          chatLoading || !chatInput.trim()
-                            ? "not-allowed"
-                            : "pointer",
-                      }}
-                    >
-                      {chatLoading ? t.sending : t.sendMessage}
-                    </button>
-                  </div>
+                      <button
+                        className="bf-button"
+                        onClick={sendChatMessage}
+                        disabled={
+                          conversationClosed || chatLoading || !chatInput.trim()
+                        }
+                        style={{
+                          ...styles.secondaryButton,
+                          backgroundColor:
+                            conversationClosed || chatLoading || !chatInput.trim()
+                              ? "#7c8aa8"
+                              : "#0096C7",
+                          cursor:
+                            conversationClosed || chatLoading || !chatInput.trim()
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        {chatLoading ? t.sending : t.sendMessage}
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1189,6 +1254,7 @@ After answering, ask the next useful qualification-style question if appropriate
                     target="_blank"
                     rel="noreferrer"
                     style={styles.actionLinkPrimary}
+                    onClick={handleCtaClick}
                   >
                     {t.applyNow}
                   </a>
@@ -1198,11 +1264,16 @@ After answering, ask the next useful qualification-style question if appropriate
                     target="_blank"
                     rel="noreferrer"
                     style={styles.actionLinkSecondary}
+                    onClick={handleCtaClick}
                   >
                     {t.scheduleLoanOfficer}
                   </a>
 
-                  <a href={mailtoHref} style={styles.actionLinkOutline}>
+                  <a
+                    href={mailtoHref}
+                    style={styles.actionLinkOutline}
+                    onClick={handleCtaClick}
+                  >
                     {t.emailLoanOfficer}
                   </a>
                 </div>
@@ -1340,6 +1411,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
   },
   infoBox: {
+    backgroundColor: "#f8fbff",
+    color: "#334155",
+    border: "1px solid #dbeafe",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+    fontSize: 14,
+    lineHeight: 1.7,
+  },
+  infoCloseBox: {
     backgroundColor: "#f8fbff",
     color: "#334155",
     border: "1px solid #dbeafe",
