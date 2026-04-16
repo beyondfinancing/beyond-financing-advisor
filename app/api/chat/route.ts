@@ -141,7 +141,9 @@ function resolveLoanOfficer(routing?: RoutingPayload): LoanOfficerRecord {
 
     const partial = LOAN_OFFICERS.find(
       (officer) =>
+        query.includes(officer.name.toLowerCase()) ||
         officer.name.toLowerCase().includes(query) ||
+        query.includes(officer.nmls.toLowerCase()) ||
         officer.nmls.toLowerCase().includes(query)
     );
     if (partial) return partial;
@@ -167,7 +169,6 @@ function hasAny(text: string, patterns: string[]) {
 
 function determineNextQuestion(language: LanguageCode, routing?: RoutingPayload) {
   const borrower = routing?.borrower || {};
-  const scenario = routing?.scenario || {};
   const convo = conversationToText(routing?.conversation).toLowerCase();
 
   const incomeAnswered =
@@ -238,7 +239,6 @@ function determineNextQuestion(language: LanguageCode, routing?: RoutingPayload)
     "economias",
     "presente",
     "doação",
-    "gift funds",
     "venda da casa",
     "cuenta de retiro",
     "ahorros",
@@ -314,26 +314,6 @@ function determineNextQuestion(language: LanguageCode, routing?: RoutingPayload)
     return "Gracias. Eso ya ayuda bastante. Mientras su loan officer revisa el escenario, ¿hay alguna pregunta específica sobre documentación, plazo, fondos para el cierre o pago mensual que quiera aclarar?";
   }
   return "Thank you. That already helps a lot. While your loan officer reviews the scenario, is there any specific question about documentation, timing, funds to close, or monthly payment that you would like to clarify?";
-}
-
-function introductoryMessage(language: LanguageCode, officerName: string) {
-  if (language === "pt") {
-    return `Obrigado por compartilhar estas informações iniciais. Vou organizar este cenário para ${officerName}, que fará a análise pessoal e orientará os próximos passos. Para adiantar o processo, recomendo também clicar em Aplicar Agora.`;
-  }
-  if (language === "es") {
-    return `Gracias por compartir esta información inicial. Voy a organizar este escenario para ${officerName}, quien realizará la revisión personal y le orientará sobre los próximos pasos. Para adelantar el proceso, también le recomiendo hacer clic en Aplicar Ahora.`;
-  }
-  return `Thank you for sharing this initial information. I will organize this scenario for ${officerName}, who will review it personally and advise the next steps. To help move things forward, I also recommend clicking Apply Now.`;
-}
-
-function scenarioAcknowledgement(language: LanguageCode, officerName: string) {
-  if (language === "pt") {
-    return `Perfeito. Agora já tenho um cenário de compra mais claro para encaminhar a ${officerName}. Estas informações serão enviadas para análise pessoal, e o loan officer orientará você sobre os próximos passos. Também recomendo clicar em Aplicar Agora para adiantar o processo.`;
-  }
-  if (language === "es") {
-    return `Perfecto. Ahora ya tengo un escenario de compra más claro para enviar a ${officerName}. Esta información se enviará para revisión personal, y el loan officer le orientará sobre los próximos pasos. También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.`;
-  }
-  return `Perfect. I now have a clearer purchase scenario to send to ${officerName}. This information will be forwarded for personal review, and the loan officer will advise you on the next steps. I also recommend clicking Apply Now to help move the process forward.`;
 }
 
 function buildAnswer(language: LanguageCode, userMessage: string, officerName: string) {
@@ -490,55 +470,102 @@ function buildAnswer(language: LanguageCode, userMessage: string, officerName: s
   return `Thank you. I will note that so ${officerName} has a clearer picture of your scenario.`;
 }
 
-function buildInitialBorrowerReview(language: LanguageCode, officerName: string, routing?: RoutingPayload) {
-  const intro = introductoryMessage(language, officerName);
+function buildInitialBorrowerReview(
+  language: LanguageCode,
+  officerName: string,
+  routing?: RoutingPayload
+) {
   const nextQuestion = determineNextQuestion(language, routing);
 
   if (language === "pt") {
-    return `${intro}
+    return `Obrigado por compartilhar estas informações iniciais.
 
-Próxima pergunta para ajudar na qualificação preliminar:
+Vou organizar este cenário para o loan officer designado, que fará a análise pessoal e orientará os próximos passos.
+
+Para adiantar o processo, recomendo também clicar em Aplicar Agora.
+
+Agora, vou fazer algumas perguntas para ajudar na qualificação preliminar:
+
 ${nextQuestion}`;
   }
 
   if (language === "es") {
-    return `${intro}
+    return `Gracias por compartir esta información inicial.
 
-Siguiente pregunta para ayudar con la calificación preliminar:
+Voy a organizar este escenario para el loan officer asignado, quien realizará la revisión personal y le orientará sobre los próximos pasos.
+
+Para adelantar el proceso, también le recomiendo hacer clic en Aplicar Ahora.
+
+Ahora voy a hacerle algunas preguntas para ayudar con la calificación preliminar:
+
 ${nextQuestion}`;
   }
 
-  return `${intro}
+  return `Thank you for sharing this initial information.
 
-Next question to help with the preliminary qualification conversation:
+I will organize this scenario for the assigned loan officer, who will review it personally and advise the next steps.
+
+To help move things forward, I also recommend clicking Apply Now.
+
+I will ask you a few questions to help with the preliminary qualification process:
+
 ${nextQuestion}`;
 }
 
-function buildScenarioReview(language: LanguageCode, officerName: string, routing?: RoutingPayload) {
-  const intro = scenarioAcknowledgement(language, officerName);
+function buildScenarioReview(
+  language: LanguageCode,
+  officerName: string,
+  routing?: RoutingPayload
+) {
   const nextQuestion = determineNextQuestion(language, routing);
 
   if (language === "pt") {
-    return `${intro}
+    return `Perfeito.
 
-Próxima pergunta para ajudar na preparação do seu loan officer:
+Agora tenho um cenário de compra mais claro para enviar ao loan officer designado.
+
+Estas informações serão analisadas pessoalmente, e você receberá orientação sobre os próximos passos.
+
+Também recomendo clicar em Aplicar Agora para adiantar o processo.
+
+Vou continuar com algumas perguntas para ajudar na preparação do seu perfil:
+
 ${nextQuestion}`;
   }
 
   if (language === "es") {
-    return `${intro}
+    return `Perfecto.
 
-Siguiente pregunta para ayudar en la preparación de su loan officer:
+Ahora tengo un escenario de compra más claro para enviar al loan officer asignado.
+
+Esta información será revisada personalmente, y usted recibirá orientación sobre los próximos pasos.
+
+También le recomiendo hacer clic en Aplicar Ahora para avanzar el proceso.
+
+Voy a continuar con algunas preguntas para ayudar a preparar su perfil:
+
 ${nextQuestion}`;
   }
 
-  return `${intro}
+  return `Perfect.
 
-Next question to help prepare your loan officer:
+I now have a clearer purchase scenario to send to the assigned loan officer.
+
+This information will be reviewed personally, and you will be guided on the next steps.
+
+I also recommend clicking Apply Now to help move the process forward.
+
+I will continue asking a few questions to better prepare your profile:
+
 ${nextQuestion}`;
 }
 
-function buildFollowUpReply(language: LanguageCode, officerName: string, userMessage: string, routing?: RoutingPayload) {
+function buildFollowUpReply(
+  language: LanguageCode,
+  officerName: string,
+  userMessage: string,
+  routing?: RoutingPayload
+) {
   const answer = buildAnswer(language, userMessage, officerName);
   const nextQuestion = determineNextQuestion(language, routing);
 
@@ -546,6 +573,7 @@ function buildFollowUpReply(language: LanguageCode, officerName: string, userMes
     return `${answer}
 
 Próxima pergunta útil:
+
 ${nextQuestion}`;
   }
 
@@ -553,12 +581,14 @@ ${nextQuestion}`;
     return `${answer}
 
 Siguiente pregunta útil:
+
 ${nextQuestion}`;
   }
 
   return `${answer}
 
 Helpful next question:
+
 ${nextQuestion}`;
 }
 
@@ -615,7 +645,8 @@ async function sendResendEmail(args: {
 }) {
   const resendApiKey = process.env.RESEND_API_KEY;
   const resendFrom =
-    process.env.RESEND_FROM_EMAIL || "Beyond Intelligence <noreply@beyondfinancing.com>";
+    process.env.RESEND_FROM_EMAIL ||
+    "Beyond Intelligence <noreply@beyondfinancing.com>";
 
   if (!resendApiKey) {
     console.log("RESEND_SKIPPED_NO_API_KEY");
