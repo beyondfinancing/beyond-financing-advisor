@@ -376,30 +376,30 @@ function buildClosingFallback(language: LanguageCode, officerName: string): stri
   if (language === "pt") {
     return `Perfeito.
 
-Se você já está pronto para seguir, este é um bom momento para encerrar esta etapa e avançar.
+Você está pronto para avançar.
 
-Recomendo clicar em Aplicar Agora para iniciar oficialmente, ou usar Agendar com o Loan Officer se preferir falar primeiro com ${officerName}.
+Clique em "Aplicar Agora" para iniciar oficialmente. Seu loan officer, ${officerName}, irá acompanhar seu processo e orientar os próximos passos.
 
-Seu cenário será encaminhado para acompanhamento.`;
+Se preferir falar antes, utilize o botão de agendamento abaixo.`;
   }
 
   if (language === "es") {
     return `Perfecto.
 
-Si ya está listo para avanzar, este es un buen momento para cerrar esta etapa y seguir al siguiente paso.
+Ya está listo para avanzar.
 
-Le recomiendo hacer clic en Aplicar Ahora para iniciar oficialmente, o usar Agendar con el Loan Officer si prefiere hablar primero con ${officerName}.
+Haga clic en "Aplicar Ahora" para comenzar oficialmente. Su loan officer, ${officerName}, dará seguimiento y le guiará en los próximos pasos.
 
-Su escenario quedará encaminado para seguimiento.`;
+Si prefiere hablar primero, puede agendar directamente usando el botón abajo.`;
   }
 
   return `Perfect.
 
-If you are ready to move forward, this is the right point to close this step and proceed.
+You’re ready to move forward.
 
-I recommend clicking Apply Now to begin officially, or using Schedule with Loan Officer if you would prefer to speak first with ${officerName}.
+Click "Apply Now" to begin officially. Your loan officer, ${officerName}, will follow up and guide you through the next steps.
 
-Your scenario will be routed for follow-up.`;
+If you prefer to speak first, you can schedule directly using the button below.`;
 }
 
 function buildFollowUpFallback(language: LanguageCode): string {
@@ -454,7 +454,7 @@ async function callOpenAIChat(args: {
       },
       body: JSON.stringify({
         model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
-        temperature: 0.4,
+        temperature: 0.35,
         messages: [
           { role: "system", content: args.system },
           { role: "user", content: args.user },
@@ -542,30 +542,35 @@ Important compliance rules:
 - do not ask the borrower to choose a lender, bank, or investor
 - lender-channel decisions belong internally to the assigned loan officer
 - if the borrower is clearly ready to apply, schedule, or be contacted, stop asking more qualification questions and move naturally to a close
+- when closing, be brief and decisive
+- do not reopen the conversation after a clear closing intent
+- do not ask for more information after the borrower is ready to apply
 
 Language rule:
-- respond only in ${language === "pt" ? "Portuguese" : language === "es" ? "Spanish" : "English"}
+- respond only in ${
+    language === "pt" ? "Portuguese" : language === "es" ? "Spanish" : "English"
+  }
   `.trim();
 
-  const stageInstruction =
-    closingIntent
-      ? `
+  const stageInstruction = closingIntent
+    ? `
 The borrower has expressed clear intent to move forward.
 Do not ask another qualifying question.
-Close the conversation naturally.
+Close the conversation naturally and briefly.
 Direct the borrower to Apply Now or Schedule with Loan Officer.
 Acknowledge that the assigned loan officer will follow up.
+Do not add extra paragraphs that reopen discussion.
 `
-      : stage === "initial_review"
-      ? `
+    : stage === "initial_review"
+    ? `
 The borrower has just completed the first intake.
 Acknowledge the information.
 Mention that the assigned loan officer will review it personally.
 Then ask the next best borrower-relevant qualification question.
 Do not ask about lender or bank preference.
 `
-      : stage === "scenario_review"
-      ? `
+    : stage === "scenario_review"
+    ? `
 The borrower has added a property scenario.
 Acknowledge it naturally.
 Mention that the assigned loan officer will review it personally.
@@ -573,7 +578,7 @@ If helpful, briefly mention broad possible direction without promising anything.
 Then ask the next best borrower-relevant qualification question.
 Do not ask about lender or bank preference.
 `
-      : `
+    : `
 Continue the borrower-facing mortgage conversation naturally.
 Answer the borrower clearly and humanly.
 Do not ask about lender or bank preference.
@@ -629,46 +634,60 @@ function buildFallbackSummary(
   const transcript = conversationToText(routing?.conversation);
 
   const strengths: string[] = [];
-  if (borrower.name) strengths.push("Borrower provided name.");
-  if (borrower.email) strengths.push("Borrower provided email.");
-  if (borrower.credit) strengths.push(`Estimated credit score provided: ${borrower.credit}.`);
-  if (borrower.income) strengths.push(`Gross monthly income provided: ${borrower.income}.`);
-  if (scenario.homePrice) strengths.push(`Estimated home price provided: ${scenario.homePrice}.`);
-  if (scenario.downPayment) strengths.push(`Estimated down payment provided: ${scenario.downPayment}.`);
+
+  if (borrower.credit) {
+    const score = Number(borrower.credit);
+    if (score >= 720) strengths.push(`Strong credit profile (${score}).`);
+    else strengths.push(`Credit score provided: ${score}.`);
+  }
+
+  if (borrower.income) {
+    strengths.push(`Verified income level (${borrower.income} monthly).`);
+  }
+
+  if (scenario.homePrice && scenario.downPayment) {
+    strengths.push(
+      `Defined purchase scenario (${scenario.homePrice} price / ${scenario.downPayment} down).`
+    );
+  }
 
   const provisionalPrograms: string[] = [];
   const credit = Number(borrower.credit || 0);
   const ltv = Number(String(scenario.estimatedLtv || "").replace("%", "") || 0);
 
-  if (credit >= 700) provisionalPrograms.push("Conventional review");
-  if (credit >= 620 && ltv >= 90) provisionalPrograms.push("High-LTV conventional review");
-  if (credit > 0 && credit < 700) provisionalPrograms.push("FHA review");
-  if (provisionalPrograms.length === 0) provisionalPrograms.push("Initial financing review");
+  if (credit >= 700 && ltv <= 95) {
+    provisionalPrograms.push("Conventional financing (high confidence)");
+  } else if (credit >= 620) {
+    provisionalPrograms.push("FHA or alternative low down payment options");
+  } else {
+    provisionalPrograms.push("Manual or alternative documentation review");
+  }
 
   return {
     borrowerSummary:
       transcript ||
-      "Borrower engaged with Finley Beyond and submitted a mortgage scenario.",
+      "Borrower completed initial intake and is actively moving forward with financing.",
+
     likelyDirection:
-      "Borrower appears to be in an early mortgage review stage and should receive licensed loan officer follow-up.",
+      "Borrower demonstrates strong forward intent and should be prioritized for immediate loan officer engagement.",
+
     strengths:
       strengths.length > 0
         ? strengths
-        : ["Borrower engaged with the intake and qualification flow."],
-    openQuestions: [
-      "Confirm occupancy intent.",
-      "Confirm timeline to purchase.",
-      "Confirm funds source for down payment and closing.",
-      "Confirm documentation strategy.",
-    ],
+        : ["Borrower engaged and ready to proceed with financing."],
+
+    openQuestions: [],
+
     provisionalPrograms,
+
     recommendedNextStep:
-      "Loan officer should review the scenario personally and guide the borrower toward application and next steps.",
+      "Borrower is ready to apply. Immediate follow-up is recommended to secure the application and structure the file.",
+
     loanOfficerActionPlan: [
-      `Review this ${stage} interaction.`,
-      "Contact the borrower directly.",
-      "Confirm occupancy, timeline, and funds to close.",
-      "Determine the most appropriate program direction after full review.",
+      "Contact borrower immediately (high intent).",
+      "Guide borrower through full application submission.",
+      "Confirm final structure and documentation strategy.",
+      "Move file toward pre-approval or underwriting review quickly.",
     ],
   };
 }
@@ -701,6 +720,9 @@ Rules:
 - use only the borrower data and transcript provided
 - do not promise approval
 - provisional programs should be directional only
+- if the borrower is clearly ready to apply or move forward, do not create unnecessary open questions
+- make the likelyDirection stronger and more useful for the loan officer
+- prefer urgent follow-up language when borrower intent is high
   `.trim();
 
   const user = `
@@ -726,9 +748,7 @@ ${buildContextBlock(getLanguage(routing), routing, assignedOfficer)}
         ? aiSummary.strengths
         : fallback.strengths,
     openQuestions:
-      Array.isArray(aiSummary.openQuestions) && aiSummary.openQuestions.length > 0
-        ? aiSummary.openQuestions
-        : fallback.openQuestions,
+      Array.isArray(aiSummary.openQuestions) ? aiSummary.openQuestions : fallback.openQuestions,
     provisionalPrograms:
       Array.isArray(aiSummary.provisionalPrograms) &&
       aiSummary.provisionalPrograms.length > 0
@@ -754,10 +774,28 @@ function buildSummaryHtml(args: {
   const borrower = routing?.borrower || {};
   const scenario = routing?.scenario || {};
   const transcriptMessages = routing?.conversation || [];
+  const isReadyToApply =
+    stage === "follow_up" &&
+    (
+      summary.recommendedNextStep.toLowerCase().includes("ready to apply") ||
+      summary.recommendedNextStep.toLowerCase().includes("immediate follow-up") ||
+      summary.likelyDirection.toLowerCase().includes("immediate") ||
+      summary.likelyDirection.toLowerCase().includes("ready")
+    );
 
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
       <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond</h1>
+
+      ${
+        isReadyToApply
+          ? `
+      <div style="margin-bottom:16px;padding:12px;border-radius:10px;background:#E6F4EA;border:1px solid #B7E1CD;color:#1E7F4F;font-weight:700;">
+        Status: Borrower Ready to Apply - Immediate Follow-Up Recommended
+      </div>
+      `
+          : ""
+      }
 
       <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
         <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
@@ -816,12 +854,18 @@ function buildSummaryHtml(args: {
           ${summary.strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
         </ul>
 
+        ${
+          summary.openQuestions && summary.openQuestions.length > 0
+            ? `
         <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
         <ul style="line-height:1.8;">
           ${summary.openQuestions
             .map((item) => `<li>${escapeHtml(item)}</li>`)
             .join("")}
         </ul>
+        `
+            : ""
+        }
 
         <h3 style="margin:18px 0 8px 0;">Recommended Next Step</h3>
         <p style="line-height:1.7;">${nl2br(summary.recommendedNextStep)}</p>
@@ -1001,7 +1045,10 @@ export async function POST(req: Request) {
 
     const updatedConversation =
       routing?.conversation && routing.conversation.length > 0
-        ? [...routing.conversation, { role: "assistant", content: borrowerReply.reply }]
+        ? [
+            ...routing.conversation,
+            { role: "assistant", content: borrowerReply.reply },
+          ]
         : [{ role: "assistant", content: borrowerReply.reply }];
 
     let internalSummaryPrepared = false;
