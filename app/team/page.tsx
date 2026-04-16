@@ -39,7 +39,7 @@ function cardStyle(): React.CSSProperties {
     background: "#fff",
     border: "1px solid #D9E1EC",
     borderRadius: 22,
-    padding: 22,
+    padding: 20,
     boxShadow: "0 10px 28px rgba(38,51,102,0.06)",
   };
 }
@@ -52,10 +52,12 @@ function inputStyle(): React.CSSProperties {
     border: "1px solid #C8D3E3",
     fontSize: 16,
     outline: "none",
+    minWidth: 0,
+    boxSizing: "border-box",
   };
 }
 
-function buttonPrimaryStyle(): React.CSSProperties {
+function buttonPrimaryStyle(disabled = false): React.CSSProperties {
   return {
     background: "#263366",
     color: "#fff",
@@ -63,7 +65,8 @@ function buttonPrimaryStyle(): React.CSSProperties {
     borderRadius: 12,
     padding: "14px 18px",
     fontWeight: 700,
-    cursor: "pointer",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.55 : 1,
   };
 }
 
@@ -304,18 +307,18 @@ export default function TeamPage() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1380, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1380, margin: "0 auto", padding: 20 }}>
         <div
           style={{
             display: "flex",
             flexWrap: "wrap",
             gap: 14,
             justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 24,
+            alignItems: "flex-start",
+            marginBottom: 22,
           }}
         >
-          <div>
+          <div style={{ flex: "1 1 420px", minWidth: 0 }}>
             <div
               style={{
                 display: "inline-block",
@@ -330,10 +333,23 @@ export default function TeamPage() {
             >
               TEAM WORKSPACE
             </div>
-            <h1 style={{ margin: 0, fontSize: 36 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "clamp(34px, 6vw, 54px)",
+                lineHeight: 1.15,
+              }}
+            >
               Finley Beyond for Professionals
             </h1>
-            <p style={{ margin: "10px 0 0", color: "#5A6A84", lineHeight: 1.6 }}>
+            <p
+              style={{
+                margin: "12px 0 0",
+                color: "#5A6A84",
+                lineHeight: 1.7,
+                fontSize: "clamp(16px, 2.5vw, 18px)",
+              }}
+            >
               Loan officers, loan officer assistants, and processors can discuss
               borrower scenarios with Finley Beyond and receive a professional
               summary by email when the review is complete.
@@ -346,6 +362,7 @@ export default function TeamPage() {
               textDecoration: "none",
               color: "#263366",
               fontWeight: 700,
+              alignSelf: "center",
             }}
           >
             Back to Beyond Intelligence
@@ -355,18 +372,18 @@ export default function TeamPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.05fr 0.95fr",
-            gap: 22,
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 20,
           }}
         >
-          <div style={{ display: "grid", gap: 22 }}>
+          <div style={{ display: "grid", gap: 20 }}>
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>Scenario Setup</h2>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>Scenario Setup</h2>
 
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                   gap: 14,
                 }}
               >
@@ -574,12 +591,14 @@ export default function TeamPage() {
             </section>
 
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>Conversation with Finley Beyond</h2>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>
+                Conversation with Finley Beyond
+              </h2>
 
               <div
                 style={{
-                  minHeight: 420,
-                  maxHeight: 620,
+                  minHeight: 320,
+                  maxHeight: 560,
                   overflowY: "auto",
                   padding: 14,
                   borderRadius: 16,
@@ -621,14 +640,18 @@ export default function TeamPage() {
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder="Discuss the scenario with Finley Beyond. Example: This borrower is W-2 salaried, primary residence, 90% LTV, strong reserves. What should I narrow next?"
                   rows={5}
-                  style={{ ...inputStyle(), resize: "vertical" }}
+                  style={{
+                    ...inputStyle(),
+                    resize: "vertical",
+                    minHeight: 120,
+                  }}
                 />
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
                   <button
                     type="button"
                     onClick={sendMessage}
                     disabled={sending}
-                    style={buttonPrimaryStyle()}
+                    style={buttonPrimaryStyle(sending)}
                   >
                     {sending ? "Sending..." : "Send to Finley Beyond"}
                   </button>
@@ -648,9 +671,11 @@ export default function TeamPage() {
             </section>
           </div>
 
-          <div style={{ display: "grid", gap: 22 }}>
+          <div style={{ display: "grid", gap: 20 }}>
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>On-Screen Program Direction</h2>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>
+                On-Screen Program Direction
+              </h2>
 
               {onScreenSuggestions.length === 0 ? (
                 <div style={{ color: "#70819A", lineHeight: 1.7 }}>
@@ -685,7 +710,9 @@ export default function TeamPage() {
             </section>
 
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>Professional Testing Notes</h2>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>
+                Professional Testing Notes
+              </h2>
               <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
                 <li>Borrower Scenario Name is required before starting.</li>
                 <li>
