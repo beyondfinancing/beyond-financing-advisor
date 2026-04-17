@@ -8,8 +8,8 @@ type UserRow = {
   id: string;
   name: string | null;
   email: string | null;
-  nmls: string | null;
   role: string | null;
+  nmls: string | null;
   created_at: string | null;
 };
 
@@ -32,57 +32,55 @@ function inputStyle(): CSSProperties {
     fontSize: 16,
     outline: "none",
     boxSizing: "border-box",
-  };
-}
-
-function labelStyle(): CSSProperties {
-  return {
-    display: "block",
-    fontWeight: 700,
-    marginBottom: 8,
+    background: "#FFFFFF",
     color: "#263366",
   };
 }
 
 function buttonPrimaryStyle(): CSSProperties {
   return {
+    width: "100%",
     background: "#263366",
     color: "#FFFFFF",
     border: "none",
     borderRadius: 12,
     padding: "14px 18px",
     fontWeight: 700,
+    fontSize: 16,
     cursor: "pointer",
   };
 }
 
 function buttonSecondaryStyle(): CSSProperties {
   return {
-    background: "#FFFFFF",
-    color: "#263366",
-    border: "1px solid #263366",
+    background: "#0096C7",
+    color: "#FFFFFF",
+    border: "none",
     borderRadius: 12,
     padding: "12px 16px",
     fontWeight: 700,
+    fontSize: 14,
     cursor: "pointer",
   };
 }
 
 function buttonDangerStyle(): CSSProperties {
   return {
-    background: "#FFF4F2",
-    color: "#8A3B2F",
-    border: "1px solid #F3C5BC",
+    background: "#B42318",
+    color: "#FFFFFF",
+    border: "none",
     borderRadius: 12,
     padding: "12px 16px",
     fontWeight: 700,
+    fontSize: 14,
     cursor: "pointer",
   };
 }
 
-function pillStyle(): CSSProperties {
+function badgeStyle(): CSSProperties {
   return {
-    display: "inline-block",
+    display: "inline-flex",
+    alignItems: "center",
     padding: "6px 10px",
     borderRadius: 999,
     background: "#E8EEF8",
@@ -90,6 +88,21 @@ function pillStyle(): CSSProperties {
     fontSize: 12,
     fontWeight: 700,
   };
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export default async function AdminUsersPage({
@@ -103,12 +116,12 @@ export default async function AdminUsersPage({
 
   const params = await searchParams;
 
-  const { data: users } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("users")
     .select("*")
     .order("created_at", { ascending: false });
 
-  const safeUsers = (users || []) as UserRow[];
+  const users: UserRow[] = error || !Array.isArray(data) ? [] : (data as UserRow[]);
 
   return (
     <main
@@ -119,17 +132,18 @@ export default async function AdminUsersPage({
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1380, margin: "0 auto", padding: 24 }}>
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            flexWrap: "wrap",
+            alignItems: "flex-start",
             gap: 16,
+            flexWrap: "wrap",
             marginBottom: 22,
           }}
         >
-          <div>
+          <div style={{ maxWidth: 920 }}>
             <div
               style={{
                 display: "inline-block",
@@ -139,7 +153,7 @@ export default async function AdminUsersPage({
                 color: "#263366",
                 fontSize: 12,
                 fontWeight: 700,
-                marginBottom: 14,
+                marginBottom: 12,
               }}
             >
               ACCESS MANAGEMENT
@@ -147,9 +161,9 @@ export default async function AdminUsersPage({
 
             <h1
               style={{
-                margin: "0 0 8px",
-                fontSize: "clamp(32px, 5vw, 48px)",
-                lineHeight: 1.1,
+                margin: "0 0 10px",
+                fontSize: "clamp(40px, 7vw, 58px)",
+                lineHeight: 1.05,
               }}
             >
               Manage Users
@@ -160,22 +174,22 @@ export default async function AdminUsersPage({
                 margin: 0,
                 color: "#5A6A84",
                 lineHeight: 1.7,
-                fontSize: 17,
-                maxWidth: 900,
+                fontSize: 16,
+                maxWidth: 980,
               }}
             >
-              Create, update, and delete professional access under admin control.
+              Create, edit, and delete professional access under admin control.
+              This page is restricted to the Beyond Intelligence administrator.
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ paddingTop: 10 }}>
             <Link
               href="/admin"
               style={{
-                textDecoration: "none",
                 color: "#263366",
                 fontWeight: 700,
-                alignSelf: "center",
+                textDecoration: "none",
               }}
             >
               Back to Admin Home
@@ -188,10 +202,10 @@ export default async function AdminUsersPage({
             style={{
               marginBottom: 18,
               background: "#EEF8EA",
-              border: "1px solid #B7D7B0",
-              color: "#2E6B2E",
-              borderRadius: 16,
-              padding: 14,
+              color: "#2F6B2F",
+              border: "1px solid #B9D7AF",
+              borderRadius: 14,
+              padding: 16,
               lineHeight: 1.6,
             }}
           >
@@ -204,10 +218,10 @@ export default async function AdminUsersPage({
             style={{
               marginBottom: 18,
               background: "#FFF4F2",
-              border: "1px solid #F3C5BC",
               color: "#8A3B2F",
-              borderRadius: 16,
-              padding: 14,
+              border: "1px solid #F3C5BC",
+              borderRadius: 14,
+              padding: 16,
               lineHeight: 1.6,
             }}
           >
@@ -215,84 +229,126 @@ export default async function AdminUsersPage({
           </div>
         )}
 
+        {error && (
+          <div
+            style={{
+              marginBottom: 18,
+              background: "#FFF4F2",
+              color: "#8A3B2F",
+              border: "1px solid #F3C5BC",
+              borderRadius: 14,
+              padding: 16,
+              lineHeight: 1.6,
+            }}
+          >
+            Database read error: {error.message}
+          </div>
+        )}
+
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(320px, 430px) minmax(0, 1fr)",
+            gridTemplateColumns: "minmax(360px, 420px) minmax(0, 1fr)",
             gap: 20,
             alignItems: "start",
           }}
         >
           <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 24 }}>Create User</h2>
+            <h2 style={{ marginTop: 0, fontSize: 18 }}>Create User</h2>
 
-            <form
-              action="/api/admin/users"
-              method="POST"
-              style={{ display: "grid", gap: 16 }}
+            <p
+              style={{
+                marginTop: 0,
+                color: "#5A6A84",
+                lineHeight: 1.7,
+                fontSize: 14,
+              }}
             >
-              <input type="hidden" name="_action" value="create" />
+              Create loan officers, loan officer assistants, processors, real
+              estate agents, and future admin users from the admin workspace
+              only.
+            </p>
 
-              <div>
-                <label style={labelStyle()}>Full Name</label>
-                <input name="name" required style={inputStyle()} />
+            <form action="/api/admin/users" method="POST">
+              <input type="hidden" name="action" value="create" />
+
+              <div style={{ display: "grid", gap: 14 }}>
+                <div>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Full Name
+                  </label>
+                  <input type="text" name="name" required style={inputStyle()} />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Email
+                  </label>
+                  <input type="email" name="email" required style={inputStyle()} />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    NMLS / Login ID
+                  </label>
+                  <input
+                    type="text"
+                    name="nmls"
+                    required
+                    style={inputStyle()}
+                    placeholder="Example: 1625542 or 2394496BM"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Role
+                  </label>
+                  <select name="role" required style={inputStyle()}>
+                    <option value="Loan Officer">Loan Officer</option>
+                    <option value="Loan Officer Assistant">Loan Officer Assistant</option>
+                    <option value="Processor">Processor</option>
+                    <option value="Real Estate Agent">Real Estate Agent</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+
+                <button type="submit" style={buttonPrimaryStyle()}>
+                  Create User
+                </button>
               </div>
-
-              <div>
-                <label style={labelStyle()}>Email</label>
-                <input name="email" type="email" required style={inputStyle()} />
-              </div>
-
-              <div>
-                <label style={labelStyle()}>NMLS / Login ID</label>
-                <input
-                  name="nmls"
-                  required
-                  style={inputStyle()}
-                  placeholder="Example: 1625542 or 2394496BM"
-                />
-              </div>
-
-              <div>
-                <label style={labelStyle()}>Role</label>
-                <select name="role" required style={inputStyle()}>
-                  <option value="Loan Officer">Loan Officer</option>
-                  <option value="Loan Officer Assistant">
-                    Loan Officer Assistant
-                  </option>
-                  <option value="Processor">Processor</option>
-                  <option value="Real Estate Agent">Real Estate Agent</option>
-                  <option value="Admin">Admin</option>
-                </select>
-              </div>
-
-              <button type="submit" style={buttonPrimaryStyle()}>
-                Create User
-              </button>
             </form>
           </section>
 
           <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 24 }}>Current Users</h2>
-            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
-              Total users: <strong>{safeUsers.length}</strong>
-            </p>
+            <h2 style={{ marginTop: 0, fontSize: 18 }}>Current Users</h2>
 
-            {safeUsers.length === 0 ? (
+            <div
+              style={{
+                color: "#5A6A84",
+                marginBottom: 18,
+                fontSize: 14,
+              }}
+            >
+              Total users: {users.length}
+            </div>
+
+            {users.length === 0 ? (
               <div
                 style={{
+                  background: "#F8FAFC",
                   border: "1px solid #D9E1EC",
                   borderRadius: 16,
                   padding: 18,
-                  background: "#F8FAFC",
                   color: "#5A6A84",
+                  lineHeight: 1.7,
                 }}
               >
-                No users found.
+                No users have been added yet.
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                {safeUsers.map((user) => (
+              <div style={{ display: "grid", gap: 16 }}>
+                {users.map((user) => (
                   <div
                     key={user.id}
                     style={{
@@ -306,135 +362,151 @@ export default async function AdminUsersPage({
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
+                        gap: 14,
                         flexWrap: "wrap",
-                        gap: 10,
-                        marginBottom: 14,
+                        alignItems: "flex-start",
                       }}
                     >
-                      <div style={{ fontSize: 22, fontWeight: 800 }}>
-                        {user.name || "Unnamed User"}
-                      </div>
-                      <span style={pillStyle()}>{user.role || "No role"}</span>
-                    </div>
+                      <div style={{ flex: "1 1 360px", minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 18,
+                            fontWeight: 800,
+                            marginBottom: 8,
+                          }}
+                        >
+                          {user.name || "Unnamed user"}
+                        </div>
 
-                    <form
-                      action="/api/admin/users"
-                      method="POST"
-                      style={{ display: "grid", gap: 14 }}
-                    >
-                      <input type="hidden" name="_action" value="update" />
-                      <input type="hidden" name="id" value={user.id} />
+                        <div
+                          style={{
+                            color: "#4B5C78",
+                            lineHeight: 1.7,
+                            marginBottom: 10,
+                          }}
+                        >
+                          {user.email || "—"}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: 12,
+                            color: "#4B5C78",
+                            lineHeight: 1.7,
+                          }}
+                        >
+                          <div>
+                            <strong style={{ color: "#263366" }}>NMLS / Login ID:</strong>
+                            <br />
+                            {user.nmls || "—"}
+                          </div>
+                          <div>
+                            <strong style={{ color: "#263366" }}>Created:</strong>
+                            <br />
+                            {formatDate(user.created_at)}
+                          </div>
+                        </div>
+                      </div>
 
                       <div
                         style={{
-                          display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(220px, 1fr))",
-                          gap: 12,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 10,
+                          alignItems: "flex-end",
+                          minWidth: 180,
                         }}
                       >
-                        <div>
-                          <label style={labelStyle()}>Full Name</label>
+                        <span style={badgeStyle()}>{user.role || "No role"}</span>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 18,
+                        paddingTop: 18,
+                        borderTop: "1px solid #D9E1EC",
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto",
+                        gap: 14,
+                        alignItems: "end",
+                      }}
+                    >
+                      <form action="/api/admin/users" method="POST">
+                        <input type="hidden" name="action" value="update" />
+                        <input type="hidden" name="id" value={user.id} />
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: 12,
+                          }}
+                        >
                           <input
+                            type="text"
                             name="name"
                             defaultValue={user.name || ""}
-                            required
                             style={inputStyle()}
+                            placeholder="Full Name"
+                            required
                           />
-                        </div>
-
-                        <div>
-                          <label style={labelStyle()}>Email</label>
                           <input
-                            name="email"
                             type="email"
+                            name="email"
                             defaultValue={user.email || ""}
-                            required
                             style={inputStyle()}
+                            placeholder="Email"
+                            required
                           />
-                        </div>
-
-                        <div>
-                          <label style={labelStyle()}>NMLS / Login ID</label>
                           <input
+                            type="text"
                             name="nmls"
                             defaultValue={user.nmls || ""}
-                            required
                             style={inputStyle()}
+                            placeholder="NMLS / Login ID"
+                            required
                           />
-                        </div>
-
-                        <div>
-                          <label style={labelStyle()}>Role</label>
                           <select
                             name="role"
                             defaultValue={user.role || "Loan Officer"}
-                            required
                             style={inputStyle()}
+                            required
                           >
                             <option value="Loan Officer">Loan Officer</option>
                             <option value="Loan Officer Assistant">
                               Loan Officer Assistant
                             </option>
                             <option value="Processor">Processor</option>
-                            <option value="Real Estate Agent">
-                              Real Estate Agent
-                            </option>
+                            <option value="Real Estate Agent">Real Estate Agent</option>
                             <option value="Admin">Admin</option>
                           </select>
                         </div>
-                      </div>
 
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(160px, max-content))",
-                          gap: 12,
-                          alignItems: "center",
-                        }}
+                        <div style={{ marginTop: 12 }}>
+                          <button type="submit" style={buttonSecondaryStyle()}>
+                            Save Changes
+                          </button>
+                        </div>
+                      </form>
+
+                      <form
+                        action="/api/admin/users"
+                        method="POST"
+                        onSubmit={undefined}
                       >
-                        <button type="submit" style={buttonSecondaryStyle()}>
-                          Save Changes
+                        <input type="hidden" name="action" value="delete" />
+                        <input type="hidden" name="id" value={user.id} />
+                        <button
+                          type="submit"
+                          style={buttonDangerStyle()}
+                          formAction="/api/admin/users"
+                        >
+                          Delete
                         </button>
-                      </div>
-                    </form>
-
-                    <form
-                      action="/api/admin/users"
-                      method="POST"
-                      style={{ marginTop: 12 }}
-                    >
-                      <input type="hidden" name="_action" value="delete" />
-                      <input type="hidden" name="id" value={user.id} />
-                      <button
-                        type="submit"
-                        style={buttonDangerStyle()}
-                        onClick={(e) => {
-                          if (
-                            !confirm(
-                              `Delete user "${user.name || "Unnamed User"}"?`
-                            )
-                          ) {
-                            e.preventDefault();
-                          }
-                        }}
-                      >
-                        Delete User
-                      </button>
-                    </form>
-
-                    <div
-                      style={{
-                        marginTop: 12,
-                        color: "#5A6A84",
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      <strong>Created:</strong>{" "}
-                      {user.created_at
-                        ? new Date(user.created_at).toLocaleString()
-                        : "-"}
+                      </form>
                     </div>
                   </div>
                 ))}
