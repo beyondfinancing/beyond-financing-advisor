@@ -300,6 +300,32 @@ function buildMissingDocumentChecklist(
   return Array.from(new Set(docs));
 }
 
+function extractReply(data: unknown): string {
+  if (typeof data === "string") return data;
+
+  if (typeof data === "object" && data !== null) {
+    const obj = data as {
+      reply?: string;
+      message?: string;
+      content?: string;
+      response?: string;
+      error?: string;
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    return (
+      obj.reply ||
+      obj.message ||
+      obj.content ||
+      obj.response ||
+      obj.choices?.[0]?.message?.content ||
+      ""
+    );
+  }
+
+  return "";
+}
+
 export default function TeamPage() {
   const [accessLoginId, setAccessLoginId] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
@@ -339,6 +365,8 @@ export default function TeamPage() {
   const [chatInput, setChatInput] = useState("");
   const [sending, setSending] = useState(false);
   const [emailing, setEmailing] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(scenario.homePrice || 0);
@@ -464,6 +492,8 @@ export default function TeamPage() {
     setAccessError("");
     setAuthorizedUser(credential);
     setAccessGranted(true);
+    setChatError("");
+    setEmailError("");
 
     setScenario((prev) => ({
       ...prev,
@@ -484,12 +514,14 @@ export default function TeamPage() {
 
   const sendMessage = async () => {
     if (!chatInput.trim()) return;
+
     if (!scenario.borrowerName.trim()) {
       alert("Please enter a Borrower Scenario Name first.");
       return;
     }
 
     setSending(true);
+    setChatError("");
 
     const nextMessages: TeamChatMessage[] = [
       ...messages,
@@ -497,7 +529,7 @@ export default function TeamPage() {
     ];
 
     try {
-      const response = await fetch("/api/team-chat", {
+      const response = await fetch("/api/teamchat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -513,7 +545,20 @@ export default function TeamPage() {
         }),
       });
 
-      const data = await response.json();
+      const rawData: unknown = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          extractReply(rawData) ||
+          (typeof rawData === "object" &&
+          rawData !== null &&
+          "error" in rawData &&
+          typeof (rawData as { error?: unknown }).error === "string"
+            ? ((rawData as { error: string }).error)
+            : "") ||
+          `Request failed with status ${response.status}.`;
+        throw new Error(message);
+      }
 
       const fallbackReply = `${getRoleObjective(
         scenario.role
@@ -523,11 +568,17 @@ export default function TeamPage() {
         ...nextMessages,
         {
           role: "assistant",
-          content: data.reply || fallbackReply,
+          content: extractReply(rawData) || fallbackReply,
         },
       ]);
 
       setChatInput("");
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to send the message to Finley Beyond.";
+      setChatError(message);
     } finally {
       setSending(false);
     }
@@ -545,9 +596,10 @@ export default function TeamPage() {
     }
 
     setEmailing(true);
+    setEmailError("");
 
     try {
-      const response = await fetch("/api/team-chat", {
+      const response = await fetch("/api/teamchat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -564,13 +616,45 @@ export default function TeamPage() {
         }),
       });
 
-      const data = await response.json();
+      const rawData: unknown = await response.json().catch(() => null);
 
-      if (data.success) {
+      if (!response.ok) {
+        const message =
+          extractReply(rawData) ||
+          (typeof rawData === "object" &&
+          rawData !== null &&
+          "error" in rawData &&
+          typeof (rawData as { error?: unknown }).error === "string"
+            ? ((rawData as { error: string }).error)
+            : "") ||
+          `Summary request failed with status ${response.status}.`;
+        throw new Error(message);
+      }
+
+      if (
+        typeof rawData === "object" &&
+        rawData !== null &&
+        "success" in rawData &&
+        (rawData as { success?: boolean }).success
+      ) {
         alert("Summary emailed successfully.");
       } else {
-        alert(data.error || "Summary email could not be sent.");
+        throw new Error(
+          (typeof rawData === "object" &&
+          rawData !== null &&
+          "error" in rawData &&
+          typeof (rawData as { error?: unknown }).error === "string"
+            ? ((rawData as { error: string }).error)
+            : "") || "Summary email could not be sent."
+        );
       }
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to email the summary.";
+      setEmailError(message);
+      alert(message);
     } finally {
       setEmailing(false);
     }
@@ -593,6 +677,8 @@ export default function TeamPage() {
         )} I am ready to help review this scenario for ${scenario.borrowerName}.`,
       },
     ]);
+    setChatError("");
+    setEmailError("");
   };
 
   if (!accessGranted) {
@@ -844,6 +930,8 @@ export default function TeamPage() {
                 setAuthorizedUser(null);
                 setAccessLoginId("");
                 setAccessPassword("");
+                setChatError("");
+                setEmailError("");
               }}
               style={buttonSecondaryStyle(false)}
             >
@@ -1153,6 +1241,38 @@ export default function TeamPage() {
                   </div>
                 ))}
               </div>
+
+              {chatError && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    background: "#FFF4F2",
+                    border: "1px solid #F3C5BC",
+                    color: "#8A3B2F",
+                    borderRadius: 14,
+                    padding: 14,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {chatError}
+                </div>
+              )}
+
+              {emailError && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    background: "#FFF9EC",
+                    border: "1px solid #E9D4A7",
+                    color: "#8A6A1F",
+                    borderRadius: 14,
+                    padding: 14,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {emailError}
+                </div>
+              )}
 
               <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
                 <textarea
