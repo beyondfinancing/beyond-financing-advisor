@@ -1,143 +1,83 @@
 import { NextResponse } from "next/server";
-import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-export async function GET() {
-  const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ users: data || [] });
+function redirectWithMessage(type: "success" | "error", message: string) {
+  const encoded = encodeURIComponent(message);
+  return NextResponse.redirect(
+    new URL(`/admin/users?${type}=${encoded}`, process.env.NEXT_PUBLIC_APP_URL || "https://beyondintelligence.io")
+  );
 }
 
-export async function POST(request: Request) {
-  if (!(await isAdminSignedIn())) {
-    return NextResponse.redirect(
-      new URL("/admin/login?error=Admin%20session%20required.", request.url)
-    );
-  }
+export async function POST(req: Request) {
+  try {
+    const formData = await req.formData();
 
-  const formData = await request.formData();
-  const action = String(formData.get("_action") || "create");
-
-  if (action === "create") {
+    const action = String(formData.get("action") || "").trim();
+    const id = String(formData.get("id") || "").trim();
     const name = String(formData.get("name") || "").trim();
-    const email = String(formData.get("email") || "").trim().toLowerCase();
+    const email = String(formData.get("email") || "").trim();
     const nmls = String(formData.get("nmls") || "").trim();
     const role = String(formData.get("role") || "").trim();
 
-    if (!name || !email || !nmls || !role) {
-      return NextResponse.redirect(
-        new URL(
-          "/admin/users?error=Name,%20email,%20login%20ID,%20and%20role%20are%20required.",
-          request.url
-        )
-      );
-    }
+    if (action === "create") {
+      if (!name || !email || !nmls || !role) {
+        return redirectWithMessage("error", "All user fields are required.");
+      }
 
-    const { error } = await supabaseAdmin.from("users").insert([
-      {
+      const { error } = await supabaseAdmin.from("users").insert({
         name,
         email,
         nmls,
         role,
-      },
-    ]);
+      });
 
-    if (error) {
-      return NextResponse.redirect(
-        new URL(
-          `/admin/users?error=${encodeURIComponent(error.message)}`,
-          request.url
-        )
-      );
+      if (error) {
+        return redirectWithMessage("error", `User create failed: ${error.message}`);
+      }
+
+      return redirectWithMessage("success", "User created successfully.");
     }
 
-    return NextResponse.redirect(
-      new URL(
-        "/admin/users?success=User%20created%20successfully.",
-        request.url
-      )
-    );
+    if (action === "update") {
+      if (!id || !name || !email || !nmls || !role) {
+        return redirectWithMessage("error", "All update fields are required.");
+      }
+
+      const { error } = await supabaseAdmin
+        .from("users")
+        .update({
+          name,
+          email,
+          nmls,
+          role,
+        })
+        .eq("id", id);
+
+      if (error) {
+        return redirectWithMessage("error", `User update failed: ${error.message}`);
+      }
+
+      return redirectWithMessage("success", "User updated successfully.");
+    }
+
+    if (action === "delete") {
+      if (!id) {
+        return redirectWithMessage("error", "User id is required for delete.");
+      }
+
+      const { error } = await supabaseAdmin.from("users").delete().eq("id", id);
+
+      if (error) {
+        return redirectWithMessage("error", `User delete failed: ${error.message}`);
+      }
+
+      return redirectWithMessage("success", "User deleted successfully.");
+    }
+
+    return redirectWithMessage("error", "Invalid user action.");
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unexpected server error.";
+    return redirectWithMessage("error", message);
   }
-
-  if (action === "update") {
-    const id = String(formData.get("id") || "").trim();
-    const name = String(formData.get("name") || "").trim();
-    const email = String(formData.get("email") || "").trim().toLowerCase();
-    const nmls = String(formData.get("nmls") || "").trim();
-    const role = String(formData.get("role") || "").trim();
-
-    if (!id || !name || !email || !nmls || !role) {
-      return NextResponse.redirect(
-        new URL(
-          "/admin/users?error=All%20user%20fields%20are%20required%20to%20update.",
-          request.url
-        )
-      );
-    }
-
-    const { error } = await supabaseAdmin
-      .from("users")
-      .update({
-        name,
-        email,
-        nmls,
-        role,
-      })
-      .eq("id", id);
-
-    if (error) {
-      return NextResponse.redirect(
-        new URL(
-          `/admin/users?error=${encodeURIComponent(error.message)}`,
-          request.url
-        )
-      );
-    }
-
-    return NextResponse.redirect(
-      new URL(
-        "/admin/users?success=User%20updated%20successfully.",
-        request.url
-      )
-    );
-  }
-
-  if (action === "delete") {
-    const id = String(formData.get("id") || "").trim();
-
-    if (!id) {
-      return NextResponse.redirect(
-        new URL("/admin/users?error=User%20ID%20is%20required.", request.url)
-      );
-    }
-
-    const { error } = await supabaseAdmin.from("users").delete().eq("id", id);
-
-    if (error) {
-      return NextResponse.redirect(
-        new URL(
-          `/admin/users?error=${encodeURIComponent(error.message)}`,
-          request.url
-        )
-      );
-    }
-
-    return NextResponse.redirect(
-      new URL(
-        "/admin/users?success=User%20deleted%20successfully.",
-        request.url
-      )
-    );
-  }
-
-  return NextResponse.redirect(
-    new URL("/admin/users?error=Unsupported%20action.", request.url)
-  );
 }
