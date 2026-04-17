@@ -1,5 +1,56 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isAdminSignedIn } from "@/lib/admin-auth";
+
+function cardStyle(): React.CSSProperties {
+  return {
+    background: "#FFFFFF",
+    border: "1px solid #D9E1EC",
+    borderRadius: 22,
+    padding: 24,
+    boxShadow: "0 10px 28px rgba(38,51,102,0.06)",
+  };
+}
+
+function inputStyle(): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "14px 16px",
+    borderRadius: 12,
+    border: "1px solid #C8D3E3",
+    fontSize: 16,
+    outline: "none",
+    boxSizing: "border-box",
+  };
+}
+
+function buttonPrimaryStyle(): React.CSSProperties {
+  return {
+    background: "#263366",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: 12,
+    padding: "14px 18px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+function buttonSecondaryStyle(): React.CSSProperties {
+  return {
+    background: "#FFFFFF",
+    color: "#263366",
+    border: "1px solid #263366",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+}
 
 export default async function AdminLoginPage({
   searchParams,
@@ -11,7 +62,7 @@ export default async function AdminLoginPage({
   }
 
   const params = await searchParams;
-  const hasError = params.error === "invalid";
+  const error = params?.error || "";
 
   return (
     <main
@@ -20,21 +71,13 @@ export default async function AdminLoginPage({
         background: "#F1F3F8",
         color: "#263366",
         fontFamily: "Arial, Helvetica, sans-serif",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
       }}
     >
       <div
         style={{
-          width: "100%",
-          maxWidth: 520,
-          background: "#FFFFFF",
-          border: "1px solid #D9E1EC",
-          borderRadius: 24,
-          padding: 32,
-          boxShadow: "0 16px 40px rgba(38,51,102,0.08)",
+          maxWidth: 760,
+          margin: "0 auto",
+          padding: "28px 20px 48px",
         }}
       >
         <div
@@ -46,7 +89,7 @@ export default async function AdminLoginPage({
             color: "#263366",
             fontSize: 12,
             fontWeight: 700,
-            marginBottom: 16,
+            marginBottom: 14,
           }}
         >
           ADMIN ACCESS
@@ -54,96 +97,110 @@ export default async function AdminLoginPage({
 
         <h1
           style={{
-            margin: "0 0 10px",
-            fontSize: "clamp(34px, 6vw, 48px)",
-            lineHeight: 1.1,
+            margin: "0 0 12px",
+            fontSize: "clamp(34px, 6vw, 54px)",
+            lineHeight: 1.15,
           }}
         >
-          Beyond Intelligence Admin
+          Beyond Intelligence Admin Login
         </h1>
 
         <p
           style={{
-            margin: "0 0 24px",
+            margin: "0 0 22px",
             color: "#5A6A84",
             lineHeight: 1.7,
-            fontSize: 16,
+            fontSize: "clamp(16px, 2.3vw, 18px)",
           }}
         >
-          Secure administrator login for user management, lender management,
-          program management, and future file intake.
+          This area is restricted to the system administrator. Sign in to manage
+          users, lenders, programs, files, and future investor controls.
         </p>
 
-        <form
-          method="POST"
-          action="/api/admin/login"
-          style={{ display: "grid", gap: 14 }}
-        >
-          <input
-            name="email"
-            type="email"
-            placeholder="Admin email"
-            defaultValue="pansini@beyondfinancing.com"
-            style={{
-              width: "100%",
-              padding: "14px 16px",
-              borderRadius: 12,
-              border: "1px solid #C8D3E3",
-              fontSize: 16,
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-            required
-          />
+        <div style={cardStyle()}>
+          <h2 style={{ marginTop: 0, fontSize: 20 }}>Administrator Sign In</h2>
 
-          <input
-            name="password"
-            type="password"
-            placeholder="Password"
+          <div
             style={{
-              width: "100%",
-              padding: "14px 16px",
-              borderRadius: 12,
-              border: "1px solid #C8D3E3",
-              fontSize: 16,
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-            required
-          />
-
-          {hasError && (
-            <div
-              style={{
-                background: "#FFF4F2",
-                border: "1px solid #F3C5BC",
-                color: "#8A3B2F",
-                borderRadius: 14,
-                padding: 14,
-                lineHeight: 1.6,
-              }}
-            >
-              Invalid admin email or password.
-            </div>
-          )}
-
-          <button
-            type="submit"
-            style={{
-              background: "#263366",
-              color: "#FFFFFF",
-              border: "none",
-              borderRadius: 12,
-              padding: "14px 18px",
-              fontWeight: 700,
-              fontSize: 16,
-              cursor: "pointer",
-              marginTop: 6,
+              background: "#F8FAFC",
+              border: "1px solid #D9E1EC",
+              borderRadius: 16,
+              padding: 16,
+              lineHeight: 1.8,
+              marginBottom: 18,
+              color: "#4B5C78",
             }}
           >
-            Sign In as Admin
-          </button>
-        </form>
+            <div>
+              <strong>Authorized admin:</strong> Beyond Intelligence system
+              administrator
+            </div>
+            <div>
+              <strong>Protected pages:</strong> /admin, /admin/users,
+              /admin/lenders, /admin/programs
+            </div>
+          </div>
+
+          <form
+            action="/api/admin/login"
+            method="POST"
+            style={{
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            <input
+              type="email"
+              name="email"
+              placeholder="Admin Email"
+              autoComplete="email"
+              required
+              style={inputStyle()}
+            />
+
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
+              autoComplete="current-password"
+              required
+              style={inputStyle()}
+            />
+
+            {error ? (
+              <div
+                style={{
+                  marginTop: 4,
+                  background: "#FFF4F2",
+                  border: "1px solid #F3C5BC",
+                  color: "#8A3B2F",
+                  borderRadius: 14,
+                  padding: 14,
+                  lineHeight: 1.6,
+                }}
+              >
+                {error}
+              </div>
+            ) : null}
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 12,
+                marginTop: 6,
+              }}
+            >
+              <button type="submit" style={buttonPrimaryStyle()}>
+                Sign In as Admin
+              </button>
+
+              <Link href="/" style={buttonSecondaryStyle()}>
+                Back to Beyond Intelligence
+              </Link>
+            </div>
+          </form>
+        </div>
       </div>
     </main>
   );
