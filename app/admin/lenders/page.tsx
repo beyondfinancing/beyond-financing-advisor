@@ -1,9 +1,26 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-function cardStyle(): React.CSSProperties {
+type LenderRow = {
+  id: string;
+  name: string | null;
+  channel: string | null;
+  states: string[] | null;
+  created_at: string | null;
+};
+
+const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+  "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+  "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+  "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"
+];
+
+function cardStyle(): CSSProperties {
   return {
     background: "#FFFFFF",
     border: "1px solid #D9E1EC",
@@ -13,7 +30,7 @@ function cardStyle(): React.CSSProperties {
   };
 }
 
-function inputStyle(): React.CSSProperties {
+function inputStyle(): CSSProperties {
   return {
     width: "100%",
     padding: "14px 16px",
@@ -25,7 +42,7 @@ function inputStyle(): React.CSSProperties {
   };
 }
 
-function labelStyle(): React.CSSProperties {
+function labelStyle(): CSSProperties {
   return {
     display: "block",
     fontWeight: 700,
@@ -34,7 +51,7 @@ function labelStyle(): React.CSSProperties {
   };
 }
 
-function buttonPrimaryStyle(): React.CSSProperties {
+function buttonPrimaryStyle(): CSSProperties {
   return {
     background: "#263366",
     color: "#FFFFFF",
@@ -46,15 +63,31 @@ function buttonPrimaryStyle(): React.CSSProperties {
   };
 }
 
-function parseChannels(value: string | null): string[] {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+function buttonSecondaryStyle(): CSSProperties {
+  return {
+    background: "#FFFFFF",
+    color: "#263366",
+    border: "1px solid #263366",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
 }
 
-function pillStyle(): React.CSSProperties {
+function buttonDangerStyle(): CSSProperties {
+  return {
+    background: "#FFF4F2",
+    color: "#8A3B2F",
+    border: "1px solid #F3C5BC",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+function pillStyle(): CSSProperties {
   return {
     display: "inline-block",
     padding: "6px 10px",
@@ -66,13 +99,13 @@ function pillStyle(): React.CSSProperties {
   };
 }
 
-type LenderRow = {
-  id: string;
-  name: string | null;
-  channel: string | null;
-  states: string[] | null;
-  created_at: string | null;
-};
+function parseChannels(value: string | null): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export default async function AdminLendersPage({
   searchParams,
@@ -113,282 +146,4 @@ export default async function AdminLendersPage({
         >
           <div>
             <div
-              style={{
-                display: "inline-block",
-                padding: "8px 14px",
-                borderRadius: 999,
-                background: "#E8EEF8",
-                color: "#263366",
-                fontSize: 12,
-                fontWeight: 700,
-                marginBottom: 14,
-              }}
-            >
-              LENDER MANAGEMENT
-            </div>
-
-            <h1
-              style={{
-                margin: "0 0 8px",
-                fontSize: "clamp(32px, 5vw, 48px)",
-                lineHeight: 1.1,
-              }}
-            >
-              Manage Lenders
-            </h1>
-
-            <p
-              style={{
-                margin: 0,
-                color: "#5A6A84",
-                lineHeight: 1.7,
-                fontSize: 17,
-                maxWidth: 900,
-              }}
-            >
-              Create and organize lender records, available channels, and state
-              coverage. Use one lender record per lender, and list all channels
-              that apply to that lender inside the same record.
-            </p>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link
-              href="/admin"
-              style={{
-                textDecoration: "none",
-                color: "#263366",
-                fontWeight: 700,
-                alignSelf: "center",
-              }}
-            >
-              Back to Admin Home
-            </Link>
-          </div>
-        </div>
-
-        {params.success && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#EEF8EA",
-              border: "1px solid #B7D7B0",
-              color: "#2E6B2E",
-              borderRadius: 16,
-              padding: 14,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.success}
-          </div>
-        )}
-
-        {params.error && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              border: "1px solid #F3C5BC",
-              color: "#8A3B2F",
-              borderRadius: 16,
-              padding: 14,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.error}
-          </div>
-        )}
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(320px, 430px) minmax(0, 1fr)",
-            gap: 20,
-            alignItems: "start",
-          }}
-        >
-          <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 24 }}>Create Lender</h2>
-
-            <p
-              style={{
-                marginTop: 0,
-                color: "#5A6A84",
-                lineHeight: 1.7,
-              }}
-            >
-              Keep one lender record per institution. If that lender is
-              available in more than one channel, enter all applicable channels
-              in the same record.
-            </p>
-
-            <form
-              action="/api/lenders"
-              method="POST"
-              style={{ display: "grid", gap: 16 }}
-            >
-              <div>
-                <label style={labelStyle()}>Lender Name</label>
-                <input name="name" required style={inputStyle()} />
-              </div>
-
-              <div>
-                <label style={labelStyle()}>
-                  Channels
-                </label>
-                <select name="channel" required multiple style={{ ...inputStyle(), minHeight: 130 }}>
-                  <option value="Retail">Retail</option>
-                  <option value="Wholesale">Wholesale</option>
-                  <option value="Correspondent">Correspondent</option>
-                </select>
-                <div
-                  style={{
-                    marginTop: 8,
-                    color: "#70819A",
-                    fontSize: 13,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Hold Ctrl on Windows or Command on Mac to select more than one.
-                </div>
-              </div>
-
-              <div>
-                <label style={labelStyle()}>
-                  States
-                </label>
-                <input
-                  name="states"
-                  required
-                  style={inputStyle()}
-                  placeholder="Example: MA, NH, RI, CT, FL"
-                />
-              </div>
-
-              <button type="submit" style={buttonPrimaryStyle()}>
-                Create Lender
-              </button>
-            </form>
-          </section>
-
-          <section style={cardStyle()}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: 12,
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <h2 style={{ margin: 0, fontSize: 24 }}>Current Lenders</h2>
-                <p
-                  style={{
-                    margin: "8px 0 0",
-                    color: "#5A6A84",
-                    lineHeight: 1.7,
-                  }}
-                >
-                  Total lenders: <strong>{safeLenders.length}</strong>
-                </p>
-              </div>
-            </div>
-
-            {safeLenders.length === 0 ? (
-              <div
-                style={{
-                  border: "1px solid #D9E1EC",
-                  borderRadius: 16,
-                  padding: 18,
-                  background: "#F8FAFC",
-                  color: "#5A6A84",
-                  lineHeight: 1.7,
-                }}
-              >
-                No lenders have been created yet.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                {safeLenders.map((lender) => {
-                  const channels = parseChannels(lender.channel);
-                  return (
-                    <div
-                      key={lender.id}
-                      style={{
-                        border: "1px solid #D9E1EC",
-                        borderRadius: 18,
-                        padding: 18,
-                        background: "#F8FAFC",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          flexWrap: "wrap",
-                          gap: 12,
-                          marginBottom: 12,
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: 22, fontWeight: 800 }}>
-                            {lender.name || "Unnamed Lender"}
-                          </div>
-
-                          <div
-                            style={{
-                              marginTop: 10,
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            {channels.length > 0 ? (
-                              channels.map((channel) => (
-                                <span key={channel} style={pillStyle()}>
-                                  {channel}
-                                </span>
-                              ))
-                            ) : (
-                              <span style={pillStyle()}>No channel</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(180px, 1fr))",
-                          gap: 12,
-                          color: "#4B5C78",
-                          lineHeight: 1.7,
-                        }}
-                      >
-                        <div>
-                          <strong>States:</strong>
-                          <br />
-                          {lender.states?.length ? lender.states.join(", ") : "-"}
-                        </div>
-
-                        <div>
-                          <strong>Created:</strong>
-                          <br />
-                          {lender.created_at
-                            ? new Date(lender.created_at).toLocaleString()
-                            : "-"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-    </main>
-  );
-}
+             
