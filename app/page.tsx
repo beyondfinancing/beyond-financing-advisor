@@ -1,250 +1,242 @@
-import Link from "next/link";
+"use client";
 
-export default function HomePage() {
+import React, { useMemo, useState } from "react";
+
+/* ---------- TYPES ---------- */
+type LanguageCode = "en" | "pt" | "es";
+
+type IntakeFormState = {
+  name: string;
+  email: string;
+  credit: string;
+  income: string;
+  debt: string;
+};
+
+type ScenarioFormState = {
+  homePrice: string;
+  downPayment: string;
+};
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type LoanOfficerRecord = {
+  id: string;
+  name: string;
+  nmls: string;
+  email: string;
+  assistantEmail: string;
+  mobile: string;
+  assistantMobile: string;
+  applyUrl: string;
+  scheduleUrl: string;
+};
+
+/* ---------- DATA ---------- */
+
+const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
+
+const LOAN_OFFICERS: LoanOfficerRecord[] = [
+  {
+    id: "sandro",
+    name: "Sandro Pansini Souza",
+    nmls: "1625542",
+    email: "pansini@beyondfinancing.com",
+    assistantEmail: "myloan@beyondfinancing.com",
+    mobile: "8576150836",
+    assistantMobile: "8576150836",
+    applyUrl: APPLY_NOW_URL,
+    scheduleUrl: "https://calendly.com/sandropansini",
+  },
+  {
+    id: "warren",
+    name: "Warren Wendt",
+    nmls: "18959",
+    email: "warren@beyondfinancing.com",
+    assistantEmail: "myloan@beyondfinancing.com",
+    mobile: "9788212250",
+    assistantMobile: "8576150836",
+    applyUrl: APPLY_NOW_URL,
+    scheduleUrl: "https://www.beyondfinancing.com",
+  },
+  {
+    id: "finley",
+    name: "Finley Beyond",
+    nmls: "BF-AI",
+    email: "finley@beyondfinancing.com",
+    assistantEmail: "myloan@beyondfinancing.com",
+    mobile: "8576150836",
+    assistantMobile: "8576150836",
+    applyUrl: APPLY_NOW_URL,
+    scheduleUrl: "https://www.beyondfinancing.com",
+  },
+];
+
+const DEFAULT_LOAN_OFFICER = LOAN_OFFICERS[2];
+
+/* ---------- COMPONENT ---------- */
+
+export default function Page() {
+  const [accepted, setAccepted] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+
+  const [intake, setIntake] = useState<IntakeFormState>({
+    name: "",
+    email: "",
+    credit: "",
+    income: "",
+    debt: "",
+  });
+
+  const [scenario, setScenario] = useState<ScenarioFormState>({
+    homePrice: "",
+    downPayment: "",
+  });
+
+  const [officer, setOfficer] = useState<LoanOfficerRecord>(
+    DEFAULT_LOAN_OFFICER
+  );
+
+  const estimatedLoan = useMemo(() => {
+    return Math.max(
+      Number(scenario.homePrice) - Number(scenario.downPayment),
+      0
+    );
+  }, [scenario]);
+
+  /* ---------- ACTIONS ---------- */
+
+  const runReview = async () => {
+    setSubmitted(true);
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: "Start borrower intake conversation.",
+          },
+        ],
+      }),
+    });
+
+    const data = await res.json();
+
+    setConversation([
+      {
+        role: "assistant",
+        content: data.reply || "No response",
+      },
+    ]);
+  };
+
+  const sendMessage = async () => {
+    if (!chatInput.trim()) return;
+
+    const updated = [
+      ...conversation,
+      { role: "user", content: chatInput },
+    ];
+
+    setConversation(updated);
+    setChatInput("");
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages: updated }),
+    });
+
+    const data = await res.json();
+
+    setConversation([
+      ...updated,
+      { role: "assistant", content: data.reply || "No response" },
+    ]);
+  };
+
+  /* ---------- UI ---------- */
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background:
-          "linear-gradient(180deg, #F1F3F8 0%, #FFFFFF 45%, #F7FAFC 100%)",
-        color: "#263366",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
-    >
-      <section
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          padding: "40px 20px 24px",
-        }}
-      >
-        <div
-          style={{
-            display: "inline-block",
-            padding: "8px 14px",
-            borderRadius: 999,
-            background: "#E8EEF8",
-            color: "#263366",
-            fontSize: 13,
-            fontWeight: 700,
-            letterSpacing: 0.3,
-            marginBottom: 18,
-          }}
-        >
-          BEYOND INTELLIGENCE™
-        </div>
+    <div style={{ padding: 30 }}>
+      <h1>Finley Beyond</h1>
 
-        <h1
-          style={{
-            fontSize: "clamp(34px, 7vw, 62px)",
-            lineHeight: 1.05,
-            margin: "0 0 16px",
-            fontWeight: 800,
-            maxWidth: 980,
-          }}
-        >
-          AI-Powered Mortgage Decision Support
-          <span style={{ display: "block", color: "#0096C7", marginTop: 10 }}>
-            for Borrowers and Mortgage Professionals
-          </span>
-        </h1>
+      <h3>Disclaimer</h3>
+      <label>
+        <input
+          type="checkbox"
+          checked={accepted}
+          onChange={(e) => setAccepted(e.target.checked)}
+        />
+        Accept Disclaimer
+      </label>
 
-        <p
-          style={{
-            maxWidth: 960,
-            fontSize: "clamp(18px, 2.5vw, 20px)",
-            lineHeight: 1.65,
-            margin: "0 0 24px",
-            color: "#41536F",
-          }}
-        >
-          Beyond Intelligence helps borrowers prepare for mortgage review and
-          helps loan officers, loan officer assistants, and processors sharpen
-          program direction, identify missing information, and move files
-          forward with greater structure and speed.
-        </p>
+      <h3>Borrower Intake</h3>
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 14,
-            marginBottom: 18,
-          }}
-        >
-          <Link
-            href="/borrower"
-            style={{
-              background: "#263366",
-              color: "#fff",
-              textDecoration: "none",
-              padding: "14px 22px",
-              borderRadius: 14,
-              fontWeight: 700,
-              boxShadow: "0 10px 24px rgba(38, 51, 102, 0.18)",
-            }}
-          >
-            Start as Borrower
-          </Link>
+      <input
+        placeholder="Name"
+        value={intake.name}
+        onChange={(e) =>
+          setIntake({ ...intake, name: e.target.value })
+        }
+      />
+      <input
+        placeholder="Email"
+        value={intake.email}
+        onChange={(e) =>
+          setIntake({ ...intake, email: e.target.value })
+        }
+      />
 
-          <Link
-            href="/team"
-            style={{
-              background: "#0096C7",
-              color: "#fff",
-              textDecoration: "none",
-              padding: "14px 22px",
-              borderRadius: 14,
-              fontWeight: 700,
-              boxShadow: "0 10px 24px rgba(0, 150, 199, 0.18)",
-            }}
-          >
-            Enter Team Workspace
-          </Link>
-        </div>
+      <br />
+      <button disabled={!accepted} onClick={runReview}>
+        Run Review
+      </button>
 
-        <p
-          style={{
-            fontSize: 13,
-            color: "#66758C",
-            maxWidth: 980,
-            lineHeight: 1.6,
-          }}
-        >
-          Beyond Intelligence provides preliminary decision support only. All
-          scenarios remain subject to licensed loan officer review, investor and
-          agency guidelines, full documentation, verification, underwriting,
-          appraisal, title, and program requirements.
-        </p>
-      </section>
+      <h3>Scenario</h3>
 
-      <section
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          padding: "12px 20px 44px",
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 20,
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #D9E1EC",
-              borderRadius: 24,
-              padding: 24,
-              boxShadow: "0 10px 28px rgba(38, 51, 102, 0.06)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#0096C7",
-                letterSpacing: 0.4,
-                marginBottom: 10,
-              }}
-            >
-              CLIENT / BORROWER
-            </div>
-            <h2
-              style={{
-                margin: "0 0 12px",
-                fontSize: "clamp(28px, 4vw, 30px)",
-                lineHeight: 1.3,
-              }}
-            >
-              Prepare before you speak with your loan officer
-            </h2>
-            <p style={{ margin: 0, lineHeight: 1.75, color: "#4B5C78" }}>
-              Finley Beyond gathers intake details, target property scenario,
-              loan purpose, current state, move-to state, optional Realtor
-              information, and follow-up questions so the loan officer begins
-              with a stronger picture of the file.
-            </p>
+      <input
+        placeholder="Home Price"
+        value={scenario.homePrice}
+        onChange={(e) =>
+          setScenario({ ...scenario, homePrice: e.target.value })
+        }
+      />
+      <input
+        placeholder="Down Payment"
+        value={scenario.downPayment}
+        onChange={(e) =>
+          setScenario({
+            ...scenario,
+            downPayment: e.target.value,
+          })
+        }
+      />
+
+      <p>Estimated Loan: ${estimatedLoan}</p>
+
+      <h3>Chat</h3>
+
+      <div>
+        {conversation.map((m, i) => (
+          <div key={i}>
+            <b>{m.role}:</b> {m.content}
           </div>
+        ))}
+      </div>
 
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #D9E1EC",
-              borderRadius: 24,
-              padding: 24,
-              boxShadow: "0 10px 28px rgba(38, 51, 102, 0.06)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#0096C7",
-                letterSpacing: 0.4,
-                marginBottom: 10,
-              }}
-            >
-              LOAN OFFICER TEAM
-            </div>
-            <h2
-              style={{
-                margin: "0 0 12px",
-                fontSize: "clamp(28px, 4vw, 30px)",
-                lineHeight: 1.3,
-              }}
-            >
-              Collaborate with Finley Beyond on program direction
-            </h2>
-            <p style={{ margin: 0, lineHeight: 1.75, color: "#4B5C78" }}>
-              Loan officers, assistants, and processors can test scenarios,
-              narrow possible program paths, discuss borrower structure with
-              Finley Beyond, and receive an emailed summary of the professional
-              conversation.
-            </p>
-          </div>
+      <textarea
+        value={chatInput}
+        onChange={(e) => setChatInput(e.target.value)}
+      />
 
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #D9E1EC",
-              borderRadius: 24,
-              padding: 24,
-              boxShadow: "0 10px 28px rgba(38, 51, 102, 0.06)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#0096C7",
-                letterSpacing: 0.4,
-                marginBottom: 10,
-              }}
-            >
-              GROWTH ENGINE
-            </div>
-            <h2
-              style={{
-                margin: "0 0 12px",
-                fontSize: "clamp(28px, 4vw, 30px)",
-                lineHeight: 1.3,
-              }}
-            >
-              Built for Institutional-Grade Mortgage Decision Support
-            </h2>
-            <p style={{ margin: 0, lineHeight: 1.75, color: "#4B5C78" }}>
-              As Beyond Intelligence expands through agency guidance, investor
-              overlays, niche loan products, and real-world workflow
-              intelligence, it evolves into a more powerful decision-support
-              platform for borrowers, loan officers, assistants, processors, and
-              scalable mortgage operations.
-            </p>
-          </div>
-        </div>
-      </section>
-    </main>
+      <br />
+      <button onClick={sendMessage}>Send</button>
+    </div>
   );
 }
