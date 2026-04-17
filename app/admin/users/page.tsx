@@ -28,14 +28,13 @@ function inputStyle(): React.CSSProperties {
 function labelStyle(): React.CSSProperties {
   return {
     display: "block",
-    fontSize: 14,
     fontWeight: 700,
-    color: "#263366",
     marginBottom: 8,
+    color: "#263366",
   };
 }
 
-function primaryButtonStyle(): React.CSSProperties {
+function buttonPrimaryStyle(): React.CSSProperties {
   return {
     background: "#263366",
     color: "#FFFFFF",
@@ -43,46 +42,70 @@ function primaryButtonStyle(): React.CSSProperties {
     borderRadius: 12,
     padding: "14px 18px",
     fontWeight: 700,
-    fontSize: 15,
     cursor: "pointer",
   };
 }
 
-function secondaryButtonStyle(): React.CSSProperties {
+function badgeStyle(role: string): React.CSSProperties {
+  const isOfficer = role === "Loan Officer";
+  const isAssistant = role === "Loan Officer Assistant";
+  const isProcessor = role === "Processor";
+  const isAgent = role === "Real Estate Agent";
+
+  let background = "#E8EEF8";
+  let color = "#263366";
+
+  if (isOfficer) {
+    background = "#E8EEF8";
+    color = "#263366";
+  } else if (isAssistant) {
+    background = "#E6F7FF";
+    color = "#0B6E99";
+  } else if (isProcessor) {
+    background = "#EEF8EA";
+    color = "#2E6B2E";
+  } else if (isAgent) {
+    background = "#FFF3E8";
+    color = "#9A5A12";
+  }
+
   return {
-    background: "#FFFFFF",
-    color: "#263366",
-    border: "1px solid #263366",
-    borderRadius: 12,
-    padding: "12px 16px",
+    display: "inline-block",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
     fontWeight: 700,
-    fontSize: 15,
-    cursor: "pointer",
-    textDecoration: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
+    background,
+    color,
   };
 }
 
-type PageProps = {
-  searchParams: Promise<{
-    success?: string;
-    error?: string;
-  }>;
+type UserRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  nmls: string | null;
+  role: string | null;
+  created_at: string | null;
 };
 
-export default async function AdminUsersPage({ searchParams }: PageProps) {
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ success?: string; error?: string }>;
+}) {
   if (!(await isAdminSignedIn())) {
     redirect("/admin/login");
   }
 
   const params = await searchParams;
 
-  const { data: users, error } = await supabaseAdmin
+  const { data: users } = await supabaseAdmin
     .from("users")
     .select("*")
     .order("created_at", { ascending: false });
+
+  const safeUsers = (users || []) as UserRow[];
 
   return (
     <main
@@ -99,7 +122,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
             display: "flex",
             justifyContent: "space-between",
             flexWrap: "wrap",
-            gap: 12,
+            gap: 16,
             marginBottom: 22,
           }}
         >
@@ -107,32 +130,54 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
             <div
               style={{
                 display: "inline-block",
-                padding: "6px 12px",
+                padding: "8px 14px",
                 borderRadius: 999,
                 background: "#E8EEF8",
                 color: "#263366",
                 fontSize: 12,
                 fontWeight: 700,
-                marginBottom: 10,
+                marginBottom: 14,
               }}
             >
-              ADMIN AREA
+              ACCESS MANAGEMENT
             </div>
-            <h1 style={{ margin: "0 0 8px", fontSize: 40 }}>Manage Users</h1>
-            <p style={{ margin: 0, color: "#5A6A84", lineHeight: 1.7 }}>
-              Create and manage professional access under admin control.
+
+            <h1
+              style={{
+                margin: "0 0 8px",
+                fontSize: "clamp(32px, 5vw, 48px)",
+                lineHeight: 1.1,
+              }}
+            >
+              Manage Users
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                color: "#5A6A84",
+                lineHeight: 1.7,
+                fontSize: 17,
+                maxWidth: 860,
+              }}
+            >
+              Create and manage professional access under admin control. This
+              page is now restricted to the Beyond Intelligence administrator.
             </p>
           </div>
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link href="/admin" style={secondaryButtonStyle()}>
-              Back to Admin
+            <Link
+              href="/admin"
+              style={{
+                textDecoration: "none",
+                color: "#263366",
+                fontWeight: 700,
+                alignSelf: "center",
+              }}
+            >
+              Back to Admin Home
             </Link>
-            <form action="/api/admin/logout" method="POST">
-              <button type="submit" style={primaryButtonStyle()}>
-                Sign Out
-              </button>
-            </form>
           </div>
         </div>
 
@@ -140,10 +185,10 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
           <div
             style={{
               marginBottom: 18,
-              background: "#EEF9F1",
-              border: "1px solid #B9E2C2",
-              color: "#256B3C",
-              borderRadius: 14,
+              background: "#EEF8EA",
+              border: "1px solid #B7D7B0",
+              color: "#2E6B2E",
+              borderRadius: 16,
               padding: 14,
               lineHeight: 1.6,
             }}
@@ -159,7 +204,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
               background: "#FFF4F2",
               border: "1px solid #F3C5BC",
               color: "#8A3B2F",
-              borderRadius: 14,
+              borderRadius: 16,
               padding: 14,
               lineHeight: 1.6,
             }}
@@ -168,241 +213,178 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
           </div>
         )}
 
-        {error && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              border: "1px solid #F3C5BC",
-              color: "#8A3B2F",
-              borderRadius: 14,
-              padding: 14,
-              lineHeight: 1.6,
-            }}
-          >
-            Unable to load users: {error.message}
-          </div>
-        )}
-
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(340px, 420px) minmax(0, 1fr)",
+            gridTemplateColumns: "minmax(320px, 430px) minmax(0, 1fr)",
             gap: 20,
             alignItems: "start",
           }}
         >
           <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 22 }}>Create User</h2>
+            <h2 style={{ marginTop: 0, fontSize: 24 }}>Create User</h2>
 
-            <form action="/api/admin/users" method="POST">
-              <div style={{ display: "grid", gap: 16 }}>
-                <div>
-                  <label htmlFor="name" style={labelStyle()}>
-                    Full Name
-                  </label>
-                  <input
-                    id="name"
-                    name="name"
-                    type="text"
-                    placeholder="Example: Warren Wendt"
-                    required
-                    style={inputStyle()}
-                  />
-                </div>
+            <p
+              style={{
+                marginTop: 0,
+                color: "#5A6A84",
+                lineHeight: 1.7,
+              }}
+            >
+              Create loan officers, loan officer assistants, processors, and
+              real estate agents from the admin workspace only.
+            </p>
 
-                <div>
-                  <label htmlFor="email" style={labelStyle()}>
-                    Email
-                  </label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    placeholder="name@beyondfinancing.com"
-                    required
-                    style={inputStyle()}
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="nmls" style={labelStyle()}>
-                    NMLS / Login ID
-                  </label>
-                  <input
-                    id="nmls"
-                    name="nmls"
-                    type="text"
-                    placeholder="1625542 or 2394496BM"
-                    required
-                    style={inputStyle()}
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="role" style={labelStyle()}>
-                    Role
-                  </label>
-                  <select id="role" name="role" required style={inputStyle()}>
-                    <option value="Loan Officer">Loan Officer</option>
-                    <option value="Loan Officer Assistant">
-                      Loan Officer Assistant
-                    </option>
-                    <option value="Processor">Processor</option>
-                    <option value="Real Estate Agent">
-                      Real Estate Agent
-                    </option>
-                    <option value="Admin">Admin</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="password" style={labelStyle()}>
-                    Temporary Password
-                  </label>
-                  <input
-                    id="password"
-                    name="password"
-                    type="text"
-                    placeholder="Create a temporary password"
-                    required
-                    style={inputStyle()}
-                  />
-                </div>
-
-                <button type="submit" style={primaryButtonStyle()}>
-                  Create User
-                </button>
+            <form
+              action="/api/admin/users"
+              method="POST"
+              style={{ display: "grid", gap: 16 }}
+            >
+              <div>
+                <label style={labelStyle()}>Full Name</label>
+                <input name="name" required style={inputStyle()} />
               </div>
+
+              <div>
+                <label style={labelStyle()}>Email</label>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  style={inputStyle()}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle()}>NMLS / Login ID</label>
+                <input
+                  name="nmls"
+                  required
+                  style={inputStyle()}
+                  placeholder="Example: 1625542 or 2394496BM"
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle()}>Role</label>
+                <select name="role" required style={inputStyle()}>
+                  <option value="Loan Officer">Loan Officer</option>
+                  <option value="Loan Officer Assistant">
+                    Loan Officer Assistant
+                  </option>
+                  <option value="Processor">Processor</option>
+                  <option value="Real Estate Agent">Real Estate Agent</option>
+                </select>
+              </div>
+
+              <button type="submit" style={buttonPrimaryStyle()}>
+                Create User
+              </button>
             </form>
           </section>
 
           <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 22 }}>Current Users</h2>
-
-            {!users || users.length === 0 ? (
-              <div style={{ color: "#70819A", lineHeight: 1.7 }}>
-                No users have been created yet.
-              </div>
-            ) : (
-              <div
-                style={{
-                  overflowX: "auto",
-                  border: "1px solid #E1E8F0",
-                  borderRadius: 16,
-                }}
-              >
-                <table
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0, fontSize: 24 }}>Current Users</h2>
+                <p
                   style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    minWidth: 760,
-                    background: "#FFFFFF",
+                    margin: "8px 0 0",
+                    color: "#5A6A84",
+                    lineHeight: 1.7,
                   }}
                 >
-                  <thead>
-                    <tr style={{ background: "#F8FAFC" }}>
-                      <th
-                        style={{
-                          textAlign: "left",
-                          padding: 14,
-                          borderBottom: "1px solid #E1E8F0",
-                          fontSize: 14,
-                        }}
-                      >
-                        Name
-                      </th>
-                      <th
-                        style={{
-                          textAlign: "left",
-                          padding: 14,
-                          borderBottom: "1px solid #E1E8F0",
-                          fontSize: 14,
-                        }}
-                      >
-                        Email
-                      </th>
-                      <th
-                        style={{
-                          textAlign: "left",
-                          padding: 14,
-                          borderBottom: "1px solid #E1E8F0",
-                          fontSize: 14,
-                        }}
-                      >
-                        Login ID
-                      </th>
-                      <th
-                        style={{
-                          textAlign: "left",
-                          padding: 14,
-                          borderBottom: "1px solid #E1E8F0",
-                          fontSize: 14,
-                        }}
-                      >
-                        Role
-                      </th>
-                      <th
-                        style={{
-                          textAlign: "left",
-                          padding: 14,
-                          borderBottom: "1px solid #E1E8F0",
-                          fontSize: 14,
-                        }}
-                      >
-                        Created
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((user: any) => (
-                      <tr key={user.id}>
-                        <td
+                  Total users: <strong>{safeUsers.length}</strong>
+                </p>
+              </div>
+            </div>
+
+            {safeUsers.length === 0 ? (
+              <div
+                style={{
+                  border: "1px solid #D9E1EC",
+                  borderRadius: 16,
+                  padding: 18,
+                  background: "#F8FAFC",
+                  color: "#5A6A84",
+                  lineHeight: 1.7,
+                }}
+              >
+                No professional users have been created yet.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 14 }}>
+                {safeUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    style={{
+                      border: "1px solid #D9E1EC",
+                      borderRadius: 18,
+                      padding: 18,
+                      background: "#F8FAFC",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 12,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 20, fontWeight: 800 }}>
+                          {user.name || "Unnamed User"}
+                        </div>
+                        <div
                           style={{
-                            padding: 14,
-                            borderBottom: "1px solid #EEF2F7",
+                            color: "#5A6A84",
+                            marginTop: 6,
+                            lineHeight: 1.7,
                           }}
                         >
-                          {user.name || "-"}
-                        </td>
-                        <td
-                          style={{
-                            padding: 14,
-                            borderBottom: "1px solid #EEF2F7",
-                          }}
-                        >
-                          {user.email || "-"}
-                        </td>
-                        <td
-                          style={{
-                            padding: 14,
-                            borderBottom: "1px solid #EEF2F7",
-                          }}
-                        >
-                          {user.nmls || "-"}
-                        </td>
-                        <td
-                          style={{
-                            padding: 14,
-                            borderBottom: "1px solid #EEF2F7",
-                          }}
-                        >
-                          {user.role || "-"}
-                        </td>
-                        <td
-                          style={{
-                            padding: 14,
-                            borderBottom: "1px solid #EEF2F7",
-                          }}
-                        >
-                          {user.created_at
-                            ? new Date(user.created_at).toLocaleString()
-                            : "-"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          {user.email || "No email"}
+                        </div>
+                      </div>
+
+                      <div>{user.role ? <span style={badgeStyle(user.role)}>{user.role}</span> : null}</div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 12,
+                        color: "#4B5C78",
+                        lineHeight: 1.7,
+                      }}
+                    >
+                      <div>
+                        <strong>NMLS / Login ID:</strong>
+                        <br />
+                        {user.nmls || "-"}
+                      </div>
+
+                      <div>
+                        <strong>Created:</strong>
+                        <br />
+                        {user.created_at
+                          ? new Date(user.created_at).toLocaleString()
+                          : "-"}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>
