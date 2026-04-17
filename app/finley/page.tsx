@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 
 type LanguageCode = "en" | "pt" | "es";
 
@@ -127,6 +127,12 @@ const COPY: Record<
     actionTitle: string;
     summarySent: string;
     summaryError: string;
+    occupancyPrimary: string;
+    occupancySecond: string;
+    occupancyInvestment: string;
+    selectOccupancy: string;
+    officerSelected: string;
+    officerDefaulted: string;
   }
 > = {
   en: {
@@ -181,6 +187,12 @@ const COPY: Record<
     actionTitle: "Next Actions",
     summarySent: "Internal summary sent successfully.",
     summaryError: "There was a problem sending the internal summary.",
+    occupancyPrimary: "Primary Residence",
+    occupancySecond: "Second Home",
+    occupancyInvestment: "Investment Property",
+    selectOccupancy: "Select occupancy",
+    officerSelected: "Loan officer selected successfully.",
+    officerDefaulted: "Routing set to Finley Beyond.",
   },
   pt: {
     heroTitle: "Finley Beyond",
@@ -234,6 +246,12 @@ const COPY: Record<
     actionTitle: "Próximos Passos",
     summarySent: "Resumo interno enviado com sucesso.",
     summaryError: "Houve um problema ao enviar o resumo interno.",
+    occupancyPrimary: "Residência Principal",
+    occupancySecond: "Segunda Casa",
+    occupancyInvestment: "Imóvel de Investimento",
+    selectOccupancy: "Selecione a ocupação",
+    officerSelected: "Loan officer selecionado com sucesso.",
+    officerDefaulted: "Roteamento definido para Finley Beyond.",
   },
   es: {
     heroTitle: "Finley Beyond",
@@ -287,6 +305,12 @@ const COPY: Record<
     actionTitle: "Próximos Pasos",
     summarySent: "Resumen interno enviado correctamente.",
     summaryError: "Hubo un problema al enviar el resumen interno.",
+    occupancyPrimary: "Residencia Principal",
+    occupancySecond: "Segunda Vivienda",
+    occupancyInvestment: "Propiedad de Inversión",
+    selectOccupancy: "Seleccione ocupación",
+    officerSelected: "Loan officer seleccionado correctamente.",
+    officerDefaulted: "Asignación establecida en Finley Beyond.",
   },
 };
 
@@ -361,10 +385,13 @@ export default function FinleyPage() {
   const [summaryMessage, setSummaryMessage] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [showOfficerSuggestions, setShowOfficerSuggestions] = useState(false);
 
   const [loanOfficerQuery, setLoanOfficerQuery] = useState("");
   const [selectedOfficer, setSelectedOfficer] =
     useState<LoanOfficerRecord | null>(null);
+
+  const suggestionBoxRef = useRef<HTMLDivElement | null>(null);
 
   const [intakeForm, setIntakeForm] = useState<IntakeFormState>({
     name: "",
@@ -385,14 +412,14 @@ export default function FinleyPage() {
 
   const officerSuggestions = useMemo(() => {
     const query = loanOfficerQuery.trim().toLowerCase();
-    if (!query || selectedOfficer) return [];
+    if (!query || !showOfficerSuggestions) return [];
 
     return LOAN_OFFICERS.filter(
       (officer) =>
         officer.name.toLowerCase().includes(query) ||
         officer.nmls.toLowerCase().includes(query)
     ).slice(0, 5);
-  }, [loanOfficerQuery, selectedOfficer]);
+  }, [loanOfficerQuery, showOfficerSuggestions]);
 
   const activeOfficer = selectedOfficer || DEFAULT_LOAN_OFFICER;
 
@@ -416,7 +443,39 @@ export default function FinleyPage() {
     setScenarioForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const buildBorrowerContext = (): string => {
+  const selectOfficer = (officer: LoanOfficerRecord) => {
+    setSelectedOfficer(officer);
+    setLoanOfficerQuery(`${officer.name} — NMLS ${officer.nmls}`);
+    setShowOfficerSuggestions(false);
+    setSummaryMessage(t.officerSelected);
+  };
+
+  const confirmOfficerSelection = () => {
+    const matched = resolveOfficerFromQuery(loanOfficerQuery);
+    if (matched) {
+      selectOfficer(matched);
+    } else {
+      setSelectedOfficer(DEFAULT_LOAN_OFFICER);
+      setLoanOfficerQuery(
+        `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
+      );
+      setShowOfficerSuggestions(false);
+      setSummaryMessage(t.officerDefaulted);
+    }
+  };
+
+  const useDefaultFinley = () => {
+    setSelectedOfficer(DEFAULT_LOAN_OFFICER);
+    setLoanOfficerQuery(
+      `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
+    );
+    setShowOfficerSuggestions(false);
+    setSummaryMessage(t.officerDefaulted);
+  };
+
+  const buildBorrowerContext = (officerOverride?: LoanOfficerRecord): string => {
+    const officer = officerOverride || activeOfficer;
+
     return `
 Borrower profile for context:
 - Preferred language: ${language}
@@ -426,8 +485,8 @@ Borrower profile for context:
 - Estimated Credit Score: ${intakeForm.credit || "Not provided"}
 - Gross Monthly Income: ${intakeForm.income || "Not provided"}
 - Monthly Debt: ${intakeForm.debt || "Not provided"}
-- Assigned Loan Officer: ${activeOfficer.name}
-- Assigned Loan Officer NMLS: ${activeOfficer.nmls}
+- Assigned Loan Officer: ${officer.name}
+- Assigned Loan Officer NMLS: ${officer.nmls}
 - Estimated Home Price: ${scenarioForm.homePrice || "Not provided"}
 - Estimated Down Payment: ${scenarioForm.downPayment || "Not provided"}
 - Occupancy: ${scenarioForm.occupancy || "Not provided"}
@@ -457,64 +516,47 @@ Respond in ${
     `.trim();
   };
 
-  const buildRoutingPayload = () => ({
-    language,
-    loanOfficerQuery,
-    selectedOfficer: {
-      id: activeOfficer.id,
-      name: activeOfficer.name,
-      nmls: activeOfficer.nmls,
-      email: activeOfficer.email,
-      assistantEmail: activeOfficer.assistantEmail,
-      mobile: activeOfficer.mobile,
-      assistantMobile: activeOfficer.assistantMobile,
-      applyUrl: activeOfficer.applyUrl,
-      scheduleUrl: activeOfficer.scheduleUrl,
-    },
-    borrower: {
-      name: intakeForm.name,
-      email: intakeForm.email,
-      phone: intakeForm.phone,
-      credit: intakeForm.credit,
-      income: intakeForm.income,
-      debt: intakeForm.debt,
-    },
-    scenario: {
-      homePrice: scenarioForm.homePrice,
-      downPayment: scenarioForm.downPayment,
-      occupancy: scenarioForm.occupancy,
-      estimatedLoanAmount: String(estimatedLoanAmount || ""),
-      estimatedLtv:
-        Number(scenarioForm.homePrice) > 0
-          ? `${Math.round(estimatedLtv * 100)}%`
-          : "",
-    },
-    conversation,
-  });
+  const buildRoutingPayload = (officerOverride?: LoanOfficerRecord) => {
+    const officer = officerOverride || activeOfficer;
 
-  const confirmOfficerSelection = () => {
-    const matched = resolveOfficerFromQuery(loanOfficerQuery);
-    if (matched) {
-      setSelectedOfficer(matched);
-      setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
-    } else {
-      setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-      setLoanOfficerQuery(
-        `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
-      );
-    }
-  };
-
-  const useDefaultFinley = () => {
-    setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-    setLoanOfficerQuery(
-      `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
-    );
+    return {
+      language,
+      loanOfficerQuery,
+      selectedOfficer: {
+        id: officer.id,
+        name: officer.name,
+        nmls: officer.nmls,
+        email: officer.email,
+        assistantEmail: officer.assistantEmail,
+        mobile: officer.mobile,
+        assistantMobile: officer.assistantMobile,
+        applyUrl: officer.applyUrl,
+        scheduleUrl: officer.scheduleUrl,
+      },
+      borrower: {
+        name: intakeForm.name,
+        email: intakeForm.email,
+        phone: intakeForm.phone,
+        credit: intakeForm.credit,
+        income: intakeForm.income,
+        debt: intakeForm.debt,
+      },
+      scenario: {
+        homePrice: scenarioForm.homePrice,
+        downPayment: scenarioForm.downPayment,
+        occupancy: scenarioForm.occupancy,
+        estimatedLoanAmount: String(estimatedLoanAmount || ""),
+        estimatedLtv:
+          Number(scenarioForm.homePrice) > 0
+            ? `${Math.round(estimatedLtv * 100)}%`
+            : "",
+      },
+      conversation,
+    };
   };
 
   const sendLeadSummary = async (trigger: SummaryTrigger): Promise<boolean> => {
     setSummaryLoading(true);
-    setSummaryMessage("");
 
     try {
       const response = await fetch("/api/lead-summary", {
@@ -563,8 +605,6 @@ Respond in ${
     setLoading(true);
     setErrorMessage("");
     setChatError("");
-    setSummaryMessage("");
-    setConversation([]);
 
     const resolvedOfficer =
       selectedOfficer ||
@@ -578,11 +618,11 @@ Respond in ${
 
     try {
       const initialPrompt = `
-${buildBorrowerContext()}
+${buildBorrowerContext(resolvedOfficer)}
 
 Start the borrower conversation as a loan officer assistant.
 Briefly acknowledge the borrower information already entered.
-Tell the borrower that this information will be sent to the loan officer for review.
+Tell the borrower that this information will be sent to the assigned loan officer for review.
 Encourage the borrower to use Apply Now.
 Then ask the next logical qualification-style question.
 Do not mention exact programs, exact rates, exact terms, or guaranteed approvals.
@@ -595,20 +635,7 @@ Do not mention exact programs, exact rates, exact terms, or guaranteed approvals
         },
         body: JSON.stringify({
           stage: "initial_review",
-          routing: {
-            ...buildRoutingPayload(),
-            selectedOfficer: {
-              id: resolvedOfficer.id,
-              name: resolvedOfficer.name,
-              nmls: resolvedOfficer.nmls,
-              email: resolvedOfficer.email,
-              assistantEmail: resolvedOfficer.assistantEmail,
-              mobile: resolvedOfficer.mobile,
-              assistantMobile: resolvedOfficer.assistantMobile,
-              applyUrl: resolvedOfficer.applyUrl,
-              scheduleUrl: resolvedOfficer.scheduleUrl,
-            },
-          },
+          routing: buildRoutingPayload(resolvedOfficer),
           messages: [
             {
               role: "user",
@@ -629,14 +656,12 @@ Do not mention exact programs, exact rates, exact terms, or guaranteed approvals
       const finalText =
         extractAiText(data) || "No response was returned from the AI system.";
 
-      const initialConversation: ChatMessage[] = [
+      setConversation([
         {
           role: "assistant",
           content: finalText,
         },
-      ];
-
-      setConversation(initialConversation);
+      ]);
       setScenarioUnlocked(true);
     } catch (error: unknown) {
       const message =
@@ -795,6 +820,7 @@ After answering, ask the next useful qualification-style question if appropriate
     newTab = true
   ) => {
     await sendLeadSummary(trigger);
+
     if (newTab) {
       window.open(href, "_blank", "noopener,noreferrer");
     } else {
@@ -958,15 +984,21 @@ After answering, ask the next useful qualification-style question if appropriate
                 />
               </div>
 
-              <div style={{ position: "relative", gridColumn: "1 / -1" }}>
+              <div style={{ position: "relative", gridColumn: "1 / -1" }} ref={suggestionBoxRef}>
                 <label style={styles.label}>{t.loanOfficer}</label>
                 <input
                   style={styles.input}
                   type="text"
                   value={loanOfficerQuery}
+                  onFocus={() => {
+                    if (loanOfficerQuery.trim()) setShowOfficerSuggestions(true);
+                  }}
                   onChange={(e) => {
-                    setLoanOfficerQuery(e.target.value);
+                    const value = e.target.value;
+                    setLoanOfficerQuery(value);
                     setSelectedOfficer(null);
+                    setShowOfficerSuggestions(value.trim().length > 0);
+                    setSummaryMessage("");
                   }}
                   placeholder={t.loanOfficerPlaceholder}
                 />
@@ -977,12 +1009,7 @@ After answering, ask the next useful qualification-style question if appropriate
                       <button
                         key={officer.id}
                         type="button"
-                        onClick={() => {
-                          setSelectedOfficer(officer);
-                          setLoanOfficerQuery(
-                            `${officer.name} — NMLS ${officer.nmls}`
-                          );
-                        }}
+                        onClick={() => selectOfficer(officer)}
                         style={styles.suggestionItem}
                       >
                         {officer.name} — NMLS {officer.nmls}
@@ -1025,6 +1052,10 @@ After answering, ask the next useful qualification-style question if appropriate
                 {activeOfficer.assistantEmail}.
               </div>
             </div>
+
+            {summaryMessage && (
+              <div style={styles.summaryBox}>{summaryMessage}</div>
+            )}
 
             <div style={{ marginTop: 22 }}>
               <button
@@ -1085,10 +1116,10 @@ After answering, ask the next useful qualification-style question if appropriate
                         setScenarioField("occupancy", e.target.value)
                       }
                     >
-                      <option value="">Select occupancy</option>
-                      <option value="primary">Primary Residence</option>
-                      <option value="second">Second Home</option>
-                      <option value="investment">Investment Property</option>
+                      <option value="">{t.selectOccupancy}</option>
+                      <option value="primary">{t.occupancyPrimary}</option>
+                      <option value="second">{t.occupancySecond}</option>
+                      <option value="investment">{t.occupancyInvestment}</option>
                     </select>
                   </div>
                 </div>
@@ -1207,10 +1238,6 @@ After answering, ask the next useful qualification-style question if appropriate
                     {t.emailLoanOfficer}
                   </button>
                 </div>
-
-                {summaryMessage && (
-                  <div style={styles.summaryBox}>{summaryMessage}</div>
-                )}
               </div>
             )}
 
@@ -1617,7 +1644,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   suggestionBox: {
     position: "absolute",
-    zIndex: 10,
+    zIndex: 20,
     top: "100%",
     left: 0,
     right: 0,
