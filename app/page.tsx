@@ -151,7 +151,7 @@ export default function HomePage() {
             Start as Borrower
           </Link>
 
-          <Link href="/finley?mode=team" style={styles.secondaryButton}>
+          <Link href="/team" style={styles.secondaryButton}>
             Enter Team Workspace
           </Link>
         </div>
