@@ -3,14 +3,15 @@ import { cookies } from "next/headers";
 const ADMIN_COOKIE_NAME = "bi_admin_session";
 const ADMIN_COOKIE_VALUE = "verified-admin";
 
+export const ADMIN_EMAIL = "pansini@beyondfinancing.com";
+export const ADMIN_PASSWORD = "BeyondAdmin#2026";
+
 export function getAdminEmail(): string {
-  return (process.env.ADMIN_EMAIL || "pansini@beyondfinancing.com")
-    .trim()
-    .toLowerCase();
+  return (process.env.ADMIN_EMAIL || ADMIN_EMAIL).trim().toLowerCase();
 }
 
 export function getAdminPassword(): string {
-  return process.env.ADMIN_PASSWORD || "";
+  return process.env.ADMIN_PASSWORD || ADMIN_PASSWORD;
 }
 
 export function isSecureCookie(): boolean {
@@ -44,6 +45,7 @@ export async function clearAdminSession(): Promise<void> {
     sameSite: "lax",
     path: "/",
     expires: new Date(0),
+    maxAge: 0,
   });
 }
 
