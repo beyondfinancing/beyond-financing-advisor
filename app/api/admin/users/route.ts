@@ -2,64 +2,24 @@ import { NextResponse } from "next/server";
 import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-function unauthorized(req: Request, isJson: boolean) {
-  if (isJson) {
-    return NextResponse.json(
-      { success: false, error: "Admin authorization required." },
-      { status: 401 }
+export async function POST(request: Request) {
+  if (!(await isAdminSignedIn())) {
+    return NextResponse.redirect(
+      new URL("/admin/login?error=Admin%20session%20required.", request.url)
     );
   }
 
-  return NextResponse.redirect(new URL("/admin/login", req.url), 303);
-}
+  const formData = await request.formData();
 
-export async function GET(req: Request) {
-  const isJson = true;
+  const name = String(formData.get("name") || "").trim();
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const nmls = String(formData.get("nmls") || "").trim();
+  const role = String(formData.get("role") || "").trim();
 
-  if (!(await isAdminSignedIn())) {
-    return unauthorized(req, isJson);
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
+  if (!name || !email || !nmls || !role) {
+    return NextResponse.redirect(
+      new URL("/admin/users?error=All%20fields%20are%20required.", request.url)
     );
-  }
-
-  return NextResponse.json({ success: true, users: data || [] });
-}
-
-export async function POST(req: Request) {
-  const contentType = req.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-
-  if (!(await isAdminSignedIn())) {
-    return unauthorized(req, isJson);
-  }
-
-  let name = "";
-  let email = "";
-  let nmls = "";
-  let role = "";
-
-  if (isJson) {
-    const body = await req.json();
-    name = String(body.name || "");
-    email = String(body.email || "");
-    nmls = String(body.nmls || "");
-    role = String(body.role || "");
-  } else {
-    const formData = await req.formData();
-    name = String(formData.get("name") || "");
-    email = String(formData.get("email") || "");
-    nmls = String(formData.get("nmls") || "");
-    role = String(formData.get("role") || "");
   }
 
   const { error } = await supabaseAdmin.from("users").insert([
@@ -72,22 +32,15 @@ export async function POST(req: Request) {
   ]);
 
   if (error) {
-    if (isJson) {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
-    }
-
     return NextResponse.redirect(
-      new URL(`/admin/users?error=${encodeURIComponent(error.message)}`, req.url),
-      303
+      new URL(
+        `/admin/users?error=${encodeURIComponent(error.message)}`,
+        request.url
+      )
     );
   }
 
-  if (isJson) {
-    return NextResponse.json({ success: true });
-  }
-
-  return NextResponse.redirect(new URL("/admin/users?success=created", req.url), 303);
+  return NextResponse.redirect(
+    new URL("/admin/users?success=User%20created%20successfully.", request.url)
+  );
 }
