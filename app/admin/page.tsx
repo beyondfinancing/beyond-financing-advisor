@@ -1,18 +1,40 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getAdminEmail, isAdminSignedIn } from "@/lib/admin-auth";
+import { isAdminSignedIn } from "@/lib/admin-auth";
 
 function cardStyle(): React.CSSProperties {
   return {
     background: "#FFFFFF",
     border: "1px solid #D9E1EC",
     borderRadius: 22,
-    padding: 24,
+    padding: 22,
     boxShadow: "0 10px 28px rgba(38,51,102,0.06)",
   };
 }
 
-export default async function AdminDashboardPage() {
+function actionCardStyle(): React.CSSProperties {
+  return {
+    ...cardStyle(),
+    textDecoration: "none",
+    color: "#263366",
+    display: "block",
+    minHeight: 180,
+  };
+}
+
+function buttonStyle(): React.CSSProperties {
+  return {
+    background: "#263366",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+export default async function AdminHomePage() {
   if (!(await isAdminSignedIn())) {
     redirect("/admin/login");
   }
@@ -26,14 +48,20 @@ export default async function AdminDashboardPage() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
+      <div
+        style={{
+          maxWidth: 1320,
+          margin: "0 auto",
+          padding: 24,
+        }}
+      >
         <div
           style={{
             display: "flex",
-            flexWrap: "wrap",
             justifyContent: "space-between",
-            gap: 16,
             alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
             marginBottom: 24,
           }}
         >
@@ -50,17 +78,17 @@ export default async function AdminDashboardPage() {
                 marginBottom: 14,
               }}
             >
-              ADMIN DASHBOARD
+              ADMIN CONTROL CENTER
             </div>
 
             <h1
               style={{
-                margin: "0 0 8px",
+                margin: "0 0 10px",
                 fontSize: "clamp(34px, 6vw, 54px)",
                 lineHeight: 1.1,
               }}
             >
-              Beyond Intelligence Control Center
+              Beyond Intelligence Admin
             </h1>
 
             <p
@@ -68,42 +96,35 @@ export default async function AdminDashboardPage() {
                 margin: 0,
                 color: "#5A6A84",
                 lineHeight: 1.7,
-                fontSize: 17,
-                maxWidth: 920,
+                fontSize: 18,
+                maxWidth: 900,
               }}
             >
-              Secure administration area for users, lenders, programs, and the
-              next file-intake layer for selling guides, pricing sheets,
-              overlays, matrices, and qualification support files.
+              Manage professional users, lenders, programs, file intake, and the
+              future data structure that powers Finley Beyond.
             </p>
-
-            <div
-              style={{
-                marginTop: 14,
-                color: "#5A6A84",
-                fontSize: 14,
-              }}
-            >
-              Signed in as <strong>{getAdminEmail()}</strong>
-            </div>
           </div>
 
-          <form method="POST" action="/api/admin/logout">
-            <button
-              type="submit"
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <Link
+              href="/"
               style={{
-                background: "#FFFFFF",
+                display: "inline-flex",
+                alignItems: "center",
+                textDecoration: "none",
                 color: "#263366",
-                border: "1px solid #263366",
-                borderRadius: 12,
-                padding: "12px 16px",
                 fontWeight: 700,
-                cursor: "pointer",
               }}
             >
-              Sign Out
-            </button>
-          </form>
+              Back to Beyond Intelligence
+            </Link>
+
+            <form action="/api/admin/logout" method="POST">
+              <button type="submit" style={buttonStyle()}>
+                Sign Out
+              </button>
+            </form>
+          </div>
         </div>
 
         <div
@@ -113,58 +134,84 @@ export default async function AdminDashboardPage() {
             gap: 20,
           }}
         >
-          <div style={cardStyle()}>
-            <h2 style={{ marginTop: 0 }}>Manage Users</h2>
-            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
-              Create and manage loan officers, assistants, processors, and agent
-              access under admin control only.
-            </p>
-            <Link
-              href="/admin/users"
-              style={{ color: "#0096C7", fontWeight: 700, textDecoration: "none" }}
+          <Link href="/admin/users" style={actionCardStyle()}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#0096C7",
+                letterSpacing: 0.4,
+                marginBottom: 10,
+              }}
             >
-              Open Users →
-            </Link>
-          </div>
-
-          <div style={cardStyle()}>
-            <h2 style={{ marginTop: 0 }}>Manage Lenders</h2>
-            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
-              Add lender relationships, channels, and licensed states in a clean
-              structured format.
-            </p>
-            <Link
-              href="/admin/lenders"
-              style={{ color: "#0096C7", fontWeight: 700, textDecoration: "none" }}
-            >
-              Open Lenders →
-            </Link>
-          </div>
-
-          <div style={cardStyle()}>
-            <h2 style={{ marginTop: 0 }}>Manage Programs</h2>
-            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
-              Add lender programs with minimum credit, max LTV, max DTI,
-              occupancy, and notes for matching.
-            </p>
-            <Link
-              href="/admin/programs"
-              style={{ color: "#0096C7", fontWeight: 700, textDecoration: "none" }}
-            >
-              Open Programs →
-            </Link>
-          </div>
-
-          <div style={cardStyle()}>
-            <h2 style={{ marginTop: 0 }}>Phase 2 File Intake</h2>
-            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
-              Next, we will add file upload and classification for selling
-              guides, pricing sheets, overlays, program matrices, and other
-              lender documents.
-            </p>
-            <div style={{ color: "#263366", fontWeight: 700 }}>
-              Coming in the next script set
+              ACCESS MANAGEMENT
             </div>
+            <h2 style={{ margin: "0 0 12px", fontSize: 26 }}>Manage Users</h2>
+            <p style={{ margin: 0, color: "#5A6A84", lineHeight: 1.7 }}>
+              Create, review, and organize loan officers, assistants,
+              processors, real estate agents, and future admin roles.
+            </p>
+          </Link>
+
+          <Link href="/admin/lenders" style={actionCardStyle()}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#0096C7",
+                letterSpacing: 0.4,
+                marginBottom: 10,
+              }}
+            >
+              LENDER MANAGEMENT
+            </div>
+            <h2 style={{ margin: "0 0 12px", fontSize: 26 }}>Manage Lenders</h2>
+            <p style={{ margin: 0, color: "#5A6A84", lineHeight: 1.7 }}>
+              Add lender records, channels, state coverage, and prepare the
+              structure for selling guides, pricing, overlays, and related files.
+            </p>
+          </Link>
+
+          <Link href="/admin/programs" style={actionCardStyle()}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#0096C7",
+                letterSpacing: 0.4,
+                marginBottom: 10,
+              }}
+            >
+              PROGRAM ENGINE
+            </div>
+            <h2 style={{ margin: "0 0 12px", fontSize: 26 }}>
+              Manage Programs
+            </h2>
+            <p style={{ margin: 0, color: "#5A6A84", lineHeight: 1.7 }}>
+              Maintain lender programs, qualification thresholds, occupancy
+              rules, notes, and the matching engine that supports scenario
+              direction.
+            </p>
+          </Link>
+
+          <div style={cardStyle()}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#0096C7",
+                letterSpacing: 0.4,
+                marginBottom: 10,
+              }}
+            >
+              NEXT UPGRADE
+            </div>
+            <h2 style={{ margin: "0 0 12px", fontSize: 26 }}>File Intake</h2>
+            <p style={{ margin: 0, color: "#5A6A84", lineHeight: 1.7 }}>
+              Next we will add structured lender file upload support for selling
+              guides, pricing sheets, overlays, program matrices, and other
+              qualification documents.
+            </p>
           </div>
         </div>
       </div>
