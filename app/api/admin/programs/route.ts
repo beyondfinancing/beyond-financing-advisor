@@ -1,108 +1,121 @@
 import { NextResponse } from "next/server";
-import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-function unauthorized(req: Request, isJson: boolean) {
-  if (isJson) {
-    return NextResponse.json(
-      { success: false, error: "Admin authorization required." },
-      { status: 401 }
-    );
-  }
-
-  return NextResponse.redirect(new URL("/admin/login", req.url), 303);
+function buildRedirectUrl(type: "success" | "error", message: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://beyondintelligence.io";
+  const url = new URL("/admin/programs", baseUrl);
+  url.searchParams.set(type, message);
+  return url;
 }
 
-export async function GET(req: Request) {
-  const isJson = true;
-
-  if (!(await isAdminSignedIn())) {
-    return unauthorized(req, isJson);
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("programs")
-    .select("*, lenders(name)")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ success: true, programs: data || [] });
+function toNullableNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export async function POST(req: Request) {
-  const contentType = req.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-
-  if (!(await isAdminSignedIn())) {
-    return unauthorized(req, isJson);
-  }
-
-  let lender_id = "";
-  let name = "";
-  let min_credit = 0;
-  let max_ltv = 0;
-  let max_dti = 0;
-  let occupancy = "";
-  let notes = "";
-
-  if (isJson) {
-    const body = await req.json();
-    lender_id = String(body.lender_id || "");
-    name = String(body.name || "");
-    min_credit = Number(body.min_credit || 0);
-    max_ltv = Number(body.max_ltv || 0);
-    max_dti = Number(body.max_dti || 0);
-    occupancy = String(body.occupancy || "");
-    notes = String(body.notes || "");
-  } else {
+  try {
     const formData = await req.formData();
-    lender_id = String(formData.get("lender_id") || "");
-    name = String(formData.get("name") || "");
-    min_credit = Number(formData.get("min_credit") || 0);
-    max_ltv = Number(formData.get("max_ltv") || 0);
-    max_dti = Number(formData.get("max_dti") || 0);
-    occupancy = String(formData.get("occupancy") || "");
-    notes = String(formData.get("notes") || "");
-  }
 
-  const { error } = await supabaseAdmin.from("programs").insert([
-    {
-      lender_id,
-      name,
-      min_credit,
-      max_ltv,
-      max_dti,
-      occupancy,
-      notes,
-    },
-  ]);
+    const action = String(formData.get("action") || "").trim();
+    const id = String(formData.get("id") || "").trim();
+    const lender_id = String(formData.get("lender_id") || "").trim();
+    const name = String(formData.get("name") || "").trim();
+    const occupancy = String(formData.get("occupancy") || "").trim();
+    const notes = String(formData.get("notes") || "").trim();
 
-  if (error) {
-    if (isJson) {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
+    const min_credit = toNullableNumber(String(formData.get("min_credit") || ""));
+    const max_ltv = toNullableNumber(String(formData.get("max_ltv") || ""));
+    const max_dti = toNullableNumber(String(formData.get("max_dti") || ""));
+
+    if (action === "create") {
+      if (!lender_id || !name || min_credit === null || max_ltv === null || max_dti === null || !occupancy) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", "All required program fields must be completed.")
+        );
+      }
+
+      const { error } = await supabaseAdmin.from("programs").insert({
+        lender_id,
+        name,
+        min_credit,
+        max_ltv,
+        max_dti,
+        occupancy,
+        notes,
+      });
+
+      if (error) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", `Program create failed: ${error.message}`)
+        );
+      }
+
+      return NextResponse.redirect(
+        buildRedirectUrl("success", "Program created successfully.")
+      );
+    }
+
+    if (action === "update") {
+      if (!id || !lender_id || !name || min_credit === null || max_ltv === null || max_dti === null || !occupancy) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", "All required program update fields must be completed.")
+        );
+      }
+
+      const { error } = await supabaseAdmin
+        .from("programs")
+        .update({
+          lender_id,
+          name,
+          min_credit,
+          max_ltv,
+          max_dti,
+          occupancy,
+          notes,
+        })
+        .eq("id", id);
+
+      if (error) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", `Program update failed: ${error.message}`)
+        );
+      }
+
+      return NextResponse.redirect(
+        buildRedirectUrl("success", "Program updated successfully.")
+      );
+    }
+
+    if (action === "delete") {
+      if (!id) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", "Program id is required for delete.")
+        );
+      }
+
+      const { error } = await supabaseAdmin.from("programs").delete().eq("id", id);
+
+      if (error) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", `Program delete failed: ${error.message}`)
+        );
+      }
+
+      return NextResponse.redirect(
+        buildRedirectUrl("success", "Program deleted successfully.")
       );
     }
 
     return NextResponse.redirect(
-      new URL(`/admin/programs?error=${encodeURIComponent(error.message)}`, req.url),
-      303
+      buildRedirectUrl("error", "Invalid program action.")
     );
-  }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unexpected server error.";
 
-  if (isJson) {
-    return NextResponse.json({ success: true });
+    return NextResponse.redirect(buildRedirectUrl("error", message));
   }
-
-  return NextResponse.redirect(
-    new URL("/admin/programs?success=created", req.url),
-    303
-  );
 }
