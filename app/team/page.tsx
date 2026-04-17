@@ -2,6 +2,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { evaluateFannieMaeSingleFamily } from "@/lib/lender-guidelines/fannie-mae/single-family/data";
+import { evaluateFannieMaeMultifamily } from "@/lib/lender-guidelines/fannie-mae/multi-family/data";
+import { evaluateFreddieMacSingleFamily } from "@/lib/lender-guidelines/freddie-mac/single-family/data";
+import { evaluateFreddieMacMultifamily } from "@/lib/lender-guidelines/freddie-mac/multi-family/data";
 
 type TeamRole =
   | "Loan Officer"
@@ -45,29 +49,29 @@ type AccessCredential = {
 
 type ProgramSuggestion = {
   program: string;
-  lenderName?: string;
   strength: string;
   notes: string[];
+  lenderName?: string;
+  source?: "database" | "agency";
 };
 
-type MatchApiProgram = {
+type LiveMatch = {
   id: string;
   lender_id: string;
   name: string;
-  min_credit: number | null;
-  max_ltv: number | null;
-  max_dti: number | null;
-  occupancy: string | null;
-  notes: string | null;
+  min_credit: number;
+  max_ltv: number;
+  max_dti: number;
+  occupancy: string;
+  notes?: string;
   created_at?: string;
   lenders?: {
     name?: string;
   } | null;
 };
 
-type MatchApiResponse = {
-  matches?: MatchApiProgram[];
-  error?: string;
+type LiveMatchResponse = {
+  matches?: LiveMatch[];
 };
 
 const ACCESS_CREDENTIALS: AccessCredential[] = [
@@ -187,22 +191,19 @@ function normalizeOccupancy(
   return "other";
 }
 
-function occupancyToApiValue(
-  value: string
-): "Primary" | "Second" | "Investment" | "Mixed-Use" | "Other" {
+function formatOccupancyForApi(value: string): string {
   const normalized = normalizeOccupancy(value);
-
   switch (normalized) {
     case "primary":
-      return "Primary";
+      return "Primary residence";
     case "second":
-      return "Second";
+      return "Second home";
     case "investment":
       return "Investment";
     case "mixed-use":
-      return "Mixed-Use";
+      return "Mixed-use";
     default:
-      return "Other";
+      return value || "";
   }
 }
 
@@ -226,13 +227,13 @@ function getRolePrompt(role: TeamRole, scenario: TeamScenario): string {
 
   switch (role) {
     case "Loan Officer":
-      return `Act as Finley Beyond supporting a Loan Officer. Analyze ${borrowerName}'s scenario from a loan structuring perspective. Emphasize likely program direction, qualification alignment, material risk flags, compensating factors, and the next 3-5 underwriting-focused questions the loan officer should ask.`;
+      return `Act as Finley Beyond supporting a Loan Officer. Analyze ${borrowerName}'s scenario from a loan structuring perspective. First prioritize Beyond Intelligence live lender-program matches, then use general agency logic only as fallback. Emphasize likely program direction, qualification alignment, material risk flags, compensating factors, and the next 3-5 underwriting-focused questions the loan officer should ask.`;
     case "Loan Officer Assistant":
-      return `Act as Finley Beyond supporting a Loan Officer Assistant. Analyze ${borrowerName}'s scenario from an intake and borrower-preparation perspective. Emphasize unanswered intake questions, missing borrower facts, likely documents to request next, and what should be organized before handing the file to the loan officer.`;
+      return `Act as Finley Beyond supporting a Loan Officer Assistant. Analyze ${borrowerName}'s scenario from an intake and borrower-preparation perspective. First prioritize Beyond Intelligence live lender-program matches, then use general agency logic only as fallback. Emphasize unanswered intake questions, missing borrower facts, likely documents to request next, and what should be organized before handing the file to the loan officer.`;
     case "Processor":
-      return `Act as Finley Beyond supporting a Processor. Analyze ${borrowerName}'s scenario from a file-readiness perspective. Emphasize missing documentation, expected verifications, timeline blockers, underwriting support items, and what should be cleaned up before the file progresses.`;
+      return `Act as Finley Beyond supporting a Processor. Analyze ${borrowerName}'s scenario from a file-readiness perspective. First prioritize Beyond Intelligence live lender-program matches, then use general agency logic only as fallback. Emphasize missing documentation, expected verifications, timeline blockers, underwriting support items, and what should be cleaned up before the file progresses.`;
     case "Real Estate Agent":
-      return `Act as Finley Beyond supporting a Real Estate Agent. Analyze ${borrowerName}'s scenario from a transaction-readiness perspective. Emphasize borrower strength, likely financing direction, timing readiness, possible pressure points that could affect contract strategy, and the next actions the agent and loan team should coordinate.`;
+      return `Act as Finley Beyond supporting a Real Estate Agent. Analyze ${borrowerName}'s scenario from a transaction-readiness perspective. First prioritize Beyond Intelligence live lender-program matches, then use general agency logic only as fallback. Emphasize borrower strength, likely financing direction, timing readiness, possible pressure points that could affect contract strategy, and the next actions the agent and loan team should coordinate.`;
     default:
       return `Act as Finley Beyond supporting a mortgage professional reviewing ${borrowerName}'s scenario.`;
   }
@@ -259,25 +260,25 @@ function buildRoleNotes(role: TeamRole): string[] {
       return [
         "Finley Beyond will speak in loan-structuring language.",
         "Expect focus on qualification, program fit, compensating factors, and risk flags.",
-        "Best for borrower strategy and pre-approval direction.",
+        "Live Beyond Intelligence lender matches are prioritized before fallback agency logic.",
       ];
     case "Loan Officer Assistant":
       return [
         "Finley Beyond will emphasize intake completion and follow-up preparation.",
         "Expect focus on missing answers, missing borrower facts, and next document requests.",
-        "Best for preparing a clean handoff to the loan officer.",
+        "Live Beyond Intelligence lender matches are prioritized before fallback agency logic.",
       ];
     case "Processor":
       return [
         "Finley Beyond will emphasize file-readiness and documentation discipline.",
         "Expect focus on missing documents, verifications, conditions, and timeline blockers.",
-        "Best for preparing a cleaner submission path.",
+        "Live Beyond Intelligence lender matches are prioritized before fallback agency logic.",
       ];
     case "Real Estate Agent":
       return [
         "Finley Beyond will emphasize deal readiness and transaction clarity.",
         "Expect focus on timing, borrower strength, likely financing path, and coordination points.",
-        "Best for transaction planning with the loan team.",
+        "Live Beyond Intelligence lender matches are prioritized before fallback agency logic.",
       ];
     default:
       return ["Role notes unavailable."];
@@ -403,11 +404,12 @@ export default function TeamPage() {
   const [emailing, setEmailing] = useState(false);
   const [chatError, setChatError] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [matchLoading, setMatchLoading] = useState(false);
-  const [matchError, setMatchError] = useState("");
-  const [onScreenSuggestions, setOnScreenSuggestions] = useState<
+
+  const [liveProgramSuggestions, setLiveProgramSuggestions] = useState<
     ProgramSuggestion[]
   >([]);
+  const [liveMatchError, setLiveMatchError] = useState("");
+  const [loadingLiveMatches, setLoadingLiveMatches] = useState(false);
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(scenario.homePrice || 0);
@@ -420,146 +422,185 @@ export default function TeamPage() {
     const homePrice = Number(scenario.homePrice || 0);
     const downPayment = Number(scenario.downPayment || 0);
     if (!homePrice) return 0;
-    return Math.max(
-      0,
-      Math.round(((homePrice - downPayment) / homePrice) * 100)
-    );
+    return Math.max(0, Math.round(((homePrice - downPayment) / homePrice) * 100));
   }, [scenario.homePrice, scenario.downPayment]);
 
   const estimatedDti = useMemo(() => {
     const income = Number(scenario.income || 0);
     const debt = Number(scenario.debt || 0);
-
-    if (!income || income <= 0) return 0;
-
+    if (!income) return 0;
     return Math.max(0, Math.round((debt / income) * 100));
   }, [scenario.income, scenario.debt]);
 
   useEffect(() => {
     const credit = Number(scenario.credit || 0);
-    const occupancy = scenario.occupancy.trim();
-    const units = Number(scenario.units || 0);
+    const ltv = estimatedLtv;
+    const dti = estimatedDti;
+    const occupancy = formatOccupancyForApi(scenario.occupancy);
 
-    if (!credit || !estimatedLtv || !estimatedDti || !occupancy) {
-      setOnScreenSuggestions([]);
-      setMatchError("");
+    if (!credit || !ltv || !occupancy) {
+      setLiveProgramSuggestions([]);
+      setLiveMatchError("");
       return;
     }
 
-    if (units >= 5) {
-      setOnScreenSuggestions([]);
-      setMatchError(
-        "Database-driven multifamily matching for 5+ units will be added next. Current live matching is focused on lender programs already entered into the system."
-      );
-      return;
-    }
+    let cancelled = false;
 
-    let isCancelled = false;
-
-    async function loadMatches() {
-      setMatchLoading(true);
-      setMatchError("");
+    async function loadLiveMatches() {
+      setLoadingLiveMatches(true);
+      setLiveMatchError("");
 
       try {
         const response = await fetch("/api/match", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             credit,
-            ltv: estimatedLtv,
-            dti: estimatedDti,
-            occupancy: occupancyToApiValue(occupancy),
+            ltv,
+            dti,
+            occupancy,
           }),
         });
 
-        const rawData = (await response.json().catch(() => null)) as
-          | MatchApiResponse
-          | null;
+        const data: LiveMatchResponse = await response.json();
 
         if (!response.ok) {
-          throw new Error(
-            rawData?.error || `Program match request failed with status ${response.status}.`
-          );
+          throw new Error(`Live match request failed with status ${response.status}.`);
         }
 
-        const matches = Array.isArray(rawData?.matches) ? rawData.matches : [];
+        if (cancelled) return;
 
-        const mapped: ProgramSuggestion[] = matches.slice(0, 5).map((item) => {
-          const notes: string[] = [];
+        const suggestions: ProgramSuggestion[] = Array.isArray(data.matches)
+          ? data.matches.map((match) => ({
+              program: match.name,
+              lenderName: match.lenders?.name || "Unknown lender",
+              strength: "strong",
+              source: "database",
+              notes: [
+                `Minimum credit: ${match.min_credit}`,
+                `Maximum LTV: ${match.max_ltv}%`,
+                `Maximum DTI: ${match.max_dti}%`,
+                `Occupancy: ${match.occupancy}`,
+                ...(match.notes ? [match.notes] : []),
+              ],
+            }))
+          : [];
 
-          if (item.lenders?.name) {
-            notes.push(`Matched lender: ${item.lenders.name}`);
-          }
-
-          if (typeof item.min_credit === "number") {
-            notes.push(`Minimum credit guideline entered: ${item.min_credit}`);
-          }
-
-          if (typeof item.max_ltv === "number") {
-            notes.push(`Maximum LTV guideline entered: ${item.max_ltv}%`);
-          }
-
-          if (typeof item.max_dti === "number") {
-            notes.push(`Maximum DTI guideline entered: ${item.max_dti}%`);
-          }
-
-          if (item.occupancy) {
-            notes.push(`Occupancy fit: ${item.occupancy}`);
-          }
-
-          if (item.notes) {
-            notes.push(item.notes);
-          }
-
-          return {
-            program: item.name || "Unnamed Program",
-            lenderName: item.lenders?.name || "",
-            strength: "strong",
-            notes,
-          };
-        });
-
-        if (!isCancelled) {
-          setOnScreenSuggestions(mapped);
-
-          if (mapped.length === 0) {
-            setMatchError(
-              "No database-driven lender program currently matches the scenario entered. Add more lender programs and overlays in the admin area to expand the engine."
-            );
-          } else {
-            setMatchError("");
-          }
-        }
+        setLiveProgramSuggestions(suggestions);
       } catch (error) {
-        if (!isCancelled) {
-          setOnScreenSuggestions([]);
-          setMatchError(
-            error instanceof Error
-              ? error.message
-              : "Unable to retrieve live lender-program matches."
-          );
-        }
+        if (cancelled) return;
+
+        setLiveProgramSuggestions([]);
+        setLiveMatchError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load live lender-program matches."
+        );
       } finally {
-        if (!isCancelled) {
-          setMatchLoading(false);
+        if (!cancelled) {
+          setLoadingLiveMatches(false);
         }
       }
     }
 
-    loadMatches();
+    loadLiveMatches();
 
     return () => {
-      isCancelled = true;
+      cancelled = true;
     };
+  }, [scenario.credit, scenario.occupancy, estimatedLtv, estimatedDti]);
+
+  const fallbackAgencySuggestions: ProgramSuggestion[] = useMemo(() => {
+    const credit = Number(scenario.credit || 0);
+    const ltv = estimatedLtv;
+    const occupancy = normalizeOccupancy(scenario.occupancy);
+    const dti =
+      Number(scenario.income || 0) > 0
+        ? (Number(scenario.debt || 0) / Number(scenario.income || 0)) * 100
+        : undefined;
+
+    const units = Number(scenario.units || 0) || undefined;
+    const dscr = Number(scenario.dscr || 0) || undefined;
+    const isMulti = (units || 0) >= 5;
+
+    if (!credit || !ltv) return [];
+
+    if (!isMulti) {
+      const fannie = evaluateFannieMaeSingleFamily({
+        creditScore: credit,
+        ltv,
+        dti,
+        occupancy:
+          occupancy === "primary" ||
+          occupancy === "second" ||
+          occupancy === "investment"
+            ? occupancy
+            : "primary",
+        firstTimeBuyer: false,
+      }).filter((x) => x.eligible);
+
+      const freddie = evaluateFreddieMacSingleFamily({
+        creditScore: credit,
+        ltv,
+        dti,
+        occupancy:
+          occupancy === "primary" ||
+          occupancy === "second" ||
+          occupancy === "investment"
+            ? occupancy
+            : "primary",
+        firstTimeBuyer: false,
+      }).filter((x) => x.eligible);
+
+      return [...fannie, ...freddie].slice(0, 5).map((item) => ({
+        program: item.program,
+        strength: item.strength,
+        notes: item.notes,
+        source: "agency",
+      }));
+    }
+
+    const fannieMf = evaluateFannieMaeMultifamily({
+      creditScore: credit || undefined,
+      ltv,
+      dscr,
+      occupancy: occupancy === "mixed-use" ? "mixed-use" : "investment",
+      units,
+      experienceLevel: "experienced-investor",
+    }).filter((x) => x.eligible);
+
+    const freddieMf = evaluateFreddieMacMultifamily({
+      creditScore: credit || undefined,
+      ltv,
+      dscr,
+      occupancy: occupancy === "mixed-use" ? "mixed-use" : "investment",
+      units,
+      experienceLevel: "experienced-investor",
+    }).filter((x) => x.eligible);
+
+    return [...fannieMf, ...freddieMf].slice(0, 5).map((item) => ({
+      program: item.program,
+      strength: item.strength,
+      notes: item.notes,
+      source: "agency",
+    }));
   }, [
     scenario.credit,
     scenario.occupancy,
+    scenario.income,
+    scenario.debt,
     scenario.units,
+    scenario.dscr,
     estimatedLtv,
-    estimatedDti,
   ]);
+
+  const onScreenSuggestions = useMemo(() => {
+    if (liveProgramSuggestions.length > 0) {
+      return liveProgramSuggestions;
+    }
+
+    return fallbackAgencySuggestions;
+  }, [liveProgramSuggestions, fallbackAgencySuggestions]);
 
   const roleNotes = useMemo(
     () => buildRoleNotes(scenario.role),
@@ -632,8 +673,8 @@ export default function TeamPage() {
         body: JSON.stringify({
           action: "chat",
           scenario,
-          suggestions: onScreenSuggestions,
           messages: nextMessages,
+          suggestions: onScreenSuggestions,
           authorizedUser: authorizedUser?.displayName || "",
           authorizedRole: authorizedUser?.role || "",
           rolePrompt: getRolePrompt(scenario.role, scenario),
@@ -659,7 +700,7 @@ export default function TeamPage() {
 
       const fallbackReply = `${getRoleObjective(
         scenario.role
-      )} Based on the current scenario, continue by clarifying income structure, occupancy, timeline, documentation readiness, and lender-program fit.`;
+      )} Based on the current scenario, continue by clarifying income structure, occupancy, timeline, and documentation readiness.`;
 
       setMessages([
         ...nextMessages,
@@ -702,8 +743,8 @@ export default function TeamPage() {
         body: JSON.stringify({
           action: "complete",
           scenario,
-          suggestions: onScreenSuggestions,
           messages,
+          suggestions: onScreenSuggestions,
           authorizedUser: authorizedUser?.displayName || "",
           authorizedRole: authorizedUser?.role || "",
           accessLoginId,
@@ -747,7 +788,9 @@ export default function TeamPage() {
       }
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : "Unable to email the summary.";
+        error instanceof Error
+          ? error.message
+          : "Unable to email the summary.";
       setEmailError(message);
       alert(message);
     } finally {
@@ -769,9 +812,7 @@ export default function TeamPage() {
         role: "assistant",
         content: `${getRoleObjective(
           scenario.role
-        )} I am ready to help review this scenario for ${
-          scenario.borrowerName
-        }.`,
+        )} I am ready to help review this scenario for ${scenario.borrowerName}.`,
       },
     ]);
     setChatError("");
@@ -1166,9 +1207,7 @@ export default function TeamPage() {
                         onClick={() =>
                           setScenario((prev) => ({ ...prev, loanPurpose: purpose }))
                         }
-                        style={buttonSecondaryStyle(
-                          scenario.loanPurpose === purpose
-                        )}
+                        style={buttonSecondaryStyle(scenario.loanPurpose === purpose)}
                       >
                         {purpose}
                       </button>
@@ -1238,7 +1277,7 @@ export default function TeamPage() {
                   <option value="">Occupancy</option>
                   <option value="Primary residence">Primary residence</option>
                   <option value="Second home">Second home</option>
-                  <option value="Investment property">Investment property</option>
+                  <option value="Investment">Investment</option>
                   <option value="Mixed-use">Mixed-use</option>
                 </select>
                 <input
@@ -1323,8 +1362,7 @@ export default function TeamPage() {
                       marginBottom: 14,
                       padding: 14,
                       borderRadius: 14,
-                      background:
-                        message.role === "assistant" ? "#FFFFFF" : "#DBEAFE",
+                      background: message.role === "assistant" ? "#FFFFFF" : "#DBEAFE",
                       border: "1px solid #D9E1EC",
                       lineHeight: 1.7,
                     }}
@@ -1381,7 +1419,7 @@ export default function TeamPage() {
                 <textarea
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Discuss the scenario with Finley Beyond. Example: This borrower is W-2 salaried, primary residence, 90% LTV, strong reserves. What should I narrow next?"
+                  placeholder="Discuss the scenario with Finley Beyond. Example: Can this borrower qualify?"
                   rows={5}
                   style={{
                     ...inputStyle(),
@@ -1420,22 +1458,47 @@ export default function TeamPage() {
                 On-Screen Program Direction
               </h2>
 
-              {matchLoading ? (
-                <div style={{ color: "#70819A", lineHeight: 1.7 }}>
-                  Checking live lender-program matches from the Beyond
-                  Intelligence database...
+              <div style={{ color: "#70819A", lineHeight: 1.7, marginBottom: 14 }}>
+                Enter credit score, income, debt, price, down payment, and occupancy to begin displaying live lender-program direction on screen.
+              </div>
+
+              {loadingLiveMatches && (
+                <div
+                  style={{
+                    marginBottom: 14,
+                    background: "#EEF6FF",
+                    border: "1px solid #C8DDF7",
+                    color: "#205493",
+                    borderRadius: 14,
+                    padding: 14,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Checking live Beyond Intelligence lender-program matches...
                 </div>
-              ) : onScreenSuggestions.length === 0 ? (
-                <div style={{ color: "#70819A", lineHeight: 1.7 }}>
-                  Enter credit score, income, debt, price, down payment, and
-                  occupancy to begin displaying live lender-program direction on
-                  screen.
+              )}
+
+              {liveMatchError && (
+                <div
+                  style={{
+                    marginBottom: 14,
+                    background: "#FFF4F2",
+                    border: "1px solid #F3C5BC",
+                    color: "#8A3B2F",
+                    borderRadius: 14,
+                    padding: 14,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {liveMatchError}
                 </div>
-              ) : (
+              )}
+
+              {liveProgramSuggestions.length > 0 ? (
                 <div style={{ display: "grid", gap: 12 }}>
-                  {onScreenSuggestions.map((item, index) => (
+                  {liveProgramSuggestions.map((item, index) => (
                     <div
-                      key={`${item.program}-${index}`}
+                      key={`${item.program}-${item.lenderName || "lender"}-${index}`}
                       style={{
                         border: "1px solid #D9E1EC",
                         borderRadius: 16,
@@ -1443,20 +1506,10 @@ export default function TeamPage() {
                         padding: 16,
                       }}
                     >
-                      <div style={{ fontWeight: 800 }}>{item.program}</div>
-
-                      {item.lenderName && (
-                        <div
-                          style={{
-                            marginTop: 6,
-                            color: "#263366",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {item.lenderName}
-                        </div>
-                      )}
-
+                      <div style={{ fontWeight: 800 }}>
+                        {item.program}
+                        {item.lenderName ? ` — ${item.lenderName}` : ""}
+                      </div>
                       <div
                         style={{
                           marginTop: 6,
@@ -1464,9 +1517,8 @@ export default function TeamPage() {
                           fontWeight: 700,
                         }}
                       >
-                        {String(item.strength).toUpperCase()} alignment
+                        LIVE LENDER MATCH
                       </div>
-
                       <ul
                         style={{
                           margin: "10px 0 0 18px",
@@ -1481,12 +1533,58 @@ export default function TeamPage() {
                     </div>
                   ))}
                 </div>
-              )}
+              ) : fallbackAgencySuggestions.length > 0 ? (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div
+                    style={{
+                      background: "#FFF9EC",
+                      border: "1px solid #E9D4A7",
+                      color: "#8A6A1F",
+                      borderRadius: 14,
+                      padding: 14,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    No database-driven lender program currently matches the scenario entered. Showing fallback agency guidance below.
+                  </div>
 
-              {matchError && (
+                  {fallbackAgencySuggestions.map((item, index) => (
+                    <div
+                      key={`${item.program}-${index}`}
+                      style={{
+                        border: "1px solid #D9E1EC",
+                        borderRadius: 16,
+                        background: "#F8FAFC",
+                        padding: 16,
+                      }}
+                    >
+                      <div style={{ fontWeight: 800 }}>{item.program}</div>
+                      <div
+                        style={{
+                          marginTop: 6,
+                          color: "#0096C7",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {String(item.strength).toUpperCase()} fallback alignment
+                      </div>
+                      <ul
+                        style={{
+                          margin: "10px 0 0 18px",
+                          padding: 0,
+                          lineHeight: 1.7,
+                        }}
+                      >
+                        {item.notes.map((note, noteIndex) => (
+                          <li key={noteIndex}>{note}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
                 <div
                   style={{
-                    marginTop: 14,
                     background: "#FFF9EC",
                     border: "1px solid #E9D4A7",
                     color: "#8A6A1F",
@@ -1495,7 +1593,7 @@ export default function TeamPage() {
                     lineHeight: 1.6,
                   }}
                 >
-                  {matchError}
+                  No database-driven lender program currently matches the scenario entered. Add more lender programs and overlays in the admin area to expand the engine.
                 </div>
               )}
             </section>
@@ -1541,12 +1639,10 @@ export default function TeamPage() {
                   on who is using the system.
                 </li>
                 <li>
-                  On-screen program direction now checks live lender-program data
-                  from the Beyond Intelligence database.
+                  On-screen program direction now checks live lender-program data from the Beyond Intelligence database.
                 </li>
                 <li>
-                  When the review is complete, the summary is emailed to the
-                  professional who interacted with the system.
+                  When the review is complete, the summary is emailed to the professional who interacted with the system.
                 </li>
               </ul>
             </section>
