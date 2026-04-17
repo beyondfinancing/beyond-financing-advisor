@@ -1,97 +1,108 @@
 import { NextResponse } from "next/server";
-import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-function unauthorized(req: Request, isJson: boolean) {
-  if (isJson) {
-    return NextResponse.json(
-      { success: false, error: "Admin authorization required." },
-      { status: 401 }
-    );
-  }
-
-  return NextResponse.redirect(new URL("/admin/login", req.url), 303);
+function buildRedirectUrl(type: "success" | "error", message: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://beyondintelligence.io";
+  const url = new URL("/admin/lenders", baseUrl);
+  url.searchParams.set(type, message);
+  return url;
 }
 
-export async function GET(req: Request) {
-  const isJson = true;
-
-  if (!(await isAdminSignedIn())) {
-    return unauthorized(req, isJson);
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("lenders")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ success: true, lenders: data || [] });
+function getMultiValues(formData: FormData, fieldName: string): string[] {
+  return formData
+    .getAll(fieldName)
+    .map((item) => String(item).trim())
+    .filter(Boolean);
 }
 
 export async function POST(req: Request) {
-  const contentType = req.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-
-  if (!(await isAdminSignedIn())) {
-    return unauthorized(req, isJson);
-  }
-
-  let name = "";
-  let channel = "";
-  let statesRaw = "";
-
-  if (isJson) {
-    const body = await req.json();
-    name = String(body.name || "");
-    channel = String(body.channel || "");
-    statesRaw = String(body.states || "");
-  } else {
+  try {
     const formData = await req.formData();
-    name = String(formData.get("name") || "");
-    channel = String(formData.get("channel") || "");
-    statesRaw = String(formData.get("states") || "");
-  }
 
-  const states = statesRaw
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+    const action = String(formData.get("action") || "").trim();
+    const id = String(formData.get("id") || "").trim();
+    const name = String(formData.get("name") || "").trim();
+    const channels = getMultiValues(formData, "channels");
+    const states = getMultiValues(formData, "states");
 
-  const { error } = await supabaseAdmin.from("lenders").insert([
-    {
-      name,
-      channel,
-      states,
-    },
-  ]);
+    if (action === "create") {
+      if (!name || channels.length === 0 || states.length === 0) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", "Lender name, channels, and states are required.")
+        );
+      }
 
-  if (error) {
-    if (isJson) {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
+      const { error } = await supabaseAdmin.from("lenders").insert({
+        name,
+        channel: channels.join(", "),
+        states,
+      });
+
+      if (error) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", `Lender create failed: ${error.message}`)
+        );
+      }
+
+      return NextResponse.redirect(
+        buildRedirectUrl("success", "Lender created successfully.")
+      );
+    }
+
+    if (action === "update") {
+      if (!id || !name || channels.length === 0 || states.length === 0) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", "All lender update fields are required.")
+        );
+      }
+
+      const { error } = await supabaseAdmin
+        .from("lenders")
+        .update({
+          name,
+          channel: channels.join(", "),
+          states,
+        })
+        .eq("id", id);
+
+      if (error) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", `Lender update failed: ${error.message}`)
+        );
+      }
+
+      return NextResponse.redirect(
+        buildRedirectUrl("success", "Lender updated successfully.")
+      );
+    }
+
+    if (action === "delete") {
+      if (!id) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", "Lender id is required for delete.")
+        );
+      }
+
+      const { error } = await supabaseAdmin.from("lenders").delete().eq("id", id);
+
+      if (error) {
+        return NextResponse.redirect(
+          buildRedirectUrl("error", `Lender delete failed: ${error.message}`)
+        );
+      }
+
+      return NextResponse.redirect(
+        buildRedirectUrl("success", "Lender deleted successfully.")
       );
     }
 
     return NextResponse.redirect(
-      new URL(`/admin/lenders?error=${encodeURIComponent(error.message)}`, req.url),
-      303
+      buildRedirectUrl("error", "Invalid lender action.")
     );
-  }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unexpected server error.";
 
-  if (isJson) {
-    return NextResponse.json({ success: true });
+    return NextResponse.redirect(buildRedirectUrl("error", message));
   }
-
-  return NextResponse.redirect(
-    new URL("/admin/lenders?success=created", req.url),
-    303
-  );
 }
