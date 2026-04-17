@@ -12,58 +12,14 @@ type LenderRow = {
   created_at: string | null;
 };
 
+const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
+
 const US_STATES = [
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "ID",
-  "IL",
-  "IN",
-  "IA",
-  "KS",
-  "KY",
-  "LA",
-  "ME",
-  "MD",
-  "MA",
-  "MI",
-  "MN",
-  "MS",
-  "MO",
-  "MT",
-  "NE",
-  "NV",
-  "NH",
-  "NJ",
-  "NM",
-  "NY",
-  "NC",
-  "ND",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VT",
-  "VA",
-  "WA",
-  "WV",
-  "WI",
-  "WY",
-  "DC",
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
 ];
 
 function cardStyle(): CSSProperties {
@@ -90,6 +46,14 @@ function inputStyle(): CSSProperties {
   };
 }
 
+function multiSelectStyle(): CSSProperties {
+  return {
+    ...inputStyle(),
+    minHeight: 160,
+    padding: 12,
+  };
+}
+
 function buttonPrimaryStyle(): CSSProperties {
   return {
     width: "100%",
@@ -100,6 +64,32 @@ function buttonPrimaryStyle(): CSSProperties {
     padding: "14px 18px",
     fontWeight: 700,
     fontSize: 16,
+    cursor: "pointer",
+  };
+}
+
+function buttonSecondaryStyle(): CSSProperties {
+  return {
+    background: "#0096C7",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    fontSize: 14,
+    cursor: "pointer",
+  };
+}
+
+function buttonDangerStyle(): CSSProperties {
+  return {
+    background: "#B42318",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    fontSize: 14,
     cursor: "pointer",
   };
 }
@@ -119,7 +109,6 @@ function badgeStyle(): CSSProperties {
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
-
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
 
@@ -130,6 +119,14 @@ function formatDate(value: string | null): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function parseChannels(channel: string | null): string[] {
+  if (!channel) return [];
+  return channel
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 export default async function AdminLendersPage({
@@ -143,14 +140,13 @@ export default async function AdminLendersPage({
 
   const params = await searchParams;
 
-  const { data: lenders } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("lenders")
     .select("*")
     .order("created_at", { ascending: false });
 
-  const lenderRows: LenderRow[] = Array.isArray(lenders)
-    ? (lenders as LenderRow[])
-    : [];
+  const lenders: LenderRow[] =
+    error || !Array.isArray(data) ? [] : (data as LenderRow[]);
 
   return (
     <main
@@ -161,7 +157,7 @@ export default async function AdminLendersPage({
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1380, margin: "0 auto", padding: 24 }}>
         <div
           style={{
             display: "flex",
@@ -172,7 +168,7 @@ export default async function AdminLendersPage({
             marginBottom: 22,
           }}
         >
-          <div style={{ maxWidth: 860 }}>
+          <div style={{ maxWidth: 960 }}>
             <div
               style={{
                 display: "inline-block",
@@ -207,9 +203,9 @@ export default async function AdminLendersPage({
                 maxWidth: 980,
               }}
             >
-              Create and organize lender records, available channels, and state
-              coverage. Use one lender record per lender, and list all channels
-              that apply to that lender inside the same record.
+              Create, edit, and delete lender records, available channels, and
+              state coverage. Use one lender record per institution and keep all
+              active channels inside the same record.
             </p>
           </div>
 
@@ -259,10 +255,26 @@ export default async function AdminLendersPage({
           </div>
         )}
 
+        {error && (
+          <div
+            style={{
+              marginBottom: 18,
+              background: "#FFF4F2",
+              color: "#8A3B2F",
+              border: "1px solid #F3C5BC",
+              borderRadius: 14,
+              padding: 16,
+              lineHeight: 1.6,
+            }}
+          >
+            Database read error: {error.message}
+          </div>
+        )}
+
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(360px, 400px) minmax(0, 1fr)",
+            gridTemplateColumns: "minmax(360px, 430px) minmax(0, 1fr)",
             gap: 20,
             alignItems: "start",
           }}
@@ -279,11 +291,13 @@ export default async function AdminLendersPage({
               }}
             >
               Keep one lender record per institution. If that lender is
-              available in more than one channel, enter all applicable channels
+              available in more than one channel, select all applicable channels
               in the same record.
             </p>
 
             <form action="/api/admin/lenders" method="POST">
+              <input type="hidden" name="action" value="create" />
+
               <div style={{ display: "grid", gap: 14 }}>
                 <div>
                   <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
@@ -303,29 +317,19 @@ export default async function AdminLendersPage({
                     Channels
                   </label>
                   <select
-                    name="channel"
+                    name="channels"
                     multiple
-                    size={3}
                     required
-                    style={{
-                      ...inputStyle(),
-                      minHeight: 118,
-                    }}
+                    style={multiSelectStyle()}
                   >
-                    <option value="Retail">Retail</option>
-                    <option value="Wholesale">Wholesale</option>
-                    <option value="Correspondent">Correspondent</option>
+                    {CHANNEL_OPTIONS.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
                   </select>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 13,
-                      color: "#6A7890",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Hold Ctrl on Windows or Command on Mac to select more than
-                    one.
+                  <div style={{ marginTop: 8, color: "#6A7890", fontSize: 13, lineHeight: 1.6 }}>
+                    Hold Ctrl on Windows or Command on Mac to select more than one.
                   </div>
                 </div>
 
@@ -333,13 +337,21 @@ export default async function AdminLendersPage({
                   <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
                     States
                   </label>
-                  <input
-                    type="text"
+                  <select
                     name="states"
+                    multiple
                     required
-                    style={inputStyle()}
-                    placeholder={`Example: ${US_STATES.slice(0, 6).join(", ")}`}
-                  />
+                    style={multiSelectStyle()}
+                  >
+                    {US_STATES.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ marginTop: 8, color: "#6A7890", fontSize: 13, lineHeight: 1.6 }}>
+                    Multi-select the states where this lender/channel relationship is active.
+                  </div>
                 </div>
 
                 <button type="submit" style={buttonPrimaryStyle()}>
@@ -352,17 +364,11 @@ export default async function AdminLendersPage({
           <section style={cardStyle()}>
             <h2 style={{ marginTop: 0, fontSize: 18 }}>Current Lenders</h2>
 
-            <div
-              style={{
-                color: "#5A6A84",
-                marginBottom: 18,
-                fontSize: 14,
-              }}
-            >
-              Total lenders: {lenderRows.length}
+            <div style={{ color: "#5A6A84", marginBottom: 18, fontSize: 14 }}>
+              Total lenders: {lenders.length}
             </div>
 
-            {lenderRows.length === 0 ? (
+            {lenders.length === 0 ? (
               <div
                 style={{
                   background: "#F8FAFC",
@@ -376,19 +382,17 @@ export default async function AdminLendersPage({
                 No lenders have been added yet.
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                {lenderRows.map((lender) => {
-                  const channels = (lender.channel || "")
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean);
+              <div style={{ display: "grid", gap: 16 }}>
+                {lenders.map((lender) => {
+                  const lenderChannels = parseChannels(lender.channel);
+                  const lenderStates = Array.isArray(lender.states) ? lender.states : [];
 
                   return (
                     <div
                       key={lender.id}
                       style={{
                         border: "1px solid #D9E1EC",
-                        borderRadius: 16,
+                        borderRadius: 18,
                         padding: 18,
                         background: "#F8FAFC",
                       }}
@@ -397,12 +401,12 @@ export default async function AdminLendersPage({
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
-                          gap: 12,
+                          gap: 14,
                           flexWrap: "wrap",
                           alignItems: "flex-start",
                         }}
                       >
-                        <div style={{ minWidth: 0, flex: "1 1 360px" }}>
+                        <div style={{ flex: "1 1 360px", minWidth: 0 }}>
                           <div
                             style={{
                               fontSize: 18,
@@ -413,43 +417,109 @@ export default async function AdminLendersPage({
                             {lender.name || "Unnamed lender"}
                           </div>
 
-                          <div
-                            style={{
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: 8,
-                              marginBottom: 14,
-                            }}
-                          >
-                            {channels.length > 0 ? (
-                              channels.map((channel) => (
-                                <span key={channel} style={badgeStyle()}>
-                                  {channel}
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+                            {lenderChannels.length === 0 ? (
+                              <span style={badgeStyle()}>No channels</span>
+                            ) : (
+                              lenderChannels.map((item) => (
+                                <span key={item} style={badgeStyle()}>
+                                  {item}
                                 </span>
                               ))
-                            ) : (
-                              <span style={badgeStyle()}>No channel listed</span>
                             )}
                           </div>
 
-                          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                            States:
-                          </div>
-                          <div style={{ color: "#4B5C78", lineHeight: 1.7 }}>
-                            {Array.isArray(lender.states) && lender.states.length > 0
-                              ? lender.states.join(", ")
-                              : "—"}
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                              gap: 12,
+                              color: "#4B5C78",
+                              lineHeight: 1.7,
+                            }}
+                          >
+                            <div>
+                              <strong style={{ color: "#263366" }}>States:</strong>
+                              <br />
+                              {lenderStates.length ? lenderStates.join(", ") : "—"}
+                            </div>
+                            <div>
+                              <strong style={{ color: "#263366" }}>Created:</strong>
+                              <br />
+                              {formatDate(lender.created_at)}
+                            </div>
                           </div>
                         </div>
+                      </div>
 
-                        <div style={{ minWidth: 180 }}>
-                          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                            Created:
+                      <div
+                        style={{
+                          marginTop: 18,
+                          paddingTop: 18,
+                          borderTop: "1px solid #D9E1EC",
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          gap: 14,
+                          alignItems: "end",
+                        }}
+                      >
+                        <form action="/api/admin/lenders" method="POST">
+                          <input type="hidden" name="action" value="update" />
+                          <input type="hidden" name="id" value={lender.id} />
+
+                          <div style={{ display: "grid", gap: 12 }}>
+                            <input
+                              type="text"
+                              name="name"
+                              defaultValue={lender.name || ""}
+                              style={inputStyle()}
+                              placeholder="Lender Name"
+                              required
+                            />
+
+                            <select
+                              name="channels"
+                              multiple
+                              defaultValue={lenderChannels}
+                              style={multiSelectStyle()}
+                              required
+                            >
+                              {CHANNEL_OPTIONS.map((item) => (
+                                <option key={item} value={item}>
+                                  {item}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              name="states"
+                              multiple
+                              defaultValue={lenderStates}
+                              style={multiSelectStyle()}
+                              required
+                            >
+                              {US_STATES.map((item) => (
+                                <option key={item} value={item}>
+                                  {item}
+                                </option>
+                              ))}
+                            </select>
                           </div>
-                          <div style={{ color: "#4B5C78", lineHeight: 1.7 }}>
-                            {formatDate(lender.created_at)}
+
+                          <div style={{ marginTop: 12 }}>
+                            <button type="submit" style={buttonSecondaryStyle()}>
+                              Save Changes
+                            </button>
                           </div>
-                        </div>
+                        </form>
+
+                        <form action="/api/admin/lenders" method="POST">
+                          <input type="hidden" name="action" value="delete" />
+                          <input type="hidden" name="id" value={lender.id} />
+                          <button type="submit" style={buttonDangerStyle()}>
+                            Delete
+                          </button>
+                        </form>
                       </div>
                     </div>
                   );
