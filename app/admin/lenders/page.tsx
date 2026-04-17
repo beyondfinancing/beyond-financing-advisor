@@ -12,14 +12,12 @@ type LenderRow = {
   created_at: string | null;
 };
 
-const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
-
 const US_STATES = [
-  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+  "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+  "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+  "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
 ];
 
 function cardStyle(): CSSProperties {
@@ -46,107 +44,67 @@ function inputStyle(): CSSProperties {
   };
 }
 
-function multiSelectStyle(): CSSProperties {
+function primaryButtonStyle(): CSSProperties {
   return {
-    ...inputStyle(),
-    minHeight: 160,
-    padding: 12,
-  };
-}
-
-function buttonPrimaryStyle(): CSSProperties {
-  return {
-    width: "100%",
     background: "#263366",
     color: "#FFFFFF",
     border: "none",
     borderRadius: 12,
     padding: "14px 18px",
     fontWeight: 700,
-    fontSize: 16,
     cursor: "pointer",
   };
 }
 
-function buttonSecondaryStyle(): CSSProperties {
+function pillStyle(): CSSProperties {
   return {
-    background: "#0096C7",
-    color: "#FFFFFF",
-    border: "none",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: "pointer",
-  };
-}
-
-function buttonDangerStyle(): CSSProperties {
-  return {
-    background: "#B42318",
-    color: "#FFFFFF",
-    border: "none",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: "pointer",
-  };
-}
-
-function badgeStyle(): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
+    display: "inline-block",
     padding: "6px 10px",
     borderRadius: 999,
-    background: "#E8EEF8",
+    background: "#EEF4FF",
     color: "#263366",
     fontSize: 12,
     fontWeight: 700,
+    marginRight: 8,
+    marginBottom: 8,
   };
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleString("en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function parseChannels(channel: string | null): string[] {
-  if (!channel) return [];
-  return channel
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-export default async function AdminLendersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ success?: string; error?: string }>;
-}) {
+export default async function AdminLendersPage() {
   if (!(await isAdminSignedIn())) {
     redirect("/admin/login");
   }
 
-  const params = await searchParams;
+  async function createLender(formData: FormData) {
+    "use server";
 
-  const { data, error } = await supabaseAdmin
+    const name = String(formData.get("name") || "").trim();
+    const channels = formData.getAll("channels").map(String);
+    const states = formData.getAll("states").map(String);
+
+    if (!name || channels.length === 0 || states.length === 0) {
+      redirect("/admin/lenders?error=Please complete lender name, channels, and states.");
+    }
+
+    const { error } = await supabaseAdmin.from("lenders").insert({
+      name,
+      channel: channels.join(", "),
+      states,
+    });
+
+    if (error) {
+      redirect(`/admin/lenders?error=${encodeURIComponent(error.message)}`);
+    }
+
+    redirect("/admin/lenders?success=Lender created successfully.");
+  }
+
+  const { data: lenders } = await supabaseAdmin
     .from("lenders")
     .select("*")
     .order("created_at", { ascending: false });
 
-  const lenders: LenderRow[] =
-    error || !Array.isArray(data) ? [] : (data as LenderRow[]);
+  const lenderList: LenderRow[] = lenders || [];
 
   return (
     <main
@@ -157,18 +115,17 @@ export default async function AdminLendersPage({
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1380, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
             gap: 16,
             flexWrap: "wrap",
-            marginBottom: 22,
+            marginBottom: 18,
           }}
         >
-          <div style={{ maxWidth: 960 }}>
+          <div>
             <div
               style={{
                 display: "inline-block",
@@ -186,9 +143,9 @@ export default async function AdminLendersPage({
 
             <h1
               style={{
-                margin: "0 0 10px",
-                fontSize: "clamp(40px, 7vw, 58px)",
-                lineHeight: 1.05,
+                margin: "0 0 12px",
+                fontSize: "clamp(34px, 6vw, 58px)",
+                lineHeight: 1.08,
               }}
             >
               Manage Lenders
@@ -198,18 +155,17 @@ export default async function AdminLendersPage({
               style={{
                 margin: 0,
                 color: "#5A6A84",
-                lineHeight: 1.7,
-                fontSize: 16,
-                maxWidth: 980,
+                fontSize: 18,
+                lineHeight: 1.6,
+                maxWidth: 920,
               }}
             >
-              Create, edit, and delete lender records, available channels, and
-              state coverage. Use one lender record per institution and keep all
-              active channels inside the same record.
+              Create lenders here. Click any lender to open its dedicated detail
+              page for editing, deletion, file tracking, and future overlay logic.
             </p>
           </div>
 
-          <div style={{ paddingTop: 10 }}>
+          <div style={{ alignSelf: "flex-start" }}>
             <Link
               href="/admin"
               style={{
@@ -223,305 +179,134 @@ export default async function AdminLendersPage({
           </div>
         </div>
 
-        {params.success && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#EEF8EA",
-              color: "#2F6B2F",
-              border: "1px solid #B9D7AF",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.success}
-          </div>
-        )}
-
-        {params.error && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              color: "#8A3B2F",
-              border: "1px solid #F3C5BC",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.error}
-          </div>
-        )}
-
-        {error && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              color: "#8A3B2F",
-              border: "1px solid #F3C5BC",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            Database read error: {error.message}
-          </div>
-        )}
-
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(360px, 430px) minmax(0, 1fr)",
+            gridTemplateColumns: "380px 1fr",
             gap: 20,
             alignItems: "start",
           }}
         >
           <section style={cardStyle()}>
             <h2 style={{ marginTop: 0, fontSize: 18 }}>Create Lender</h2>
-
-            <p
-              style={{
-                marginTop: 0,
-                color: "#5A6A84",
-                lineHeight: 1.7,
-                fontSize: 14,
-              }}
-            >
-              Keep one lender record per institution. If that lender is
-              available in more than one channel, select all applicable channels
-              in the same record.
+            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
+              Use one lender record per institution. Add all active channels under
+              that one lender.
             </p>
 
-            <form action="/api/admin/lenders" method="POST">
-              <input type="hidden" name="action" value="create" />
-
-              <div style={{ display: "grid", gap: 14 }}>
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Lender Name
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    required
-                    style={inputStyle()}
-                    placeholder="Example: UWM"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Channels
-                  </label>
-                  <select
-                    name="channels"
-                    multiple
-                    required
-                    style={multiSelectStyle()}
-                  >
-                    {CHANNEL_OPTIONS.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                  <div style={{ marginTop: 8, color: "#6A7890", fontSize: 13, lineHeight: 1.6 }}>
-                    Hold Ctrl on Windows or Command on Mac to select more than one.
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    States
-                  </label>
-                  <select
-                    name="states"
-                    multiple
-                    required
-                    style={multiSelectStyle()}
-                  >
-                    {US_STATES.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                  <div style={{ marginTop: 8, color: "#6A7890", fontSize: 13, lineHeight: 1.6 }}>
-                    Multi-select the states where this lender/channel relationship is active.
-                  </div>
-                </div>
-
-                <button type="submit" style={buttonPrimaryStyle()}>
-                  Create Lender
-                </button>
+            <form action={createLender} style={{ display: "grid", gap: 14 }}>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Lender Name</div>
+                <input name="name" style={inputStyle()} placeholder="Example: UWM" />
               </div>
+
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Channels</div>
+                <select name="channels" multiple size={3} style={{ ...inputStyle(), height: 118 }}>
+                  <option value="Retail">Retail</option>
+                  <option value="Wholesale">Wholesale</option>
+                  <option value="Correspondent">Correspondent</option>
+                </select>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>States</div>
+                <select name="states" multiple size={10} style={{ ...inputStyle(), height: 230 }}>
+                  {US_STATES.map((state) => (
+                    <option key={state} value={state}>
+                      {state}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button type="submit" style={primaryButtonStyle()}>
+                Create Lender
+              </button>
             </form>
           </section>
 
           <section style={cardStyle()}>
             <h2 style={{ marginTop: 0, fontSize: 18 }}>Current Lenders</h2>
-
-            <div style={{ color: "#5A6A84", marginBottom: 18, fontSize: 14 }}>
-              Total lenders: {lenders.length}
+            <div style={{ color: "#5A6A84", marginBottom: 16 }}>
+              Total lenders: {lenderList.length}
             </div>
 
-            {lenders.length === 0 ? (
+            {lenderList.length === 0 ? (
               <div
                 style={{
-                  background: "#F8FAFC",
                   border: "1px solid #D9E1EC",
+                  background: "#F8FAFC",
+                  color: "#6A7890",
                   borderRadius: 16,
                   padding: 18,
-                  color: "#5A6A84",
-                  lineHeight: 1.7,
                 }}
               >
-                No lenders have been added yet.
+                No lenders found yet.
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                {lenders.map((lender) => {
-                  const lenderChannels = parseChannels(lender.channel);
-                  const lenderStates = Array.isArray(lender.states) ? lender.states : [];
+              <div style={{ display: "grid", gap: 14 }}>
+                {lenderList.map((lender) => {
+                  const channels = (lender.channel || "")
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean);
 
                   return (
-                    <div
+                    <Link
                       key={lender.id}
+                      href={`/admin/lenders/${lender.id}`}
                       style={{
-                        border: "1px solid #D9E1EC",
-                        borderRadius: 18,
+                        ...cardStyle(),
+                        textDecoration: "none",
+                        color: "#263366",
                         padding: 18,
-                        background: "#F8FAFC",
                       }}
                     >
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
-                          gap: 14,
+                          gap: 12,
                           flexWrap: "wrap",
-                          alignItems: "flex-start",
                         }}
                       >
-                        <div style={{ flex: "1 1 360px", minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontSize: 18,
-                              fontWeight: 800,
-                              marginBottom: 10,
-                            }}
-                          >
-                            {lender.name || "Unnamed lender"}
+                        <div style={{ flex: 1, minWidth: 280 }}>
+                          <div style={{ fontSize: 18, fontWeight: 800 }}>
+                            {lender.name || "Unnamed Lender"}
                           </div>
 
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-                            {lenderChannels.length === 0 ? (
-                              <span style={badgeStyle()}>No channels</span>
-                            ) : (
-                              lenderChannels.map((item) => (
-                                <span key={item} style={badgeStyle()}>
-                                  {item}
-                                </span>
-                              ))
-                            )}
+                          <div style={{ marginTop: 10 }}>
+                            {channels.map((channel) => (
+                              <span key={channel} style={pillStyle()}>
+                                {channel}
+                              </span>
+                            ))}
                           </div>
 
+                          <div style={{ marginTop: 10, color: "#5A6A84" }}>
+                            States: {(lender.states || []).join(", ") || "-"}
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ color: "#5A6A84" }}>
+                            {lender.created_at
+                              ? new Date(lender.created_at).toLocaleString()
+                              : "-"}
+                          </div>
                           <div
                             style={{
-                              display: "grid",
-                              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                              gap: 12,
-                              color: "#4B5C78",
-                              lineHeight: 1.7,
+                              marginTop: 10,
+                              fontWeight: 700,
+                              color: "#0096C7",
                             }}
                           >
-                            <div>
-                              <strong style={{ color: "#263366" }}>States:</strong>
-                              <br />
-                              {lenderStates.length ? lenderStates.join(", ") : "—"}
-                            </div>
-                            <div>
-                              <strong style={{ color: "#263366" }}>Created:</strong>
-                              <br />
-                              {formatDate(lender.created_at)}
-                            </div>
+                            Open Lender →
                           </div>
                         </div>
                       </div>
-
-                      <div
-                        style={{
-                          marginTop: 18,
-                          paddingTop: 18,
-                          borderTop: "1px solid #D9E1EC",
-                          display: "grid",
-                          gridTemplateColumns: "1fr auto",
-                          gap: 14,
-                          alignItems: "end",
-                        }}
-                      >
-                        <form action="/api/admin/lenders" method="POST">
-                          <input type="hidden" name="action" value="update" />
-                          <input type="hidden" name="id" value={lender.id} />
-
-                          <div style={{ display: "grid", gap: 12 }}>
-                            <input
-                              type="text"
-                              name="name"
-                              defaultValue={lender.name || ""}
-                              style={inputStyle()}
-                              placeholder="Lender Name"
-                              required
-                            />
-
-                            <select
-                              name="channels"
-                              multiple
-                              defaultValue={lenderChannels}
-                              style={multiSelectStyle()}
-                              required
-                            >
-                              {CHANNEL_OPTIONS.map((item) => (
-                                <option key={item} value={item}>
-                                  {item}
-                                </option>
-                              ))}
-                            </select>
-
-                            <select
-                              name="states"
-                              multiple
-                              defaultValue={lenderStates}
-                              style={multiSelectStyle()}
-                              required
-                            >
-                              {US_STATES.map((item) => (
-                                <option key={item} value={item}>
-                                  {item}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div style={{ marginTop: 12 }}>
-                            <button type="submit" style={buttonSecondaryStyle()}>
-                              Save Changes
-                            </button>
-                          </div>
-                        </form>
-
-                        <form action="/api/admin/lenders" method="POST">
-                          <input type="hidden" name="action" value="delete" />
-                          <input type="hidden" name="id" value={lender.id} />
-                          <button type="submit" style={buttonDangerStyle()}>
-                            Delete
-                          </button>
-                        </form>
-                      </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>
