@@ -8,8 +8,8 @@ type UserRow = {
   id: string;
   name: string | null;
   email: string | null;
-  role: string | null;
   nmls: string | null;
+  role: string | null;
   created_at: string | null;
 };
 
@@ -37,91 +37,67 @@ function inputStyle(): CSSProperties {
   };
 }
 
-function buttonPrimaryStyle(): CSSProperties {
+function primaryButtonStyle(): CSSProperties {
   return {
-    width: "100%",
     background: "#263366",
     color: "#FFFFFF",
     border: "none",
     borderRadius: 12,
     padding: "14px 18px",
     fontWeight: 700,
-    fontSize: 16,
     cursor: "pointer",
   };
 }
 
-function buttonSecondaryStyle(): CSSProperties {
+function pillStyle(): CSSProperties {
   return {
-    background: "#0096C7",
-    color: "#FFFFFF",
-    border: "none",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: "pointer",
-  };
-}
-
-function buttonDangerStyle(): CSSProperties {
-  return {
-    background: "#B42318",
-    color: "#FFFFFF",
-    border: "none",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: "pointer",
-  };
-}
-
-function badgeStyle(): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
+    display: "inline-block",
     padding: "6px 10px",
     borderRadius: 999,
-    background: "#E8EEF8",
+    background: "#EEF4FF",
     color: "#263366",
     fontSize: 12,
     fontWeight: 700,
   };
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleString("en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-export default async function AdminUsersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ success?: string; error?: string }>;
-}) {
+export default async function AdminUsersPage() {
   if (!(await isAdminSignedIn())) {
     redirect("/admin/login");
   }
 
-  const params = await searchParams;
+  async function createUser(formData: FormData) {
+    "use server";
 
-  const { data, error } = await supabaseAdmin
+    const name = String(formData.get("name") || "").trim();
+    const email = String(formData.get("email") || "").trim().toLowerCase();
+    const nmls = String(formData.get("nmls") || "").trim();
+    const role = String(formData.get("role") || "").trim();
+
+    if (!name || !email || !nmls || !role) {
+      redirect("/admin/users?error=Please complete all user fields.");
+    }
+
+    const { error } = await supabaseAdmin.from("users").insert({
+      name,
+      email,
+      nmls,
+      role,
+    });
+
+    if (error) {
+      redirect(`/admin/users?error=${encodeURIComponent(error.message)}`);
+    }
+
+    redirect("/admin/users?success=User created successfully.");
+  }
+
+  const { data: users, error } = await supabaseAdmin
     .from("users")
     .select("*")
     .order("created_at", { ascending: false });
 
-  const users: UserRow[] = error || !Array.isArray(data) ? [] : (data as UserRow[]);
+  const userList: UserRow[] = users || [];
 
   return (
     <main
@@ -132,18 +108,17 @@ export default async function AdminUsersPage({
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1380, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
             gap: 16,
             flexWrap: "wrap",
-            marginBottom: 22,
+            marginBottom: 18,
           }}
         >
-          <div style={{ maxWidth: 920 }}>
+          <div>
             <div
               style={{
                 display: "inline-block",
@@ -161,9 +136,9 @@ export default async function AdminUsersPage({
 
             <h1
               style={{
-                margin: "0 0 10px",
-                fontSize: "clamp(40px, 7vw, 58px)",
-                lineHeight: 1.05,
+                margin: "0 0 12px",
+                fontSize: "clamp(34px, 6vw, 58px)",
+                lineHeight: 1.08,
               }}
             >
               Manage Users
@@ -173,17 +148,17 @@ export default async function AdminUsersPage({
               style={{
                 margin: 0,
                 color: "#5A6A84",
-                lineHeight: 1.7,
-                fontSize: 16,
-                maxWidth: 980,
+                fontSize: 18,
+                lineHeight: 1.6,
+                maxWidth: 900,
               }}
             >
-              Create, edit, and delete professional access under admin control.
-              This page is restricted to the Beyond Intelligence administrator.
+              Create professional users here. Click any existing user to open that
+              user’s dedicated detail page for editing or deletion.
             </p>
           </div>
 
-          <div style={{ paddingTop: 10 }}>
+          <div style={{ alignSelf: "flex-start" }}>
             <Link
               href="/admin"
               style={{
@@ -197,318 +172,143 @@ export default async function AdminUsersPage({
           </div>
         </div>
 
-        {params.success && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#EEF8EA",
-              color: "#2F6B2F",
-              border: "1px solid #B9D7AF",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.success}
-          </div>
-        )}
-
-        {params.error && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              color: "#8A3B2F",
-              border: "1px solid #F3C5BC",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.error}
-          </div>
-        )}
-
-        {error && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              color: "#8A3B2F",
-              border: "1px solid #F3C5BC",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            Database read error: {error.message}
-          </div>
-        )}
-
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(360px, 420px) minmax(0, 1fr)",
+            gridTemplateColumns: "380px 1fr",
             gap: 20,
             alignItems: "start",
           }}
         >
           <section style={cardStyle()}>
             <h2 style={{ marginTop: 0, fontSize: 18 }}>Create User</h2>
-
-            <p
-              style={{
-                marginTop: 0,
-                color: "#5A6A84",
-                lineHeight: 1.7,
-                fontSize: 14,
-              }}
-            >
-              Create loan officers, loan officer assistants, processors, real
-              estate agents, and future admin users from the admin workspace
-              only.
+            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
+              Add new loan officers, assistants, processors, agents, and future
+              admin users from here.
             </p>
 
-            <form action="/api/admin/users" method="POST">
-              <input type="hidden" name="action" value="create" />
-
-              <div style={{ display: "grid", gap: 14 }}>
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Full Name
-                  </label>
-                  <input type="text" name="name" required style={inputStyle()} />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Email
-                  </label>
-                  <input type="email" name="email" required style={inputStyle()} />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    NMLS / Login ID
-                  </label>
-                  <input
-                    type="text"
-                    name="nmls"
-                    required
-                    style={inputStyle()}
-                    placeholder="Example: 1625542 or 2394496BM"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Role
-                  </label>
-                  <select name="role" required style={inputStyle()}>
-                    <option value="Loan Officer">Loan Officer</option>
-                    <option value="Loan Officer Assistant">Loan Officer Assistant</option>
-                    <option value="Processor">Processor</option>
-                    <option value="Real Estate Agent">Real Estate Agent</option>
-                    <option value="Admin">Admin</option>
-                  </select>
-                </div>
-
-                <button type="submit" style={buttonPrimaryStyle()}>
-                  Create User
-                </button>
+            <form action={createUser} style={{ display: "grid", gap: 14 }}>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Full Name</div>
+                <input name="name" style={inputStyle()} />
               </div>
+
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Email</div>
+                <input name="email" type="email" style={inputStyle()} />
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                  NMLS / Login ID
+                </div>
+                <input
+                  name="nmls"
+                  style={inputStyle()}
+                  placeholder="Example: 1625542 or 2394496BM"
+                />
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Role</div>
+                <select name="role" style={inputStyle()}>
+                  <option>Loan Officer</option>
+                  <option>Loan Officer Assistant</option>
+                  <option>Processor</option>
+                  <option>Real Estate Agent</option>
+                  <option>Admin</option>
+                </select>
+              </div>
+
+              <button type="submit" style={primaryButtonStyle()}>
+                Create User
+              </button>
             </form>
           </section>
 
           <section style={cardStyle()}>
             <h2 style={{ marginTop: 0, fontSize: 18 }}>Current Users</h2>
-
-            <div
-              style={{
-                color: "#5A6A84",
-                marginBottom: 18,
-                fontSize: 14,
-              }}
-            >
-              Total users: {users.length}
+            <div style={{ color: "#5A6A84", marginBottom: 16 }}>
+              Total users: {userList.length}
             </div>
 
-            {users.length === 0 ? (
+            {error ? (
               <div
                 style={{
-                  background: "#F8FAFC",
-                  border: "1px solid #D9E1EC",
-                  borderRadius: 16,
-                  padding: 18,
-                  color: "#5A6A84",
-                  lineHeight: 1.7,
+                  border: "1px solid #F3C5BC",
+                  background: "#FFF4F2",
+                  color: "#8A3B2F",
+                  borderRadius: 14,
+                  padding: 16,
                 }}
               >
-                No users have been added yet.
+                {error.message}
+              </div>
+            ) : userList.length === 0 ? (
+              <div
+                style={{
+                  border: "1px solid #D9E1EC",
+                  background: "#F8FAFC",
+                  color: "#6A7890",
+                  borderRadius: 16,
+                  padding: 18,
+                }}
+              >
+                No users found yet.
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                {users.map((user) => (
-                  <div
+              <div style={{ display: "grid", gap: 14 }}>
+                {userList.map((user) => (
+                  <Link
                     key={user.id}
+                    href={`/admin/users/${user.id}`}
                     style={{
-                      border: "1px solid #D9E1EC",
-                      borderRadius: 18,
+                      ...cardStyle(),
+                      textDecoration: "none",
+                      color: "#263366",
                       padding: 18,
-                      background: "#F8FAFC",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
-                        gap: 14,
+                        gap: 12,
                         flexWrap: "wrap",
-                        alignItems: "flex-start",
+                        alignItems: "center",
                       }}
                     >
-                      <div style={{ flex: "1 1 360px", minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: 18,
-                            fontWeight: 800,
-                            marginBottom: 8,
-                          }}
-                        >
-                          {user.name || "Unnamed user"}
+                      <div>
+                        <div style={{ fontSize: 18, fontWeight: 800 }}>
+                          {user.name || "Unnamed User"}
                         </div>
-
-                        <div
-                          style={{
-                            color: "#4B5C78",
-                            lineHeight: 1.7,
-                            marginBottom: 10,
-                          }}
-                        >
-                          {user.email || "—"}
+                        <div style={{ marginTop: 8, color: "#5A6A84" }}>
+                          {user.email || "No email"}
                         </div>
-
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                            gap: 12,
-                            color: "#4B5C78",
-                            lineHeight: 1.7,
-                          }}
-                        >
-                          <div>
-                            <strong style={{ color: "#263366" }}>NMLS / Login ID:</strong>
-                            <br />
-                            {user.nmls || "—"}
-                          </div>
-                          <div>
-                            <strong style={{ color: "#263366" }}>Created:</strong>
-                            <br />
-                            {formatDate(user.created_at)}
-                          </div>
+                        <div style={{ marginTop: 8, color: "#5A6A84" }}>
+                          NMLS / Login ID: {user.nmls || "-"}
                         </div>
                       </div>
 
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 10,
-                          alignItems: "flex-end",
-                          minWidth: 180,
-                        }}
-                      >
-                        <span style={badgeStyle()}>{user.role || "No role"}</span>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 18,
-                        paddingTop: 18,
-                        borderTop: "1px solid #D9E1EC",
-                        display: "grid",
-                        gridTemplateColumns: "1fr auto",
-                        gap: 14,
-                        alignItems: "end",
-                      }}
-                    >
-                      <form action="/api/admin/users" method="POST">
-                        <input type="hidden" name="action" value="update" />
-                        <input type="hidden" name="id" value={user.id} />
-
+                      <div style={{ textAlign: "right" }}>
+                        <div style={pillStyle()}>{user.role || "Unknown"}</div>
+                        <div style={{ marginTop: 10, color: "#5A6A84" }}>
+                          {user.created_at
+                            ? new Date(user.created_at).toLocaleString()
+                            : "-"}
+                        </div>
                         <div
                           style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                            gap: 12,
+                            marginTop: 10,
+                            fontWeight: 700,
+                            color: "#0096C7",
                           }}
                         >
-                          <input
-                            type="text"
-                            name="name"
-                            defaultValue={user.name || ""}
-                            style={inputStyle()}
-                            placeholder="Full Name"
-                            required
-                          />
-                          <input
-                            type="email"
-                            name="email"
-                            defaultValue={user.email || ""}
-                            style={inputStyle()}
-                            placeholder="Email"
-                            required
-                          />
-                          <input
-                            type="text"
-                            name="nmls"
-                            defaultValue={user.nmls || ""}
-                            style={inputStyle()}
-                            placeholder="NMLS / Login ID"
-                            required
-                          />
-                          <select
-                            name="role"
-                            defaultValue={user.role || "Loan Officer"}
-                            style={inputStyle()}
-                            required
-                          >
-                            <option value="Loan Officer">Loan Officer</option>
-                            <option value="Loan Officer Assistant">
-                              Loan Officer Assistant
-                            </option>
-                            <option value="Processor">Processor</option>
-                            <option value="Real Estate Agent">Real Estate Agent</option>
-                            <option value="Admin">Admin</option>
-                          </select>
+                          Open User →
                         </div>
-
-                        <div style={{ marginTop: 12 }}>
-                          <button type="submit" style={buttonSecondaryStyle()}>
-                            Save Changes
-                          </button>
-                        </div>
-                      </form>
-
-                      <form
-                        action="/api/admin/users"
-                        method="POST"
-                        onSubmit={undefined}
-                      >
-                        <input type="hidden" name="action" value="delete" />
-                        <input type="hidden" name="id" value={user.id} />
-                        <button
-                          type="submit"
-                          style={buttonDangerStyle()}
-                          formAction="/api/admin/users"
-                        >
-                          Delete
-                        </button>
-                      </form>
+                      </div>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
