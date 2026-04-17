@@ -8,9 +8,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#263366",
   },
   wrap: {
-    maxWidth: 1220,
+    maxWidth: 1240,
     margin: "0 auto",
-    padding: "40px 24px 56px",
+    padding: "28px 20px 48px",
   },
   badge: {
     display: "inline-block",
@@ -18,18 +18,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#263366",
     borderRadius: 999,
     padding: "10px 16px",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 700,
     letterSpacing: 0.3,
-    marginBottom: 24,
+    marginBottom: 18,
   },
   heroTitle: {
     margin: 0,
-    fontSize: 78,
+    fontSize: "clamp(44px, 7vw, 86px)",
     lineHeight: 0.95,
     fontWeight: 800,
-    letterSpacing: -2.2,
-    maxWidth: 1080,
+    letterSpacing: -2,
+    maxWidth: 1120,
   },
   heroTitleBlue: {
     color: "#0096C7",
@@ -37,24 +37,24 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 10,
   },
   intro: {
-    marginTop: 28,
-    fontSize: 24,
+    marginTop: 24,
+    fontSize: "clamp(18px, 2vw, 24px)",
     lineHeight: 1.45,
-    maxWidth: 1180,
+    maxWidth: 1140,
     color: "#314b78",
   },
   buttonRow: {
     display: "flex",
-    gap: 18,
+    gap: 16,
     flexWrap: "wrap",
-    marginTop: 28,
+    marginTop: 24,
   },
   primaryButton: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     minWidth: 210,
-    padding: "18px 24px",
+    padding: "17px 24px",
     borderRadius: 18,
     backgroundColor: "#263366",
     color: "#ffffff",
@@ -68,7 +68,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     minWidth: 240,
-    padding: "18px 24px",
+    padding: "17px 24px",
     borderRadius: 18,
     backgroundColor: "#0096C7",
     color: "#ffffff",
@@ -78,8 +78,8 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 8px 18px rgba(0,150,199,0.18)",
   },
   disclaimer: {
-    marginTop: 24,
-    maxWidth: 1180,
+    marginTop: 20,
+    maxWidth: 1160,
     fontSize: 15,
     lineHeight: 1.65,
     color: "#5b7097",
@@ -87,16 +87,16 @@ const styles: Record<string, React.CSSProperties> = {
   cardGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 22,
-    marginTop: 54,
+    gap: 20,
+    marginTop: 42,
   },
   card: {
     backgroundColor: "#ffffff",
     border: "1px solid #d7e2f2",
     borderRadius: 28,
-    padding: 26,
+    padding: 24,
     boxShadow: "0 6px 20px rgba(15,23,42,0.03)",
-    minHeight: 350,
+    minHeight: 320,
   },
   cardEyebrow: {
     margin: 0,
@@ -104,12 +104,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     fontSize: 14,
     letterSpacing: 0.5,
-    textTransform: "uppercase" as const,
+    textTransform: "uppercase",
   },
   cardTitle: {
-    marginTop: 18,
-    marginBottom: 18,
-    fontSize: 38,
+    marginTop: 16,
+    marginBottom: 16,
+    fontSize: "clamp(28px, 2.7vw, 38px)",
     lineHeight: 1.15,
     fontWeight: 500,
     color: "#263366",
@@ -119,9 +119,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 17,
     lineHeight: 1.65,
     color: "#435b83",
-  },
-  responsive: {
-    width: "100%",
   },
 };
 
@@ -166,10 +163,7 @@ export default function HomePage() {
           appraisal, title, and program requirements.
         </p>
 
-        <div
-          style={styles.cardGrid}
-          className="bi-card-grid"
-        >
+        <div style={styles.cardGrid} className="bi-card-grid">
           <section style={styles.card}>
             <p style={styles.cardEyebrow}>CLIENT / BORROWER</p>
             <h2 style={styles.cardTitle}>
@@ -225,23 +219,15 @@ export default function HomePage() {
       </div>
 
       <style>{`
-        @media (max-width: 1200px) {
+        @media (max-width: 1100px) {
           .bi-card-grid {
             grid-template-columns: 1fr !important;
           }
         }
 
-        @media (max-width: 980px) {
-          h1 {
-            font-size: 58px !important;
-            line-height: 1 !important;
-          }
-        }
-
-        @media (max-width: 700px) {
-          h1 {
-            font-size: 42px !important;
-            letter-spacing: -1px !important;
+        @media (max-width: 768px) {
+          .bi-card-grid {
+            gap: 16px !important;
           }
         }
       `}</style>
