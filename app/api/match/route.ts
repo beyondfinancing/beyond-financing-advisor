@@ -18,7 +18,8 @@ export async function POST(req: Request) {
       credit >= p.min_credit &&
       ltv <= p.max_ltv &&
       dti <= p.max_dti &&
-      (!p.occupancy || p.occupancy.toLowerCase() === occupancy.toLowerCase())
+      (!p.occupancy ||
+        p.occupancy.toLowerCase() === occupancy.toLowerCase())
     );
   });
 
