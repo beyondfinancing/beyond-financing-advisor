@@ -1,9 +1,37 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-function cardStyle(): React.CSSProperties {
+type LenderOption = {
+  id: string;
+  name: string | null;
+};
+
+type ProgramRow = {
+  id: string;
+  lender_id: string | null;
+  name: string | null;
+  min_credit: number | null;
+  max_ltv: number | null;
+  max_dti: number | null;
+  occupancy: string | null;
+  notes: string | null;
+  created_at: string | null;
+  lenders?: {
+    name: string | null;
+  } | null;
+};
+
+const OCCUPANCY_OPTIONS = [
+  "Primary",
+  "Second Home",
+  "Investment",
+  "Mixed-Use",
+];
+
+function cardStyle(): CSSProperties {
   return {
     background: "#FFFFFF",
     border: "1px solid #D9E1EC",
@@ -13,7 +41,7 @@ function cardStyle(): React.CSSProperties {
   };
 }
 
-function inputStyle(): React.CSSProperties {
+function inputStyle(): CSSProperties {
   return {
     width: "100%",
     padding: "14px 16px",
@@ -22,33 +50,55 @@ function inputStyle(): React.CSSProperties {
     fontSize: 16,
     outline: "none",
     boxSizing: "border-box",
-  };
-}
-
-function labelStyle(): React.CSSProperties {
-  return {
-    display: "block",
-    fontWeight: 700,
-    marginBottom: 8,
+    background: "#FFFFFF",
     color: "#263366",
   };
 }
 
-function buttonPrimaryStyle(): React.CSSProperties {
+function buttonPrimaryStyle(): CSSProperties {
   return {
+    width: "100%",
     background: "#263366",
     color: "#FFFFFF",
     border: "none",
     borderRadius: 12,
     padding: "14px 18px",
     fontWeight: 700,
+    fontSize: 16,
     cursor: "pointer",
   };
 }
 
-function pillStyle(): React.CSSProperties {
+function buttonSecondaryStyle(): CSSProperties {
   return {
-    display: "inline-block",
+    background: "#0096C7",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    fontSize: 14,
+    cursor: "pointer",
+  };
+}
+
+function buttonDangerStyle(): CSSProperties {
+  return {
+    background: "#B42318",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    fontSize: 14,
+    cursor: "pointer",
+  };
+}
+
+function badgeStyle(): CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
     padding: "6px 10px",
     borderRadius: 999,
     background: "#E8EEF8",
@@ -58,24 +108,19 @@ function pillStyle(): React.CSSProperties {
   };
 }
 
-type LenderRow = {
-  id: string;
-  name: string | null;
-};
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
 
-type ProgramRow = {
-  id: string;
-  name: string | null;
-  min_credit: number | null;
-  max_ltv: number | null;
-  max_dti: number | null;
-  occupancy: string | null;
-  notes: string | null;
-  created_at: string | null;
-  lenders: {
-    name: string | null;
-  } | null;
-};
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export default async function AdminProgramsPage({
   searchParams,
@@ -88,18 +133,20 @@ export default async function AdminProgramsPage({
 
   const params = await searchParams;
 
-  const { data: lenders } = await supabaseAdmin
-    .from("lenders")
-    .select("id, name")
-    .order("name", { ascending: true });
+  const [{ data: lendersData, error: lendersError }, { data: programsData, error: programsError }] =
+    await Promise.all([
+      supabaseAdmin.from("lenders").select("id, name").order("name", { ascending: true }),
+      supabaseAdmin
+        .from("programs")
+        .select("*, lenders(name)")
+        .order("created_at", { ascending: false }),
+    ]);
 
-  const { data: programs } = await supabaseAdmin
-    .from("programs")
-    .select("*, lenders(name)")
-    .order("created_at", { ascending: false });
+  const lenders: LenderOption[] =
+    lendersError || !Array.isArray(lendersData) ? [] : (lendersData as LenderOption[]);
 
-  const safeLenders = (lenders || []) as LenderRow[];
-  const safePrograms = (programs || []) as ProgramRow[];
+  const programs: ProgramRow[] =
+    programsError || !Array.isArray(programsData) ? [] : (programsData as ProgramRow[]);
 
   return (
     <main
@@ -110,17 +157,18 @@ export default async function AdminProgramsPage({
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1380, margin: "0 auto", padding: 24 }}>
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            flexWrap: "wrap",
+            alignItems: "flex-start",
             gap: 16,
+            flexWrap: "wrap",
             marginBottom: 22,
           }}
         >
-          <div>
+          <div style={{ maxWidth: 980 }}>
             <div
               style={{
                 display: "inline-block",
@@ -130,7 +178,7 @@ export default async function AdminProgramsPage({
                 color: "#263366",
                 fontSize: 12,
                 fontWeight: 700,
-                marginBottom: 14,
+                marginBottom: 12,
               }}
             >
               PROGRAM ENGINE
@@ -138,9 +186,9 @@ export default async function AdminProgramsPage({
 
             <h1
               style={{
-                margin: "0 0 8px",
-                fontSize: "clamp(32px, 5vw, 48px)",
-                lineHeight: 1.1,
+                margin: "0 0 10px",
+                fontSize: "clamp(40px, 7vw, 58px)",
+                lineHeight: 1.05,
               }}
             >
               Manage Programs
@@ -151,24 +199,23 @@ export default async function AdminProgramsPage({
                 margin: 0,
                 color: "#5A6A84",
                 lineHeight: 1.7,
-                fontSize: 17,
-                maxWidth: 900,
+                fontSize: 16,
+                maxWidth: 980,
               }}
             >
-              Build the lender-program engine that powers scenario direction.
-              Add qualification thresholds, occupancy rules, and notes for each
-              lender program.
+              Create, edit, and delete lender programs that power scenario direction.
+              This page manages structured program records while we prepare the lender
+              file-ingestion upgrade for bulk extraction from PDFs and spreadsheets.
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ paddingTop: 10 }}>
             <Link
               href="/admin"
               style={{
-                textDecoration: "none",
                 color: "#263366",
                 fontWeight: 700,
-                alignSelf: "center",
+                textDecoration: "none",
               }}
             >
               Back to Admin Home
@@ -181,10 +228,10 @@ export default async function AdminProgramsPage({
             style={{
               marginBottom: 18,
               background: "#EEF8EA",
-              border: "1px solid #B7D7B0",
-              color: "#2E6B2E",
-              borderRadius: 16,
-              padding: 14,
+              color: "#2F6B2F",
+              border: "1px solid #B9D7AF",
+              borderRadius: 14,
+              padding: 16,
               lineHeight: 1.6,
             }}
           >
@@ -197,10 +244,10 @@ export default async function AdminProgramsPage({
             style={{
               marginBottom: 18,
               background: "#FFF4F2",
-              border: "1px solid #F3C5BC",
               color: "#8A3B2F",
-              borderRadius: 16,
-              padding: 14,
+              border: "1px solid #F3C5BC",
+              borderRadius: 14,
+              padding: 16,
               lineHeight: 1.6,
             }}
           >
@@ -208,51 +255,69 @@ export default async function AdminProgramsPage({
           </div>
         )}
 
+        {(lendersError || programsError) && (
+          <div
+            style={{
+              marginBottom: 18,
+              background: "#FFF4F2",
+              color: "#8A3B2F",
+              border: "1px solid #F3C5BC",
+              borderRadius: 14,
+              padding: 16,
+              lineHeight: 1.6,
+            }}
+          >
+            Database read error: {lendersError?.message || programsError?.message}
+          </div>
+        )}
+
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(320px, 430px) minmax(0, 1fr)",
+            gridTemplateColumns: "minmax(360px, 430px) minmax(0, 1fr)",
             gap: 20,
             alignItems: "start",
           }}
         >
           <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 24 }}>Create Program</h2>
+            <h2 style={{ marginTop: 0, fontSize: 18 }}>Create Program</h2>
 
-            {safeLenders.length === 0 ? (
-              <div
-                style={{
-                  border: "1px solid #E9D4A7",
-                  background: "#FFF9EC",
-                  color: "#8A6A1F",
-                  borderRadius: 16,
-                  padding: 16,
-                  lineHeight: 1.7,
-                }}
-              >
-                Create at least one lender first before adding programs.
-              </div>
-            ) : (
-              <form
-                action="/api/programs"
-                method="POST"
-                style={{ display: "grid", gap: 16 }}
-              >
+            <p
+              style={{
+                marginTop: 0,
+                color: "#5A6A84",
+                lineHeight: 1.7,
+                fontSize: 14,
+              }}
+            >
+              Build lender-program matching rules. Later, this same area will also
+              support auto-created records extracted from lender files for admin review.
+            </p>
+
+            <form action="/api/admin/programs" method="POST">
+              <input type="hidden" name="action" value="create" />
+
+              <div style={{ display: "grid", gap: 14 }}>
                 <div>
-                  <label style={labelStyle()}>Lender</label>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Lender
+                  </label>
                   <select name="lender_id" required style={inputStyle()}>
                     <option value="">Select lender</option>
-                    {safeLenders.map((lender) => (
+                    {lenders.map((lender) => (
                       <option key={lender.id} value={lender.id}>
-                        {lender.name || "Unnamed Lender"}
+                        {lender.name || "Unnamed lender"}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label style={labelStyle()}>Program Name</label>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Program Name
+                  </label>
                   <input
+                    type="text"
                     name="name"
                     required
                     style={inputStyle()}
@@ -261,60 +326,48 @@ export default async function AdminProgramsPage({
                 </div>
 
                 <div>
-                  <label style={labelStyle()}>Minimum Credit Score</label>
-                  <input
-                    name="min_credit"
-                    type="number"
-                    required
-                    style={inputStyle()}
-                    placeholder="680"
-                  />
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Minimum Credit Score
+                  </label>
+                  <input type="number" name="min_credit" required style={inputStyle()} />
                 </div>
 
                 <div>
-                  <label style={labelStyle()}>Maximum LTV</label>
-                  <input
-                    name="max_ltv"
-                    type="number"
-                    required
-                    style={inputStyle()}
-                    placeholder="80"
-                  />
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Maximum LTV
+                  </label>
+                  <input type="number" name="max_ltv" required style={inputStyle()} />
                 </div>
 
                 <div>
-                  <label style={labelStyle()}>Maximum DTI</label>
-                  <input
-                    name="max_dti"
-                    type="number"
-                    required
-                    style={inputStyle()}
-                    placeholder="50"
-                  />
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Maximum DTI
+                  </label>
+                  <input type="number" name="max_dti" required style={inputStyle()} />
                 </div>
 
                 <div>
-                  <label style={labelStyle()}>Occupancy</label>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Occupancy
+                  </label>
                   <select name="occupancy" required style={inputStyle()}>
                     <option value="">Select occupancy</option>
-                    <option value="Primary">Primary</option>
-                    <option value="Second">Second</option>
-                    <option value="Investment">Investment</option>
-                    <option value="Mixed-Use">Mixed-Use</option>
-                    <option value="All">All</option>
+                    {OCCUPANCY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label style={labelStyle()}>Notes</label>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    Notes
+                  </label>
                   <textarea
                     name="notes"
-                    rows={5}
-                    style={{
-                      ...inputStyle(),
-                      resize: "vertical",
-                      minHeight: 120,
-                    }}
+                    rows={4}
+                    style={{ ...inputStyle(), resize: "vertical", minHeight: 110 }}
                     placeholder="Example: Investor program, reserves required, special overlay notes."
                   />
                 </div>
@@ -322,50 +375,33 @@ export default async function AdminProgramsPage({
                 <button type="submit" style={buttonPrimaryStyle()}>
                   Create Program
                 </button>
-              </form>
-            )}
+              </div>
+            </form>
           </section>
 
           <section style={cardStyle()}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: 12,
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <h2 style={{ margin: 0, fontSize: 24 }}>Current Programs</h2>
-                <p
-                  style={{
-                    margin: "8px 0 0",
-                    color: "#5A6A84",
-                    lineHeight: 1.7,
-                  }}
-                >
-                  Total programs: <strong>{safePrograms.length}</strong>
-                </p>
-              </div>
+            <h2 style={{ marginTop: 0, fontSize: 18 }}>Current Programs</h2>
+
+            <div style={{ color: "#5A6A84", marginBottom: 18, fontSize: 14 }}>
+              Total programs: {programs.length}
             </div>
 
-            {safePrograms.length === 0 ? (
+            {programs.length === 0 ? (
               <div
                 style={{
+                  background: "#F8FAFC",
                   border: "1px solid #D9E1EC",
                   borderRadius: 16,
                   padding: 18,
-                  background: "#F8FAFC",
                   color: "#5A6A84",
                   lineHeight: 1.7,
                 }}
               >
-                No programs have been created yet.
+                No programs have been added yet.
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                {safePrograms.map((program) => (
+              <div style={{ display: "grid", gap: 16 }}>
+                {programs.map((program) => (
                   <div
                     key={program.id}
                     style={{
@@ -379,84 +415,186 @@ export default async function AdminProgramsPage({
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
+                        gap: 14,
                         flexWrap: "wrap",
-                        gap: 12,
-                        marginBottom: 12,
+                        alignItems: "flex-start",
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: 22, fontWeight: 800 }}>
-                          {program.name || "Unnamed Program"}
+                      <div style={{ flex: "1 1 360px", minWidth: 0 }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
+                          {program.name || "Unnamed program"}
                         </div>
+
+                        <div style={{ color: "#4B5C78", lineHeight: 1.7, marginBottom: 10 }}>
+                          Lender: <strong style={{ color: "#263366" }}>
+                            {program.lenders?.name || "—"}
+                          </strong>
+                        </div>
+
                         <div
                           style={{
-                            color: "#5A6A84",
-                            marginTop: 6,
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                            gap: 12,
+                            color: "#4B5C78",
                             lineHeight: 1.7,
+                            marginBottom: 14,
                           }}
                         >
-                          Lender: <strong>{program.lenders?.name || "-"}</strong>
+                          <div>
+                            <strong style={{ color: "#263366" }}>Min Credit:</strong>
+                            <br />
+                            {program.min_credit ?? "—"}
+                          </div>
+                          <div>
+                            <strong style={{ color: "#263366" }}>Max LTV:</strong>
+                            <br />
+                            {program.max_ltv ?? "—"}%
+                          </div>
+                          <div>
+                            <strong style={{ color: "#263366" }}>Max DTI:</strong>
+                            <br />
+                            {program.max_dti ?? "—"}%
+                          </div>
+                          <div>
+                            <strong style={{ color: "#263366" }}>Created:</strong>
+                            <br />
+                            {formatDate(program.created_at)}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            border: "1px solid #D9E1EC",
+                            borderRadius: 14,
+                            padding: 14,
+                            background: "#FFFFFF",
+                            marginBottom: 12,
+                          }}
+                        >
+                          <strong style={{ color: "#263366" }}>Notes:</strong>
+                          <div style={{ marginTop: 6, color: "#4B5C78", lineHeight: 1.7 }}>
+                            {program.notes || "—"}
+                          </div>
                         </div>
                       </div>
 
                       <div>
-                        <span style={pillStyle()}>
-                          {program.occupancy || "No occupancy"}
-                        </span>
+                        <span style={badgeStyle()}>{program.occupancy || "No occupancy"}</span>
                       </div>
                     </div>
 
                     <div
                       style={{
+                        marginTop: 18,
+                        paddingTop: 18,
+                        borderTop: "1px solid #D9E1EC",
                         display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(170px, 1fr))",
-                        gap: 12,
-                        color: "#4B5C78",
-                        lineHeight: 1.7,
+                        gridTemplateColumns: "1fr auto",
+                        gap: 14,
+                        alignItems: "end",
                       }}
                     >
-                      <div>
-                        <strong>Min Credit:</strong>
-                        <br />
-                        {program.min_credit ?? "-"}
-                      </div>
+                      <form action="/api/admin/programs" method="POST">
+                        <input type="hidden" name="action" value="update" />
+                        <input type="hidden" name="id" value={program.id} />
 
-                      <div>
-                        <strong>Max LTV:</strong>
-                        <br />
-                        {program.max_ltv ?? "-"}%
-                      </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: 12,
+                          }}
+                        >
+                          <select
+                            name="lender_id"
+                            defaultValue={program.lender_id || ""}
+                            required
+                            style={inputStyle()}
+                          >
+                            <option value="">Select lender</option>
+                            {lenders.map((lender) => (
+                              <option key={lender.id} value={lender.id}>
+                                {lender.name || "Unnamed lender"}
+                              </option>
+                            ))}
+                          </select>
 
-                      <div>
-                        <strong>Max DTI:</strong>
-                        <br />
-                        {program.max_dti ?? "-"}%
-                      </div>
+                          <input
+                            type="text"
+                            name="name"
+                            defaultValue={program.name || ""}
+                            required
+                            style={inputStyle()}
+                            placeholder="Program Name"
+                          />
 
-                      <div>
-                        <strong>Created:</strong>
-                        <br />
-                        {program.created_at
-                          ? new Date(program.created_at).toLocaleString()
-                          : "-"}
-                      </div>
-                    </div>
+                          <input
+                            type="number"
+                            name="min_credit"
+                            defaultValue={program.min_credit ?? ""}
+                            required
+                            style={inputStyle()}
+                            placeholder="Min Credit"
+                          />
 
-                    <div
-                      style={{
-                        marginTop: 14,
-                        padding: 14,
-                        borderRadius: 14,
-                        background: "#FFFFFF",
-                        border: "1px solid #D9E1EC",
-                        lineHeight: 1.7,
-                        color: "#4B5C78",
-                      }}
-                    >
-                      <strong>Notes:</strong>
-                      <br />
-                      {program.notes || "No notes entered."}
+                          <input
+                            type="number"
+                            name="max_ltv"
+                            defaultValue={program.max_ltv ?? ""}
+                            required
+                            style={inputStyle()}
+                            placeholder="Max LTV"
+                          />
+
+                          <input
+                            type="number"
+                            name="max_dti"
+                            defaultValue={program.max_dti ?? ""}
+                            required
+                            style={inputStyle()}
+                            placeholder="Max DTI"
+                          />
+
+                          <select
+                            name="occupancy"
+                            defaultValue={program.occupancy || ""}
+                            required
+                            style={inputStyle()}
+                          >
+                            <option value="">Select occupancy</option>
+                            {OCCUPANCY_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div style={{ marginTop: 12 }}>
+                          <textarea
+                            name="notes"
+                            defaultValue={program.notes || ""}
+                            rows={4}
+                            style={{ ...inputStyle(), resize: "vertical", minHeight: 100 }}
+                            placeholder="Notes"
+                          />
+                        </div>
+
+                        <div style={{ marginTop: 12 }}>
+                          <button type="submit" style={buttonSecondaryStyle()}>
+                            Save Changes
+                          </button>
+                        </div>
+                      </form>
+
+                      <form action="/api/admin/programs" method="POST">
+                        <input type="hidden" name="action" value="delete" />
+                        <input type="hidden" name="id" value={program.id} />
+                        <button type="submit" style={buttonDangerStyle()}>
+                          Delete
+                        </button>
+                      </form>
                     </div>
                   </div>
                 ))}
