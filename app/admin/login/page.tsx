@@ -36,33 +36,21 @@ function buttonPrimaryStyle(): React.CSSProperties {
   };
 }
 
-function buttonSecondaryStyle(): React.CSSProperties {
-  return {
-    background: "#FFFFFF",
-    color: "#263366",
-    border: "1px solid #263366",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontWeight: 700,
-    cursor: "pointer",
-    textDecoration: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  };
-}
+type AdminLoginPageProps = {
+  searchParams: Promise<{
+    error?: string;
+  }>;
+};
 
 export default async function AdminLoginPage({
   searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
+}: AdminLoginPageProps) {
   if (await isAdminSignedIn()) {
     redirect("/admin");
   }
 
   const params = await searchParams;
-  const error = params?.error || "";
+  const error = params.error || "";
 
   return (
     <main
@@ -113,64 +101,38 @@ export default async function AdminLoginPage({
             fontSize: "clamp(16px, 2.3vw, 18px)",
           }}
         >
-          This area is restricted to the system administrator. Sign in to manage
-          users, lenders, programs, files, and future investor controls.
+          This access is restricted to the system administrator for user, lender,
+          program, and file-management control.
         </p>
 
         <div style={cardStyle()}>
-          <h2 style={{ marginTop: 0, fontSize: 20 }}>Administrator Sign In</h2>
-
-          <div
-            style={{
-              background: "#F8FAFC",
-              border: "1px solid #D9E1EC",
-              borderRadius: 16,
-              padding: 16,
-              lineHeight: 1.8,
-              marginBottom: 18,
-              color: "#4B5C78",
-            }}
-          >
-            <div>
-              <strong>Authorized admin:</strong> Beyond Intelligence system
-              administrator
-            </div>
-            <div>
-              <strong>Protected pages:</strong> /admin, /admin/users,
-              /admin/lenders, /admin/programs
-            </div>
-          </div>
+          <h2 style={{ marginTop: 0, fontSize: 20 }}>Admin Sign In</h2>
 
           <form
             action="/api/admin/login"
             method="POST"
-            style={{
-              display: "grid",
-              gap: 14,
-            }}
+            style={{ display: "grid", gap: 14 }}
           >
             <input
               type="email"
               name="email"
-              placeholder="Admin Email"
-              autoComplete="email"
-              required
+              placeholder="Admin email"
+              defaultValue="pansini@beyondfinancing.com"
               style={inputStyle()}
+              required
             />
 
             <input
               type="password"
               name="password"
-              placeholder="Password"
-              autoComplete="current-password"
-              required
+              placeholder="Admin password"
               style={inputStyle()}
+              required
             />
 
             {error ? (
               <div
                 style={{
-                  marginTop: 4,
                   background: "#FFF4F2",
                   border: "1px solid #F3C5BC",
                   color: "#8A3B2F",
@@ -195,7 +157,16 @@ export default async function AdminLoginPage({
                 Sign In as Admin
               </button>
 
-              <Link href="/" style={buttonSecondaryStyle()}>
+              <Link
+                href="/"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  textDecoration: "none",
+                  color: "#263366",
+                  fontWeight: 700,
+                }}
+              >
                 Back to Beyond Intelligence
               </Link>
             </div>
