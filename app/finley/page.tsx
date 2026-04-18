@@ -49,6 +49,7 @@ type PropertyType =
   | "5_to_8_units";
 
 type QualificationInput = {
+  subject_state: string;
   borrower_status: BorrowerStatus;
   occupancy_type: OccupancyType;
   transaction_type: TransactionType;
@@ -60,7 +61,6 @@ type QualificationInput = {
   loan_amount: string;
   units: string;
   first_time_homebuyer: "" | "yes" | "no";
-  subject_state: string;
   available_reserves_months: string;
 };
 
@@ -71,7 +71,6 @@ type MatchBucket = {
   program_slug?: string;
   loan_category?: string | null;
   guideline_id?: string;
-  reserves_required_months?: number | null;
   notes?: string[] | null;
   missing_items?: string[] | null;
   blockers?: string[] | null;
@@ -79,6 +78,7 @@ type MatchBucket = {
   concerns?: string[] | null;
   explanation?: string;
   score?: number;
+  required_reserves_months?: number | null;
 };
 
 type OpenAiEnhancement = {
@@ -123,6 +123,7 @@ const BORROWER_MODE_PATH = "/borrower";
 const PROFESSIONAL_SESSION_KEY = "beyond_professional_session";
 
 const initialForm: QualificationInput = {
+  subject_state: "",
   borrower_status: "",
   occupancy_type: "",
   transaction_type: "",
@@ -134,7 +135,6 @@ const initialForm: QualificationInput = {
   loan_amount: "",
   units: "",
   first_time_homebuyer: "",
-  subject_state: "",
   available_reserves_months: "",
 };
 
@@ -174,23 +174,39 @@ function buildChatSummary(data: MatchResponse): string {
   }
 
   if (ai?.topRecommendation) {
-    return ai.topRecommendation;
+    const nextQuestion = ai.nextBestQuestion || data.next_question || "";
+    return `${ai.topRecommendation}. ${nextQuestion}`.trim();
   }
 
   if (strong.length > 0) {
     const top = strong[0];
-    return `I found ${strong.length} strong match(es). The top current direction is ${top.program_name || "a program"} with ${top.lender_name || "a lender"}.`;
+    return `I found ${strong.length} strong match(es). The top current direction is ${top.program_name || "a program"} with ${top.lender_name || "a lender"}. ${data.next_question || ""}`.trim();
   }
 
   if (conditional.length > 0) {
-    return `I found ${conditional.length} conditional path(s). We are close, but at least one remaining qualification or operational rule still needs to be clarified.`;
+    return `I found ${conditional.length} conditional path(s). We are close, but I still need more qualification detail before presenting a stronger direction. ${data.next_question || ""}`.trim();
   }
 
   if (eliminated.length > 0) {
-    return `The currently loaded guidelines appear to eliminate the visible paths for this exact combination so far.`;
+    return `The currently loaded guidelines appear to eliminate the visible paths for this exact combination so far. ${data.next_question || "Please adjust or confirm the qualification data so I can reassess."}`.trim();
   }
 
-  return "No visible paths were identified yet. Please confirm the next qualification detail.";
+  return data.next_question || "No visible paths were identified yet. Please confirm the next qualification detail.";
+}
+
+function renderList(title: string, items: string[]) {
+  if (items.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <strong>{title}</strong>
+      <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+        {items.map((text, i) => (
+          <li key={`${title}-${i}`}>{text}</li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export default function FinleyPage() {
@@ -216,6 +232,7 @@ export default function FinleyPage() {
   const [topRecommendation, setTopRecommendation] = useState("");
   const [openAiEnhancement, setOpenAiEnhancement] = useState<OpenAiEnhancement>(null);
   const [lenderSummary, setLenderSummary] = useState<MatchResponse["lender_summary"]>(null);
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const session = parseProfessionalSession();
@@ -267,16 +284,10 @@ export default function FinleyPage() {
     setLoading(true);
     setError("");
     setSuccessMessage("");
-    setTopRecommendation("");
-    setOpenAiEnhancement(null);
-    setStrongMatches([]);
-    setConditionalMatches([]);
-    setEliminatedPaths([]);
-    setLenderSummary(null);
-    setChatMessages([]);
 
     try {
       const payload = {
+        subject_state: form.subject_state.trim().toUpperCase(),
         borrower_status: form.borrower_status,
         occupancy_type: form.occupancy_type,
         transaction_type: form.transaction_type,
@@ -291,7 +302,6 @@ export default function FinleyPage() {
           form.first_time_homebuyer === ""
             ? ""
             : form.first_time_homebuyer === "yes",
-        subject_state: form.subject_state,
         available_reserves_months: form.available_reserves_months,
       };
 
@@ -317,15 +327,17 @@ export default function FinleyPage() {
       setTopRecommendation(data.top_recommendation || "");
       setOpenAiEnhancement(data.openai_enhancement || null);
       setLenderSummary(data.lender_summary || null);
+      setExpandedCards({});
 
       setNextQuestion(
         data.next_question ||
-          "Please continue by providing the next qualification detail so I can narrow lender and program fit more precisely."
+          "Please continue by providing the next missing qualification detail so I can narrow lender and program fit more precisely."
       );
 
       setSuccessMessage("Match analysis completed successfully.");
 
-      setChatMessages([
+      setChatMessages((prev) => [
+        ...prev,
         {
           role: "assistant",
           content: buildChatSummary({
@@ -347,6 +359,7 @@ export default function FinleyPage() {
       setTopRecommendation("");
       setOpenAiEnhancement(null);
       setLenderSummary(null);
+      setExpandedCards({});
     } finally {
       setLoading(false);
     }
@@ -364,6 +377,13 @@ export default function FinleyPage() {
     setChatInput("");
   }
 
+  function toggleCard(key: string) {
+    setExpandedCards((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }
+
   function renderBucketCard(
     item: MatchBucket,
     type: "strong" | "conditional" | "eliminated",
@@ -374,10 +394,12 @@ export default function FinleyPage() {
     const blockers = safeArray(item.blockers);
     const strengths = safeArray(item.strengths);
     const concerns = safeArray(item.concerns);
+    const cardKey = `${type}-${item.guideline_id || item.program_slug || index}`;
+    const expanded = !!expandedCards[cardKey];
 
     return (
       <div
-        key={`${type}-${item.guideline_id || item.program_slug || index}`}
+        key={cardKey}
         style={{
           border: "1px solid #d9e1ec",
           borderRadius: 18,
@@ -388,128 +410,99 @@ export default function FinleyPage() {
       >
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            flexWrap: "wrap",
+            display: "grid",
+            gridTemplateColumns: "1.4fr 1fr 1fr 1.1fr auto",
+            gap: 14,
+            alignItems: "start",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h3 style={{ margin: "0 0 8px 0", color: "#263366" }}>
               {item.program_name || "Unknown Program"}
             </h3>
-            <div style={{ color: "#4b5d7a", marginBottom: 10 }}>
+            <div style={{ color: "#4b5d7a", marginBottom: 8 }}>
               {item.lender_name || "Unknown Lender"}
+            </div>
+            <div>
+              <strong>Program Slug:</strong> {item.program_slug || "—"}
             </div>
           </div>
 
-          <div
-            style={{
-              padding: "8px 12px",
-              borderRadius: 999,
-              background:
-                type === "strong"
-                  ? "#e8f7ee"
-                  : type === "conditional"
-                  ? "#fff6e5"
-                  : "#fdecec",
-              color:
-                type === "strong"
-                  ? "#157347"
-                  : type === "conditional"
-                  ? "#946200"
-                  : "#b42318",
-              fontWeight: 700,
-              height: "fit-content",
-            }}
-          >
-            Score: {item.score ?? 0}
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-          }}
-        >
-          <div>
-            <strong>Program Slug:</strong> {item.program_slug || "—"}
-          </div>
           <div>
             <strong>Loan Category:</strong> {labelize(item.loan_category)}
           </div>
+
           <div>
             <strong>Guideline ID:</strong> {item.guideline_id || "—"}
           </div>
+
           <div>
             <strong>Required Reserves:</strong>{" "}
-            {item.reserves_required_months !== null && item.reserves_required_months !== undefined
-              ? `${item.reserves_required_months} month(s) PITIA`
+            {item.required_reserves_months !== null &&
+            item.required_reserves_months !== undefined
+              ? `${item.required_reserves_months} month(s) PITIA`
               : "—"}
+          </div>
+
+          <div style={{ textAlign: "right" }}>
+            <div
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                background:
+                  type === "strong"
+                    ? "#e8f7ee"
+                    : type === "conditional"
+                    ? "#fff6e5"
+                    : "#fdecec",
+                color:
+                  type === "strong"
+                    ? "#157347"
+                    : type === "conditional"
+                    ? "#946200"
+                    : "#b42318",
+                fontWeight: 700,
+                marginBottom: 10,
+                display: "inline-block",
+              }}
+            >
+              Score: {item.score ?? 0}
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => toggleCard(cardKey)}
+                style={{
+                  background: "#eef4fb",
+                  color: "#263366",
+                  border: "1px solid #c7d7eb",
+                  borderRadius: 12,
+                  padding: "10px 14px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {expanded ? "Hide Details" : "View Details"}
+              </button>
+            </div>
           </div>
         </div>
 
-        {item.explanation && (
-          <div style={{ marginTop: 16, color: "#4b5d7a", lineHeight: 1.65 }}>
-            <strong>Explanation</strong>
-            <div style={{ marginTop: 8 }}>{item.explanation}</div>
-          </div>
-        )}
+        {expanded && (
+          <div style={{ marginTop: 18 }}>
+            {item.explanation && (
+              <div style={{ color: "#4b5d7a", lineHeight: 1.65 }}>
+                <strong>Explanation</strong>
+                <div style={{ marginTop: 8 }}>{item.explanation}</div>
+              </div>
+            )}
 
-        {strengths.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <strong>Strengths</strong>
-            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-              {strengths.map((text, i) => (
-                <li key={`strength-${i}`}>{text}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {concerns.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <strong>Concerns</strong>
-            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-              {concerns.map((text, i) => (
-                <li key={`concern-${i}`}>{text}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {notes.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <strong>Notes</strong>
-            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-              {notes.map((note, i) => (
-                <li key={`note-${i}`}>{note}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {missingItems.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <strong>Missing Items</strong>
-            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-              {missingItems.map((itemText, i) => (
-                <li key={`missing-${i}`}>{itemText}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {blockers.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <strong>Blockers</strong>
-            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-              {blockers.map((blocker, i) => (
-                <li key={`blocker-${i}`}>{blocker}</li>
-              ))}
-            </ul>
+            {renderList("Strengths", strengths)}
+            {renderList("Concerns", concerns)}
+            {renderList("Notes", notes)}
+            {renderList("Missing Items", missingItems)}
+            {renderList("Blockers", blockers)}
           </div>
         )}
       </div>
@@ -747,8 +740,9 @@ export default function FinleyPage() {
                 <input
                   value={form.subject_state}
                   onChange={(e) => updateField("subject_state", e.target.value.toUpperCase())}
-                  placeholder="MA"
+                  maxLength={2}
                   style={inputStyle}
+                  placeholder="MA"
                 />
               </div>
 
@@ -912,7 +906,6 @@ export default function FinleyPage() {
                 <input
                   value={form.available_reserves_months}
                   onChange={(e) => updateField("available_reserves_months", e.target.value)}
-                  placeholder="6"
                   style={inputStyle}
                 />
               </div>
