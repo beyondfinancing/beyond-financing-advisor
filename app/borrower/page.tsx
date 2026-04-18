@@ -41,6 +41,62 @@ type LoanOfficerRecord = {
   scheduleUrl: string;
 };
 
+type MatchBucket = {
+  lender_name: string;
+  lender_id: string;
+  program_name: string;
+  program_slug: string;
+  loan_category: string | null;
+  guideline_id: string;
+  notes: string[];
+  missing_items: string[];
+  blockers: string[];
+  strengths: string[];
+  concerns: string[];
+  explanation: string;
+  score: number;
+};
+
+type MatchResponse = {
+  success: boolean;
+  intake?: {
+    borrower_status?: string;
+    occupancy_type?: string;
+    transaction_type?: string;
+    income_type?: string;
+    property_type?: string;
+    credit_score?: number | null;
+    ltv?: number | null;
+    dti?: number | null;
+    loan_amount?: number | null;
+    units?: number | null;
+    first_time_homebuyer?: boolean | null;
+  };
+  summary?: {
+    total_guidelines_checked?: number;
+    strong_count?: number;
+    conditional_count?: number;
+    eliminated_count?: number;
+  };
+  lender_summary?: {
+    active_lender_count?: number;
+    active_lenders_checked?: string[];
+    matched_lenders_in_results?: string[];
+  };
+  next_question?: string;
+  top_recommendation?: string;
+  openai_enhancement?: {
+    topRecommendation?: string;
+    whyItMatches?: string[];
+    cautionItems?: string[];
+    nextBestQuestion?: string;
+  } | null;
+  strong_matches?: MatchBucket[];
+  conditional_matches?: MatchBucket[];
+  eliminated_paths?: MatchBucket[];
+  error?: string;
+};
+
 type RoutingPayload = {
   language?: LanguageCode;
   loanOfficerQuery?: string;
@@ -67,6 +123,25 @@ type RoutingPayload = {
     timeline?: string;
     fundsSource?: string;
     communicationPreference?: string;
+  };
+  internalMatch?: {
+    topRecommendation?: string;
+    nextQuestion?: string;
+    strongCount?: number;
+    conditionalCount?: number;
+    eliminatedCount?: number;
+    totalGuidelinesChecked?: number;
+    activeLendersChecked?: string[];
+    topStrongMatches?: Array<{
+      lender_name: string;
+      program_name: string;
+      loan_category: string | null;
+      score: number;
+      explanation: string;
+      notes: string[];
+      strengths: string[];
+      concerns: string[];
+    }>;
   };
   conversation?: ChatMessage[];
 };
@@ -144,8 +219,18 @@ const COPY = {
     applyNow: "Apply Now",
     schedule: "Schedule with Loan Officer",
     emailOfficer: "Email Loan Officer",
+    nextActions: "Next Actions",
+    internalReviewTitle: "Internal Scenario Direction",
+    internalReviewText:
+      "This section reflects Finley Beyond’s internal matching direction and is used to guide the conversation and routing.",
+    likelyDirection: "Likely Direction",
+    lenderCoverage: "Lender Coverage",
+    nextQuestion: "Next Best Question",
     chatPlaceholder:
       "Ask a question or answer Finley Beyond’s next mortgage question.",
+    reviewError: "There was a problem running the preliminary review.",
+    matchError: "There was a problem evaluating the scenario.",
+    matchPending: "Run the preliminary review to generate internal match direction.",
   },
   pt: {
     title: "Área do Cliente / Borrower",
@@ -183,8 +268,18 @@ const COPY = {
     applyNow: "Aplicar Agora",
     schedule: "Agendar com o Loan Officer",
     emailOfficer: "Enviar Email ao Loan Officer",
+    nextActions: "Próximos Passos",
+    internalReviewTitle: "Direção Interna do Cenário",
+    internalReviewText:
+      "Esta seção reflete a direção interna de matching do Finley Beyond e é usada para orientar a conversa e o roteamento.",
+    likelyDirection: "Direção Mais Provável",
+    lenderCoverage: "Cobertura de Lenders",
+    nextQuestion: "Próxima Melhor Pergunta",
     chatPlaceholder:
       "Faça uma pergunta ou responda à próxima pergunta do Finley Beyond.",
+    reviewError: "Houve um problema ao executar a revisão preliminar.",
+    matchError: "Houve um problema ao avaliar o cenário.",
+    matchPending: "Execute a revisão preliminar para gerar a direção interna de matching.",
   },
   es: {
     title: "Espacio del Cliente / Borrower",
@@ -222,8 +317,18 @@ const COPY = {
     applyNow: "Aplicar Ahora",
     schedule: "Agendar con el Loan Officer",
     emailOfficer: "Enviar Correo al Loan Officer",
+    nextActions: "Próximos Pasos",
+    internalReviewTitle: "Dirección Interna del Escenario",
+    internalReviewText:
+      "Esta sección refleja la dirección interna de matching de Finley Beyond y se utiliza para orientar la conversación y el enrutamiento.",
+    likelyDirection: "Dirección Más Probable",
+    lenderCoverage: "Cobertura de Lenders",
+    nextQuestion: "Siguiente Mejor Pregunta",
     chatPlaceholder:
       "Haga una pregunta o responda la siguiente pregunta de Finley Beyond.",
+    reviewError: "Hubo un problema al ejecutar la revisión preliminar.",
+    matchError: "Hubo un problema al evaluar el escenario.",
+    matchPending: "Ejecute la revisión preliminar para generar la dirección interna de matching.",
   },
 };
 
@@ -276,6 +381,73 @@ function buttonSecondaryStyle(active = false): React.CSSProperties {
   };
 }
 
+function formatMoney(value: string) {
+  const n = Number(value || 0);
+  if (!n) return "0";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function normalizeOccupancyForMatch(value: string, purpose: LoanPurpose) {
+  const lower = value.trim().toLowerCase();
+
+  if (lower.includes("primary")) return "primary";
+  if (lower.includes("second")) return "second home";
+  if (lower.includes("investment")) return "investment";
+
+  if (purpose === "Investment") return "investment";
+  return "";
+}
+
+function normalizeTransactionForMatch(purpose: LoanPurpose) {
+  if (purpose === "Purchase" || purpose === "Investment") return "purchase";
+  if (purpose === "Refinance") return "rate term refinance";
+  return "";
+}
+
+function guessIncomeType(income: string, purpose: LoanPurpose) {
+  const lower = income.trim().toLowerCase();
+
+  if (purpose === "Investment") return "dscr";
+  if (lower.includes("bank")) return "bank statements";
+  if (lower.includes("1099")) return "1099";
+  if (lower.includes("p&l") || lower.includes("pnl") || lower.includes("profit")) {
+    return "pnl";
+  }
+  return "full doc";
+}
+
+function guessBorrowerStatus() {
+  return "citizen";
+}
+
+function extractReply(data: unknown, fallback: string) {
+  if (typeof data === "string" && data.trim()) return data;
+
+  if (typeof data === "object" && data !== null) {
+    const obj = data as Record<string, unknown>;
+
+    if (typeof obj.reply === "string" && obj.reply.trim()) return obj.reply;
+    if (typeof obj.message === "string" && obj.message.trim()) return obj.message;
+    if (typeof obj.response === "string" && obj.response.trim()) return obj.response;
+    if (typeof obj.content === "string" && obj.content.trim()) return obj.content;
+
+    const choices = obj.choices;
+    if (Array.isArray(choices) && choices.length > 0) {
+      const first = choices[0] as Record<string, unknown>;
+      const message = first.message as Record<string, unknown> | undefined;
+      if (message && typeof message.content === "string" && message.content.trim()) {
+        return message.content;
+      }
+    }
+  }
+
+  return fallback;
+}
+
 export default function BorrowerPage() {
   const [language, setLanguage] = useState<LanguageCode>("en");
   const t = COPY[language];
@@ -287,6 +459,9 @@ export default function BorrowerPage() {
     useState<LoanOfficerRecord>(DEFAULT_OFFICER);
   const [reviewing, setReviewing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [matchLoading, setMatchLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [matchError, setMatchError] = useState("");
 
   const [intake, setIntake] = useState<IntakeFormState>({
     name: "",
@@ -311,6 +486,7 @@ export default function BorrowerPage() {
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [routing, setRouting] = useState<RoutingPayload | undefined>(undefined);
+  const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(scenario.homePrice || 0);
@@ -326,6 +502,21 @@ export default function BorrowerPage() {
     const ltv = ((homePrice - downPayment) / homePrice) * 100;
     return `${Math.max(0, Math.round(ltv))}%`;
   }, [scenario.homePrice, scenario.downPayment]);
+
+  const matchRequestBody = useMemo(() => {
+    return {
+      borrower_status: guessBorrowerStatus(),
+      occupancy: normalizeOccupancyForMatch(scenario.occupancy, loanPurpose),
+      transaction: normalizeTransactionForMatch(loanPurpose),
+      income: guessIncomeType(intake.income, loanPurpose),
+      property: "single family",
+      credit: Number(intake.credit || 0) || null,
+      ltv: estimatedLtv ? Number(estimatedLtv.replace("%", "")) : null,
+      dti: Number(intake.debt || 0) || null,
+      loan_amount: estimatedLoanAmount ? Number(estimatedLoanAmount) : null,
+      first_time_homebuyer: loanPurpose === "Purchase" ? true : false,
+    };
+  }, [estimatedLoanAmount, estimatedLtv, intake.credit, intake.debt, intake.income, loanPurpose, scenario.occupancy]);
 
   const handleConfirmOfficer = () => {
     const lower = loanOfficerQuery.trim().toLowerCase();
@@ -347,7 +538,10 @@ export default function BorrowerPage() {
     setSelectedOfficer(found);
   };
 
-  const buildRouting = (conversation: ChatMessage[]): RoutingPayload => ({
+  const buildRouting = (
+    conversation: ChatMessage[],
+    match: MatchResponse | null
+  ): RoutingPayload => ({
     language,
     loanOfficerQuery,
     selectedOfficer,
@@ -371,11 +565,70 @@ export default function BorrowerPage() {
       estimatedLtv,
       occupancy: scenario.occupancy,
     },
+    internalMatch: match
+      ? {
+          topRecommendation:
+            match.openai_enhancement?.topRecommendation ||
+            match.top_recommendation ||
+            "",
+          nextQuestion:
+            match.openai_enhancement?.nextBestQuestion ||
+            match.next_question ||
+            "",
+          strongCount: match.summary?.strong_count || 0,
+          conditionalCount: match.summary?.conditional_count || 0,
+          eliminatedCount: match.summary?.eliminated_count || 0,
+          totalGuidelinesChecked: match.summary?.total_guidelines_checked || 0,
+          activeLendersChecked: match.lender_summary?.active_lenders_checked || [],
+          topStrongMatches: (match.strong_matches || []).slice(0, 3).map((item) => ({
+            lender_name: item.lender_name,
+            program_name: item.program_name,
+            loan_category: item.loan_category,
+            score: item.score,
+            explanation: item.explanation,
+            notes: item.notes,
+            strengths: item.strengths,
+            concerns: item.concerns,
+          })),
+        }
+      : undefined,
     conversation,
   });
 
+  const runMatch = async (): Promise<MatchResponse | null> => {
+    setMatchLoading(true);
+    setMatchError("");
+
+    try {
+      const response = await fetch("/api/match", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(matchRequestBody),
+      });
+
+      const data = (await response.json()) as MatchResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || t.matchError);
+      }
+
+      setMatchResult(data);
+      return data;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t.matchError;
+      setMatchError(message);
+      return null;
+    } finally {
+      setMatchLoading(false);
+    }
+  };
+
   const runPreliminaryReview = async () => {
     setReviewing(true);
+    setPageError("");
 
     const starterMessage: ChatMessage = {
       role: "user",
@@ -387,10 +640,11 @@ export default function BorrowerPage() {
           : "I am ready to begin the preliminary review.",
     };
 
-    const starterConversation: ChatMessage[] = [starterMessage];
-    const currentRouting = buildRouting(starterConversation);
-
     try {
+      const match = await runMatch();
+      const starterConversation: ChatMessage[] = [starterMessage];
+      const currentRouting = buildRouting(starterConversation, match);
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -400,7 +654,36 @@ export default function BorrowerPage() {
             ...currentRouting,
             conversation: starterConversation,
           },
-          messages: starterConversation,
+          messages: [
+            {
+              role: "user",
+              content: `
+Borrower intake has been collected.
+
+Internal match direction:
+- Top recommendation: ${
+                match?.openai_enhancement?.topRecommendation ||
+                match?.top_recommendation ||
+                "No strong direction yet"
+              }
+- Strong match count: ${match?.summary?.strong_count || 0}
+- Conditional match count: ${match?.summary?.conditional_count || 0}
+- Next best question: ${
+                match?.openai_enhancement?.nextBestQuestion ||
+                match?.next_question ||
+                "Continue qualification"
+              }
+
+Instructions:
+- Do not reveal internal lender/program names unless compliance-safe for this flow.
+- Speak in a borrower-safe way.
+- Acknowledge the borrower information already entered.
+- Encourage Apply Now.
+- Ask the next best qualification question.
+              `.trim(),
+            },
+            starterMessage,
+          ],
         }),
       });
 
@@ -410,12 +693,16 @@ export default function BorrowerPage() {
         starterMessage,
         {
           role: "assistant",
-          content: String(data.reply || "Review started."),
+          content: extractReply(data, "Review started."),
         },
       ];
 
       setMessages(newConversation);
-      setRouting(data.routing || buildRouting(newConversation));
+      setRouting(data.routing || buildRouting(newConversation, match));
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t.reviewError;
+      setPageError(message);
     } finally {
       setReviewing(false);
     }
@@ -423,6 +710,7 @@ export default function BorrowerPage() {
 
   const continueScenario = async () => {
     setReviewing(true);
+    setPageError("");
 
     const userMessage: ChatMessage = {
       role: "user",
@@ -434,17 +722,48 @@ export default function BorrowerPage() {
           : `My goal is a ${loanPurpose.toLowerCase()} scenario with an estimated property price of ${scenario.homePrice || "0"} and an estimated down payment of ${scenario.downPayment || "0"}.`,
     };
 
-    const nextConversation: ChatMessage[] = [...messages, userMessage];
-    const currentRouting = buildRouting(nextConversation);
-
     try {
+      const match = await runMatch();
+      const nextConversation: ChatMessage[] = [...messages, userMessage];
+      const currentRouting = buildRouting(nextConversation, match);
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stage: "scenario_review",
           routing: currentRouting,
-          messages: nextConversation,
+          messages: [
+            {
+              role: "user",
+              content: `
+Updated scenario details are available.
+
+Internal match direction:
+- Top recommendation: ${
+                match?.openai_enhancement?.topRecommendation ||
+                match?.top_recommendation ||
+                "No strong direction yet"
+              }
+- Strong match count: ${match?.summary?.strong_count || 0}
+- Conditional match count: ${match?.summary?.conditional_count || 0}
+- Next best question: ${
+                match?.openai_enhancement?.nextBestQuestion ||
+                match?.next_question ||
+                "Continue qualification"
+              }
+
+Instructions:
+- Keep the response borrower-safe.
+- Do not promise approval.
+- Do not disclose raw internal match logic unless appropriate.
+- Briefly acknowledge the scenario.
+- Encourage Apply Now.
+- Ask the next best qualification question.
+              `.trim(),
+            },
+            ...nextConversation,
+          ],
         }),
       });
 
@@ -454,12 +773,16 @@ export default function BorrowerPage() {
         ...nextConversation,
         {
           role: "assistant",
-          content: String(data.reply || "Scenario updated."),
+          content: extractReply(data, "Scenario updated."),
         },
       ];
 
       setMessages(updatedConversation);
-      setRouting(data.routing || buildRouting(updatedConversation));
+      setRouting(data.routing || buildRouting(updatedConversation, match));
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t.reviewError;
+      setPageError(message);
     } finally {
       setReviewing(false);
     }
@@ -469,23 +792,51 @@ export default function BorrowerPage() {
     if (!chatInput.trim()) return;
 
     setSending(true);
+    setPageError("");
 
     const userMessage: ChatMessage = {
       role: "user",
       content: chatInput.trim(),
     };
 
-    const nextConversation: ChatMessage[] = [...messages, userMessage];
-    const currentRouting = buildRouting(nextConversation);
-
     try {
+      const nextConversation: ChatMessage[] = [...messages, userMessage];
+      const currentRouting = buildRouting(nextConversation, matchResult);
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stage: "follow_up",
           routing: currentRouting,
-          messages: nextConversation,
+          messages: [
+            {
+              role: "user",
+              content: `
+Continue the borrower-facing conversation.
+
+Internal match direction:
+- Top recommendation: ${
+                matchResult?.openai_enhancement?.topRecommendation ||
+                matchResult?.top_recommendation ||
+                "No strong direction yet"
+              }
+- Next best question: ${
+                matchResult?.openai_enhancement?.nextBestQuestion ||
+                matchResult?.next_question ||
+                "Continue qualification"
+              }
+
+Rules:
+- Keep the response borrower-safe.
+- Do not promise approval.
+- Do not disclose internal raw lender/program detail unless appropriate.
+- Encourage Apply Now when useful.
+- If appropriate, ask the next best qualification question.
+              `.trim(),
+            },
+            ...nextConversation,
+          ],
         }),
       });
 
@@ -495,13 +846,17 @@ export default function BorrowerPage() {
         ...nextConversation,
         {
           role: "assistant",
-          content: String(data.reply || "Message received."),
+          content: extractReply(data, "Message received."),
         },
       ];
 
       setMessages(updatedConversation);
-      setRouting(data.routing || buildRouting(updatedConversation));
+      setRouting(data.routing || buildRouting(updatedConversation, matchResult));
       setChatInput("");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "There was a problem sending the message.";
+      setPageError(message);
     } finally {
       setSending(false);
     }
@@ -597,6 +952,20 @@ export default function BorrowerPage() {
             </Link>
           </div>
         </div>
+
+        {(pageError || matchError) && (
+          <div
+            style={{
+              ...cardStyle(),
+              border: "1px solid #F5C2C7",
+              background: "#FFF5F5",
+              color: "#842029",
+              marginBottom: 20,
+            }}
+          >
+            {pageError || matchError}
+          </div>
+        )}
 
         <div
           style={{
@@ -967,7 +1336,7 @@ export default function BorrowerPage() {
                   ESTIMATED LOAN AMOUNT
                 </div>
                 <div style={{ fontSize: 28, fontWeight: 800 }}>
-                  {estimatedLoanAmount || "0"}
+                  {formatMoney(estimatedLoanAmount)}
                 </div>
                 <div style={{ marginTop: 8, color: "#5A6A84" }}>
                   Estimated LTV: {estimatedLtv || "Not available"}
@@ -988,6 +1357,101 @@ export default function BorrowerPage() {
           </div>
 
           <div style={{ display: "grid", gap: 20 }}>
+            <section style={cardStyle()}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.internalReviewTitle}</h2>
+              <p style={{ marginTop: 0, color: "#5A6A84", lineHeight: 1.7 }}>
+                {t.internalReviewText}
+              </p>
+
+              {!matchResult ? (
+                <div style={{ color: "#70819A", lineHeight: 1.7 }}>
+                  {matchLoading ? "Evaluating scenario..." : t.matchPending}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 14 }}>
+                  <div
+                    style={{
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "#F8FAFC",
+                      border: "1px solid #D9E1EC",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: 0.45,
+                        color: "#6B7B94",
+                        marginBottom: 8,
+                      }}
+                    >
+                      {t.likelyDirection}
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 800 }}>
+                      {matchResult.openai_enhancement?.topRecommendation ||
+                        matchResult.top_recommendation ||
+                        "No strong direction yet"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "#F8FAFC",
+                      border: "1px solid #D9E1EC",
+                      color: "#4B5C78",
+                      lineHeight: 1.8,
+                    }}
+                  >
+                    <div>
+                      <strong>Strong:</strong> {matchResult.summary?.strong_count || 0}
+                    </div>
+                    <div>
+                      <strong>Conditional:</strong>{" "}
+                      {matchResult.summary?.conditional_count || 0}
+                    </div>
+                    <div>
+                      <strong>Eliminated:</strong>{" "}
+                      {matchResult.summary?.eliminated_count || 0}
+                    </div>
+                    <div>
+                      <strong>{t.lenderCoverage}:</strong>{" "}
+                      {(matchResult.lender_summary?.active_lenders_checked || []).join(", ") ||
+                        "Not available"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "#F8FAFC",
+                      border: "1px solid #D9E1EC",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: 0.45,
+                        color: "#6B7B94",
+                        marginBottom: 8,
+                      }}
+                    >
+                      {t.nextQuestion}
+                    </div>
+                    <div style={{ lineHeight: 1.7, color: "#263366" }}>
+                      {matchResult.openai_enhancement?.nextBestQuestion ||
+                        matchResult.next_question ||
+                        "Not available"}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
             <section style={cardStyle()}>
               <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.conversation}</h2>
 
@@ -1061,7 +1525,7 @@ export default function BorrowerPage() {
             </section>
 
             <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0, fontSize: 18 }}>Next Actions</h2>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.nextActions}</h2>
 
               <div style={{ display: "grid", gap: 12 }}>
                 <a
@@ -1128,12 +1592,12 @@ export default function BorrowerPage() {
                     {routing.scenario.occupancy || "Not provided"}
                   </div>
                   <div>
-                    <strong>Timeline:</strong>{" "}
-                    {routing.scenario.timeline || "Not provided"}
+                    <strong>Estimated Loan Amount:</strong>{" "}
+                    {formatMoney(routing.scenario.estimatedLoanAmount || "0")}
                   </div>
                   <div>
-                    <strong>Funds Source:</strong>{" "}
-                    {routing.scenario.fundsSource || "Not provided"}
+                    <strong>Estimated LTV:</strong>{" "}
+                    {routing.scenario.estimatedLtv || "Not provided"}
                   </div>
                 </div>
               )}
