@@ -16,10 +16,14 @@ type JsonPayload = {
   nonOwnerOccupiedStates?: unknown;
 };
 
-type EligibilityInsertRow = {
+type EligibilityUpsertRow = {
   lender_id: string;
   state_code: string;
-  occupancy_type: "owner_occupied" | "non_owner_occupied";
+  owner_occupied_allowed: boolean;
+  non_owner_occupied_allowed: boolean;
+  second_home_allowed: boolean;
+  heloc_allowed: boolean;
+  notes: string | null;
 };
 
 function normalizeString(value: unknown): string {
@@ -137,6 +141,46 @@ export async function POST(req: Request, context: RouteContext) {
       );
     }
 
+    const stateMap = new Map<
+      string,
+      {
+        owner_occupied_allowed: boolean;
+        non_owner_occupied_allowed: boolean;
+      }
+    >();
+
+    for (const stateCode of ownerOccupiedStates) {
+      const existing = stateMap.get(stateCode) || {
+        owner_occupied_allowed: false,
+        non_owner_occupied_allowed: false,
+      };
+
+      existing.owner_occupied_allowed = true;
+      stateMap.set(stateCode, existing);
+    }
+
+    for (const stateCode of nonOwnerOccupiedStates) {
+      const existing = stateMap.get(stateCode) || {
+        owner_occupied_allowed: false,
+        non_owner_occupied_allowed: false,
+      };
+
+      existing.non_owner_occupied_allowed = true;
+      stateMap.set(stateCode, existing);
+    }
+
+    const upsertRows: EligibilityUpsertRow[] = Array.from(stateMap.entries()).map(
+      ([state_code, flags]) => ({
+        lender_id: id,
+        state_code,
+        owner_occupied_allowed: flags.owner_occupied_allowed,
+        non_owner_occupied_allowed: flags.non_owner_occupied_allowed,
+        second_home_allowed: false,
+        heloc_allowed: false,
+        notes: null,
+      })
+    );
+
     const { error: deleteEligibilityError } = await supabaseAdmin
       .from("lender_state_eligibility")
       .delete()
@@ -149,38 +193,10 @@ export async function POST(req: Request, context: RouteContext) {
       );
     }
 
-    // IMPORTANT:
-    // Current database structure allows only ONE row per lender_id + state_code.
-    // So if a state appears in both ownerOccupiedStates and nonOwnerOccupiedStates,
-    // we must save only one row for that state.
-    //
-    // Priority rule for now:
-    // - If a state is selected in ownerOccupiedStates, save it as owner_occupied
-    // - Otherwise, if it is selected in nonOwnerOccupiedStates, save it as non_owner_occupied
-    //
-    // This avoids duplicate-key errors on:
-    // lender_state_eligibility_lender_id_state_code_key
-
-    const mergedStates = Array.from(
-      new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
-    ).sort();
-
-    const rows: EligibilityInsertRow[] = mergedStates.map((stateCode) => {
-      const isOwnerOccupied = ownerOccupiedStates.includes(stateCode);
-
-      return {
-        lender_id: id,
-        state_code: stateCode,
-        occupancy_type: isOwnerOccupied
-          ? "owner_occupied"
-          : "non_owner_occupied",
-      };
-    });
-
-    if (rows.length > 0) {
+    if (upsertRows.length > 0) {
       const { error: insertEligibilityError } = await supabaseAdmin
         .from("lender_state_eligibility")
-        .insert(rows);
+        .insert(upsertRows);
 
       if (insertEligibilityError) {
         return NextResponse.json(
@@ -200,8 +216,6 @@ export async function POST(req: Request, context: RouteContext) {
         ownerOccupiedStates,
         nonOwnerOccupiedStates,
       },
-      note:
-        "Because the current lender_state_eligibility table allows only one row per lender and state, states selected in both lists are currently saved as owner_occupied.",
     });
   } catch (error) {
     return NextResponse.json(
