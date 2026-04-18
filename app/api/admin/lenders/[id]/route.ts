@@ -16,20 +16,14 @@ type JsonPayload = {
   nonOwnerOccupiedStates?: unknown;
 };
 
+type EligibilityInsertRow = {
+  lender_id: string;
+  state_code: string;
+  occupancy_type: "owner_occupied" | "non_owner_occupied";
+};
+
 function normalizeString(value: unknown): string {
   return String(value ?? "").trim();
-}
-
-function normalizeStateArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-
-  return Array.from(
-    new Set(
-      value
-        .map((item) => String(item ?? "").trim().toUpperCase())
-        .filter(Boolean)
-    )
-  ).sort();
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -39,6 +33,18 @@ function normalizeStringArray(value: unknown): string[] {
     new Set(
       value
         .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function normalizeStateArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item ?? "").trim().toUpperCase())
         .filter(Boolean)
     )
   ).sort();
@@ -59,7 +65,6 @@ export async function POST(req: Request, context: RouteContext) {
   if (authError) return authError;
 
   const { id } = await context.params;
-
   const contentType = req.headers.get("content-type") || "";
 
   try {
@@ -68,29 +73,29 @@ export async function POST(req: Request, context: RouteContext) {
       contentType.includes("multipart/form-data")
     ) {
       const formData = await req.formData();
-      const methodOverride = normalizeString(formData.get("_method"));
+      const methodOverride = normalizeString(formData.get("_method")).toUpperCase();
 
-      if (methodOverride.toUpperCase() === "DELETE") {
-        const { error: eligibilityDeleteError } = await supabaseAdmin
+      if (methodOverride === "DELETE") {
+        const { error: deleteEligibilityError } = await supabaseAdmin
           .from("lender_state_eligibility")
           .delete()
           .eq("lender_id", id);
 
-        if (eligibilityDeleteError) {
+        if (deleteEligibilityError) {
           return NextResponse.json(
-            { error: eligibilityDeleteError.message },
+            { error: deleteEligibilityError.message },
             { status: 500 }
           );
         }
 
-        const { error: lenderDeleteError } = await supabaseAdmin
+        const { error: deleteLenderError } = await supabaseAdmin
           .from("lenders")
           .delete()
           .eq("id", id);
 
-        if (lenderDeleteError) {
+        if (deleteLenderError) {
           return NextResponse.json(
-            { error: lenderDeleteError.message },
+            { error: deleteLenderError.message },
             { status: 500 }
           );
         }
@@ -132,17 +137,6 @@ export async function POST(req: Request, context: RouteContext) {
       );
     }
 
-    const allStates = Array.from(
-      new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
-    ).sort();
-
-    const rows = allStates.map((stateCode) => ({
-      lender_id: id,
-      state_code: stateCode,
-      owner_occupied_allowed: ownerOccupiedStates.includes(stateCode),
-      non_owner_occupied_allowed: nonOwnerOccupiedStates.includes(stateCode),
-    }));
-
     const { error: deleteEligibilityError } = await supabaseAdmin
       .from("lender_state_eligibility")
       .delete()
@@ -154,6 +148,19 @@ export async function POST(req: Request, context: RouteContext) {
         { status: 500 }
       );
     }
+
+    const rows: EligibilityInsertRow[] = [
+      ...ownerOccupiedStates.map((stateCode) => ({
+        lender_id: id,
+        state_code: stateCode,
+        occupancy_type: "owner_occupied" as const,
+      })),
+      ...nonOwnerOccupiedStates.map((stateCode) => ({
+        lender_id: id,
+        state_code: stateCode,
+        occupancy_type: "non_owner_occupied" as const,
+      })),
+    ];
 
     if (rows.length > 0) {
       const { error: insertEligibilityError } = await supabaseAdmin
@@ -185,7 +192,52 @@ export async function POST(req: Request, context: RouteContext) {
         error:
           error instanceof Error
             ? error.message
-            : "Unexpected lender route error.",
+            : "Unexpected lender detail route error.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(_req: Request, context: RouteContext) {
+  const authError = await ensureAdmin();
+  if (authError) return authError;
+
+  const { id } = await context.params;
+
+  try {
+    const { error: deleteEligibilityError } = await supabaseAdmin
+      .from("lender_state_eligibility")
+      .delete()
+      .eq("lender_id", id);
+
+    if (deleteEligibilityError) {
+      return NextResponse.json(
+        { error: deleteEligibilityError.message },
+        { status: 500 }
+      );
+    }
+
+    const { error: deleteLenderError } = await supabaseAdmin
+      .from("lenders")
+      .delete()
+      .eq("id", id);
+
+    if (deleteLenderError) {
+      return NextResponse.json(
+        { error: deleteLenderError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unexpected lender delete route error.",
       },
       { status: 500 }
     );
