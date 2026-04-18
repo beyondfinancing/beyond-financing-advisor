@@ -226,7 +226,12 @@ function mapBorrowerStatus(value: unknown): BorrowerStatus {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (v === "citizen" || v === "us citizen" || v === "u s citizen" || v === "american citizen") {
+  if (
+    v === "citizen" ||
+    v === "us citizen" ||
+    v === "u s citizen" ||
+    v === "american citizen"
+  ) {
     return "citizen";
   }
   if (
@@ -253,7 +258,11 @@ function mapBorrowerStatus(value: unknown): BorrowerStatus {
   if (v === "daca") {
     return "daca";
   }
-  if (v === "foreign_national" || v === "foreign national" || v === "foreign") {
+  if (
+    v === "foreign_national" ||
+    v === "foreign national" ||
+    v === "foreign"
+  ) {
     return "foreign_national";
   }
 
@@ -312,7 +321,12 @@ function mapTransactionType(value: unknown): TransactionType {
   ) {
     return "cash_out_refinance";
   }
-  if (v === "second_lien" || v === "second lien" || v === "heloc" || v === "home equity") {
+  if (
+    v === "second_lien" ||
+    v === "second lien" ||
+    v === "heloc" ||
+    v === "home equity"
+  ) {
     return "second_lien";
   }
 
@@ -323,7 +337,13 @@ function mapIncomeType(value: unknown): IncomeType {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (v === "full_doc" || v === "full doc" || v === "full documentation" || v === "w2" || v === "w 2") {
+  if (
+    v === "full_doc" ||
+    v === "full doc" ||
+    v === "full documentation" ||
+    v === "w2" ||
+    v === "w 2"
+  ) {
     return "full_doc";
   }
   if (v === "express_doc" || v === "express doc") return "express_doc";
@@ -337,11 +357,20 @@ function mapIncomeType(value: unknown): IncomeType {
   }
   if (v === "1099") return "1099";
   if (v === "pnl" || v === "p and l" || v === "profit and loss") return "pnl";
-  if (v === "asset_utilization" || v === "asset utilization" || v === "asset depletion") {
+  if (
+    v === "asset_utilization" ||
+    v === "asset utilization" ||
+    v === "asset depletion"
+  ) {
     return "asset_utilization";
   }
   if (v === "dscr") return "dscr";
-  if (v === "no_ratio" || v === "no ratio" || v === "stated" || v === "stated income") {
+  if (
+    v === "no_ratio" ||
+    v === "no ratio" ||
+    v === "stated" ||
+    v === "stated income"
+  ) {
     return "no_ratio";
   }
   if (v === "wvoe" || v === "written verification of employment") {
@@ -367,10 +396,25 @@ function mapPropertyType(value: unknown): PropertyType {
   }
   if (v === "condo") return "condo";
   if (v === "townhouse" || v === "townhome") return "townhouse";
-  if (v === "2_unit" || v === "2 unit" || v === "duplex" || v === "two unit") return "2_unit";
-  if (v === "3_unit" || v === "3 unit" || v === "triplex" || v === "three unit") return "3_unit";
+  if (v === "2_unit" || v === "2 unit" || v === "duplex" || v === "two unit") {
+    return "2_unit";
+  }
+  if (
+    v === "3_unit" ||
+    v === "3 unit" ||
+    v === "triplex" ||
+    v === "three unit"
+  ) {
+    return "3_unit";
+  }
   if (v === "4_unit" || v === "4 unit" || v === "four unit") return "4_unit";
-  if (v === "mixed_use" || v === "mixed use" || v === "mixed use property") return "mixed_use";
+  if (
+    v === "mixed_use" ||
+    v === "mixed use" ||
+    v === "mixed use property"
+  ) {
+    return "mixed_use";
+  }
   if (
     v === "5_to_8_units" ||
     v === "5 to 8 units" ||
@@ -387,7 +431,13 @@ function mapPropertyType(value: unknown): PropertyType {
 }
 
 function inferUnitsFromPropertyType(propertyType: PropertyType): number | null {
-  if (propertyType === "single_family" || propertyType === "condo" || propertyType === "townhouse") return 1;
+  if (
+    propertyType === "single_family" ||
+    propertyType === "condo" ||
+    propertyType === "townhouse"
+  ) {
+    return 1;
+  }
   if (propertyType === "2_unit") return 2;
   if (propertyType === "3_unit") return 3;
   if (propertyType === "4_unit") return 4;
@@ -397,11 +447,21 @@ function inferUnitsFromPropertyType(propertyType: PropertyType): number | null {
 function normalizeBody(body: unknown): QualificationInput {
   const obj = (body ?? {}) as Record<string, unknown>;
 
-  const borrower_status = mapBorrowerStatus(obj.borrower_status ?? obj.borrowerStatus ?? obj.status);
-  const occupancy_type = mapOccupancyType(obj.occupancy_type ?? obj.occupancyType ?? obj.occupancy);
-  const transaction_type = mapTransactionType(obj.transaction_type ?? obj.transactionType ?? obj.transaction);
-  const income_type = mapIncomeType(obj.income_type ?? obj.incomeType ?? obj.income);
-  const property_type = mapPropertyType(obj.property_type ?? obj.propertyType ?? obj.property);
+  const borrower_status = mapBorrowerStatus(
+    obj.borrower_status ?? obj.borrowerStatus ?? obj.status
+  );
+  const occupancy_type = mapOccupancyType(
+    obj.occupancy_type ?? obj.occupancyType ?? obj.occupancy
+  );
+  const transaction_type = mapTransactionType(
+    obj.transaction_type ?? obj.transactionType ?? obj.transaction
+  );
+  const income_type = mapIncomeType(
+    obj.income_type ?? obj.incomeType ?? obj.income
+  );
+  const property_type = mapPropertyType(
+    obj.property_type ?? obj.propertyType ?? obj.property
+  );
 
   const credit_score = toNumber(obj.credit_score ?? obj.creditScore ?? obj.credit);
   const ltv = toNumber(obj.ltv ?? obj.loan_to_value ?? obj.loanToValue);
@@ -411,11 +471,22 @@ function normalizeBody(body: unknown): QualificationInput {
   const first_time_homebuyer = toBooleanOrNull(
     obj.first_time_homebuyer ?? obj.firstTimeHomebuyer ?? obj.fthb
   );
+
   const subject_state = normalizeState(
-    obj.subject_state ?? obj.subjectState ?? obj.property_state ?? obj.propertyState ?? obj.state
+    obj.subject_state ??
+      obj.subjectState ??
+      obj.target_state ??
+      obj.targetState ??
+      obj.property_state ??
+      obj.propertyState ??
+      obj.state
   );
+
   const available_reserves_months = toNumber(
-    obj.available_reserves_months ?? obj.availableReservesMonths ?? obj.reserves_months ?? obj.reservesMonths
+    obj.available_reserves_months ??
+      obj.availableReservesMonths ??
+      obj.reserves_months ??
+      obj.reservesMonths
   );
 
   return {
@@ -436,7 +507,9 @@ function normalizeBody(body: unknown): QualificationInput {
 }
 
 function isMissing(value: unknown): boolean {
-  return value === null || value === undefined || value === "";
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value.trim() === "";
+  return false;
 }
 
 function normalizeString(value: unknown): string {
@@ -446,7 +519,9 @@ function normalizeString(value: unknown): string {
 function normalizeArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
-      .map((item) => (typeof item === "string" ? item.trim() : String(item ?? "").trim()))
+      .map((item) =>
+        typeof item === "string" ? item.trim() : String(item ?? "").trim()
+      )
       .filter(Boolean);
   }
 
@@ -458,7 +533,9 @@ function normalizeArray(value: unknown): string[] {
       const parsed = JSON.parse(trimmed);
       if (Array.isArray(parsed)) {
         return parsed
-          .map((item) => (typeof item === "string" ? item.trim() : String(item ?? "").trim()))
+          .map((item) =>
+            typeof item === "string" ? item.trim() : String(item ?? "").trim()
+          )
           .filter(Boolean);
       }
     } catch {
@@ -537,7 +614,9 @@ function normalizeGuidelineRow(raw: RawProgramGuidelineRow): ProgramGuidelineRow
   };
 }
 
-function normalizeLenderStateEligibilityRow(raw: RawLenderStateEligibilityRow): LenderStateEligibility {
+function normalizeLenderStateEligibilityRow(
+  raw: RawLenderStateEligibilityRow
+): LenderStateEligibility {
   return {
     lender_id: normalizeString(raw.lender_id),
     state_code: normalizeState(raw.state_code),
@@ -545,7 +624,8 @@ function normalizeLenderStateEligibilityRow(raw: RawLenderStateEligibilityRow): 
     non_owner_occupied_allowed: Boolean(raw.non_owner_occupied_allowed),
     second_home_allowed: Boolean(raw.second_home_allowed),
     heloc_allowed: Boolean(raw.heloc_allowed),
-    notes: raw.notes === null || raw.notes === undefined ? null : String(raw.notes),
+    notes:
+      raw.notes === null || raw.notes === undefined ? null : String(raw.notes),
   };
 }
 
@@ -597,17 +677,29 @@ function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInpu
 
   if (input.income_type === "bank_statements" && combined.includes("bank")) {
     bucket.score += 16;
-    bucket.strengths.push("Program identity directly aligns with bank-statement qualification.");
+    bucket.strengths.push(
+      "Program identity directly aligns with bank-statement qualification."
+    );
   }
 
-  if (input.income_type === "dscr" && (combined.includes("dscr") || combined.includes("investor"))) {
+  if (
+    input.income_type === "dscr" &&
+    (combined.includes("dscr") || combined.includes("investor"))
+  ) {
     bucket.score += 16;
-    bucket.strengths.push("Program identity directly aligns with DSCR / investor qualification.");
+    bucket.strengths.push(
+      "Program identity directly aligns with DSCR / investor qualification."
+    );
   }
 
-  if (input.occupancy_type === "investment_property" && combined.includes("investor")) {
+  if (
+    input.occupancy_type === "investment_property" &&
+    combined.includes("investor")
+  ) {
     bucket.score += 10;
-    bucket.strengths.push("Program identity strongly fits investment-property direction.");
+    bucket.strengths.push(
+      "Program identity strongly fits investment-property direction."
+    );
   }
 
   if (
@@ -617,17 +709,25 @@ function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInpu
     combined.includes("umbrella")
   ) {
     bucket.score -= 4;
-    bucket.concerns.push("This appears to be a broader umbrella option rather than the narrowest direct-fit path.");
+    bucket.concerns.push(
+      "This appears to be a broader umbrella option rather than the narrowest direct-fit path."
+    );
   }
 }
 
-function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input: QualificationInput) {
+function addBoundaryScoring(
+  bucket: MatchBucket,
+  row: ProgramGuidelineRow,
+  input: QualificationInput
+) {
   if (input.credit_score !== null && row.min_credit_score !== null) {
     const cushion = input.credit_score - row.min_credit_score;
 
     if (cushion >= 80) {
       bucket.score += 10;
-      bucket.strengths.push("Credit profile appears comfortably above the minimum floor.");
+      bucket.strengths.push(
+        "Credit profile appears comfortably above the minimum floor."
+      );
     } else if (cushion >= 40) {
       bucket.score += 6;
       bucket.strengths.push("Credit profile appears solid for this path.");
@@ -689,9 +789,14 @@ function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input
     if (row.first_time_homebuyer_allowed === true && input.first_time_homebuyer === true) {
       bucket.score += 3;
       bucket.strengths.push("Program appears open to first-time-homebuyer layering.");
-    } else if (row.first_time_homebuyer_allowed === false && input.first_time_homebuyer === true) {
+    } else if (
+      row.first_time_homebuyer_allowed === false &&
+      input.first_time_homebuyer === true
+    ) {
       bucket.score -= 2;
-      bucket.concerns.push("Program may not be ideal for first-time-homebuyer benefit layering.");
+      bucket.concerns.push(
+        "Program may not be ideal for first-time-homebuyer benefit layering."
+      );
     }
   }
 
@@ -710,13 +815,19 @@ function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input
     } else {
       if (row.reserves_required_months >= 12) {
         bucket.score -= 4;
-        bucket.concerns.push(`Higher reserve burden noted: ${row.reserves_required_months} month(s) PITIA.`);
+        bucket.concerns.push(
+          `Higher reserve burden noted: ${row.reserves_required_months} month(s) PITIA.`
+        );
       } else if (row.reserves_required_months >= 6) {
         bucket.score -= 2;
-        bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s) PITIA.`);
+        bucket.notes.push(
+          `Reserves requirement noted: ${row.reserves_required_months} month(s) PITIA.`
+        );
       } else {
         bucket.score += 1;
-        bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s) PITIA.`);
+        bucket.notes.push(
+          `Reserves requirement noted: ${row.reserves_required_months} month(s) PITIA.`
+        );
       }
     }
   }
@@ -738,7 +849,9 @@ function buildExplanation(bucket: MatchBucket): string {
   }
 
   if (bucket.missing_items.length > 0) {
-    parts.push(`Still conditional because these items remain missing: ${bucket.missing_items.join(", ")}.`);
+    parts.push(
+      `Still conditional because these items remain missing: ${bucket.missing_items.join(", ")}.`
+    );
   }
 
   if (parts.length === 0) {
@@ -755,13 +868,14 @@ function applyGenericCategoryBlockers(
 ) {
   const loanCategory = (row.programs?.loan_category || "").toLowerCase();
 
-  if (input.transaction_type === "purchase" && (loanCategory === "heloc" || loanCategory === "second")) {
-    bucket.blockers.push("Purchase scenarios should not be matched to HELOC or second-lien products.");
+  if (
+    input.transaction_type === "purchase" &&
+    (loanCategory === "heloc" || loanCategory === "second")
+  ) {
+    bucket.blockers.push(
+      "Purchase scenarios should not be matched to HELOC or second-lien products."
+    );
   }
-}
-
-function makeEligibilityKey(lenderId: string, stateCode: string): string {
-  return `${lenderId}__${stateCode}`;
 }
 
 function applyLenderStateEligibility(
@@ -772,15 +886,8 @@ function applyLenderStateEligibility(
 ) {
   if (!input.subject_state || !row.programs?.lender_id) return;
 
-  const key = makeEligibilityKey(row.programs.lender_id, input.subject_state);
-  const eligibility = lenderEligibilityMap.get(key);
-
-  if (!eligibility) {
-    bucket.blockers.push(
-      `${bucket.lender_name} is not configured as eligible in ${input.subject_state}.`
-    );
-    return;
-  }
+  const eligibility = lenderEligibilityMap.get(row.programs.lender_id);
+  if (!eligibility) return;
 
   if (input.occupancy_type === "primary_residence" && !eligibility.owner_occupied_allowed) {
     bucket.blockers.push(
@@ -794,7 +901,10 @@ function applyLenderStateEligibility(
     );
   }
 
-  if (input.occupancy_type === "investment_property" && !eligibility.non_owner_occupied_allowed) {
+  if (
+    input.occupancy_type === "investment_property" &&
+    !eligibility.non_owner_occupied_allowed
+  ) {
     bucket.blockers.push(
       `${bucket.lender_name} is not eligible for non-owner-occupied lending in ${input.subject_state}.`
     );
@@ -878,7 +988,9 @@ function evaluateRow(
 
   if (input.credit_score !== null && row.min_credit_score !== null) {
     if (input.credit_score < row.min_credit_score) {
-      bucket.blockers.push(`Credit score is below the minimum guideline of ${row.min_credit_score}.`);
+      bucket.blockers.push(
+        `Credit score is below the minimum guideline of ${row.min_credit_score}.`
+      );
     }
   }
 
@@ -955,7 +1067,7 @@ function evaluateRow(
 }
 
 function nextMissingQuestion(input: QualificationInput): string {
-  if (!input.subject_state) {
+  if (!input.subject_state || input.subject_state.trim() === "") {
     return "What is the subject property state?";
   }
 
@@ -1019,7 +1131,13 @@ async function getOpenAiEnhancement(args: {
 }): Promise<OpenAiEnhancement> {
   if (!process.env.OPENAI_API_KEY) return null;
 
-  const { input, strongMatches, conditionalMatches, eliminatedPaths, defaultNextQuestion } = args;
+  const {
+    input,
+    strongMatches,
+    conditionalMatches,
+    eliminatedPaths,
+    defaultNextQuestion,
+  } = args;
 
   const compactStrong = strongMatches.slice(0, 5).map((item) => ({
     lender_name: item.lender_name,
@@ -1071,6 +1189,7 @@ Rules:
 - If there are no strong matches, explain the best conditional direction
 - nextBestQuestion should be the single most useful follow-up question for narrowing the file
 - do not ask for fields already present in the scenario
+- Do NOT ask for subject state if it is already provided in the scenario
 - explicitly consider reserves and state eligibility when relevant
 
 Scenario:
@@ -1103,7 +1222,8 @@ ${defaultNextQuestion}
         messages: [
           {
             role: "system",
-            content: "You generate concise internal mortgage match explanations in strict JSON.",
+            content:
+              "You generate concise internal mortgage match explanations in strict JSON.",
           },
           {
             role: "user",
@@ -1131,7 +1251,9 @@ ${defaultNextQuestion}
 
     return {
       topRecommendation:
-        typeof parsed.topRecommendation === "string" ? parsed.topRecommendation : "",
+        typeof parsed.topRecommendation === "string"
+          ? parsed.topRecommendation
+          : "",
       whyItMatches: Array.isArray(parsed.whyItMatches)
         ? parsed.whyItMatches.map((x) => String(x)).filter(Boolean)
         : [],
@@ -1153,7 +1275,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const input = normalizeBody(body);
 
-    const supabase = await createClient();
+    const supabase = createClient();
 
     const { data, error } = await supabase
       .from("program_guidelines")
@@ -1204,10 +1326,10 @@ export async function POST(req: Request) {
       rows.map((row) => row.programs?.lender_id || "").filter(Boolean)
     );
 
-    const lenderEligibilityMap = new Map<string, LenderStateEligibility>();
+    let lenderEligibilityMap = new Map<string, LenderStateEligibility>();
 
     if (input.subject_state && lenderIds.length > 0) {
-      const { data: eligibilityData, error: eligibilityError } = await supabase
+      const { data: eligibilityData } = await supabase
         .from("lender_state_eligibility")
         .select(`
           lender_id,
@@ -1221,20 +1343,15 @@ export async function POST(req: Request) {
         .eq("state_code", input.subject_state)
         .in("lender_id", lenderIds);
 
-      if (eligibilityError) {
-        return NextResponse.json(
-          { success: false, error: eligibilityError.message },
-          { status: 500 }
-        );
-      }
-
       const normalizedEligibility = Array.isArray(eligibilityData)
-        ? (eligibilityData as RawLenderStateEligibilityRow[]).map(normalizeLenderStateEligibilityRow)
+        ? (eligibilityData as RawLenderStateEligibilityRow[]).map(
+            normalizeLenderStateEligibilityRow
+          )
         : [];
 
-      for (const item of normalizedEligibility) {
-        lenderEligibilityMap.set(makeEligibilityKey(item.lender_id, item.state_code), item);
-      }
+      lenderEligibilityMap = new Map(
+        normalizedEligibility.map((item) => [item.lender_id, item])
+      );
     }
 
     const strong_matches: MatchBucket[] = [];
@@ -1309,7 +1426,9 @@ export async function POST(req: Request) {
       {
         success: false,
         error:
-          error instanceof Error ? error.message : "Unexpected match engine failure.",
+          error instanceof Error
+            ? error.message
+            : "Unexpected match engine failure.",
       },
       { status: 500 }
     );
