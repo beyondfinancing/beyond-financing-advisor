@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requireAdminApi } from "@/lib/admin-auth";
+
 
 type EligibilityType = "owner_occupied" | "non_owner_occupied";
 
