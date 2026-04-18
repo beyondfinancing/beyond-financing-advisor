@@ -60,6 +60,54 @@ type QualificationInput = {
   first_time_homebuyer: boolean | null;
 };
 
+type RawProgramRelation = {
+  id?: unknown;
+  name?: unknown;
+  slug?: unknown;
+  loan_category?: unknown;
+  lender_id?: unknown;
+  lenders?: unknown;
+} | null;
+
+type RawLenderRelation = {
+  id?: unknown;
+  name?: unknown;
+} | null;
+
+type RawProgramGuidelineRow = {
+  id?: unknown;
+  program_id?: unknown;
+  borrower_statuses?: unknown;
+  occupancy_types?: unknown;
+  transaction_types?: unknown;
+  income_types?: unknown;
+  property_types?: unknown;
+  min_credit_score?: unknown;
+  max_ltv?: unknown;
+  max_dti?: unknown;
+  min_loan_amount?: unknown;
+  max_loan_amount?: unknown;
+  min_units?: unknown;
+  max_units?: unknown;
+  first_time_homebuyer_allowed?: unknown;
+  reserves_required_months?: unknown;
+  guideline_notes?: unknown;
+  ask_before_match?: unknown;
+  programs?: unknown;
+};
+
+type ProgramRelation = {
+  id: string;
+  name: string;
+  slug: string;
+  loan_category: string | null;
+  lender_id: string;
+  lenders: {
+    id: string;
+    name: string;
+  } | null;
+} | null;
+
 type ProgramGuidelineRow = {
   id: string;
   program_id: string;
@@ -79,17 +127,7 @@ type ProgramGuidelineRow = {
   reserves_required_months: number | null;
   guideline_notes: string | null;
   ask_before_match: string[];
-  programs: {
-    id: string;
-    name: string;
-    slug: string;
-    loan_category: string | null;
-    lender_id: string;
-    lenders: {
-      id: string;
-      name: string;
-    } | null;
-  } | null;
+  programs: ProgramRelation;
 };
 
 type MatchBucket = {
@@ -102,8 +140,18 @@ type MatchBucket = {
   notes: string[];
   missing_items: string[];
   blockers: string[];
+  strengths: string[];
+  concerns: string[];
+  explanation: string;
   score: number;
 };
+
+type OpenAiEnhancement = {
+  topRecommendation: string;
+  whyItMatches: string[];
+  cautionItems: string[];
+  nextBestQuestion: string;
+} | null;
 
 const FIELD_LABELS: Record<string, string> = {
   borrower_status: "borrower status",
@@ -129,26 +177,28 @@ function toBooleanOrNull(value: unknown): boolean | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "boolean") return value;
 
-  const s = String(value).toLowerCase().trim();
-  if (s === "yes" || s === "true") return true;
-  if (s === "no" || s === "false") return false;
+  const str = String(value).trim().toLowerCase();
+  if (str === "yes" || str === "true") return true;
+  if (str === "no" || str === "false") return false;
 
   return null;
 }
 
-function normalizeBody(body: any): QualificationInput {
+function normalizeBody(body: unknown): QualificationInput {
+  const obj = (body ?? {}) as Record<string, unknown>;
+
   return {
-    borrower_status: (body?.borrower_status || "") as BorrowerStatus,
-    occupancy_type: (body?.occupancy_type || "") as OccupancyType,
-    transaction_type: (body?.transaction_type || "") as TransactionType,
-    income_type: (body?.income_type || "") as IncomeType,
-    property_type: (body?.property_type || "") as PropertyType,
-    credit_score: toNumber(body?.credit_score),
-    ltv: toNumber(body?.ltv),
-    dti: toNumber(body?.dti),
-    loan_amount: toNumber(body?.loan_amount),
-    units: toNumber(body?.units),
-    first_time_homebuyer: toBooleanOrNull(body?.first_time_homebuyer),
+    borrower_status: String(obj.borrower_status ?? "") as BorrowerStatus,
+    occupancy_type: String(obj.occupancy_type ?? "") as OccupancyType,
+    transaction_type: String(obj.transaction_type ?? "") as TransactionType,
+    income_type: String(obj.income_type ?? "") as IncomeType,
+    property_type: String(obj.property_type ?? "") as PropertyType,
+    credit_score: toNumber(obj.credit_score),
+    ltv: toNumber(obj.ltv),
+    dti: toNumber(obj.dti),
+    loan_amount: toNumber(obj.loan_amount),
+    units: toNumber(obj.units),
+    first_time_homebuyer: toBooleanOrNull(obj.first_time_homebuyer),
   };
 }
 
@@ -156,13 +206,15 @@ function isMissing(value: unknown): boolean {
   return value === null || value === undefined || value === "";
 }
 
-function normalizeArray(value: unknown): string[] {
-  if (!value) return [];
+function normalizeString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
 
+function normalizeArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
-      .map((item) => String(item ?? "").trim())
-      .filter((item) => item.length > 0);
+      .map((item) => (typeof item === "string" ? item.trim() : String(item ?? "").trim()))
+      .filter(Boolean);
   }
 
   if (typeof value === "string") {
@@ -173,81 +225,96 @@ function normalizeArray(value: unknown): string[] {
       const parsed = JSON.parse(trimmed);
       if (Array.isArray(parsed)) {
         return parsed
-          .map((item) => String(item ?? "").trim())
-          .filter((item) => item.length > 0);
+          .map((item) => (typeof item === "string" ? item.trim() : String(item ?? "").trim()))
+          .filter(Boolean);
       }
     } catch {
-      return [trimmed];
+      // ignore
     }
 
-    return [trimmed];
+    return trimmed
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
   }
 
   return [];
 }
 
-function normalizePrograms(value: any): ProgramGuidelineRow["programs"] {
-  if (!value || typeof value !== "object") return null;
+function normalizeProgramRelation(value: unknown): ProgramRelation {
+  let programRaw: RawProgramRelation = null;
 
-  let lenderValue = value.lenders ?? null;
-
-  if (Array.isArray(lenderValue)) {
-    lenderValue = lenderValue.length > 0 ? lenderValue[0] : null;
+  if (Array.isArray(value)) {
+    programRaw = (value[0] ?? null) as RawProgramRelation;
+  } else {
+    programRaw = (value ?? null) as RawProgramRelation;
   }
 
+  if (!programRaw || typeof programRaw !== "object") return null;
+
+  const lendersRaw = Array.isArray(programRaw.lenders)
+    ? ((programRaw.lenders[0] ?? null) as RawLenderRelation)
+    : ((programRaw.lenders ?? null) as RawLenderRelation);
+
+  const lender =
+    lendersRaw && typeof lendersRaw === "object"
+      ? {
+          id: normalizeString(lendersRaw.id),
+          name: normalizeString(lendersRaw.name),
+        }
+      : null;
+
   return {
-    id: String(value.id ?? ""),
-    name: String(value.name ?? ""),
-    slug: String(value.slug ?? ""),
+    id: normalizeString(programRaw.id),
+    name: normalizeString(programRaw.name),
+    slug: normalizeString(programRaw.slug),
     loan_category:
-      value.loan_category === null || value.loan_category === undefined
+      programRaw.loan_category === null || programRaw.loan_category === undefined
         ? null
-        : String(value.loan_category),
-    lender_id: String(value.lender_id ?? ""),
-    lenders:
-      lenderValue && typeof lenderValue === "object"
-        ? {
-            id: String(lenderValue.id ?? ""),
-            name: String(lenderValue.name ?? ""),
-          }
-        : null,
+        : String(programRaw.loan_category),
+    lender_id: normalizeString(programRaw.lender_id),
+    lenders: lender && (lender.id || lender.name) ? lender : null,
   };
 }
 
-function normalizeGuidelineRow(row: any): ProgramGuidelineRow {
+function normalizeGuidelineRow(raw: RawProgramGuidelineRow): ProgramGuidelineRow {
   return {
-    id: String(row?.id ?? ""),
-    program_id: String(row?.program_id ?? ""),
-    borrower_statuses: normalizeArray(row?.borrower_statuses),
-    occupancy_types: normalizeArray(row?.occupancy_types),
-    transaction_types: normalizeArray(row?.transaction_types),
-    income_types: normalizeArray(row?.income_types),
-    property_types: normalizeArray(row?.property_types),
-    min_credit_score: toNumber(row?.min_credit_score),
-    max_ltv: toNumber(row?.max_ltv),
-    max_dti: toNumber(row?.max_dti),
-    min_loan_amount: toNumber(row?.min_loan_amount),
-    max_loan_amount: toNumber(row?.max_loan_amount),
-    min_units: toNumber(row?.min_units),
-    max_units: toNumber(row?.max_units),
-    first_time_homebuyer_allowed:
-      row?.first_time_homebuyer_allowed === null ||
-      row?.first_time_homebuyer_allowed === undefined
-        ? null
-        : Boolean(row.first_time_homebuyer_allowed),
-    reserves_required_months: toNumber(row?.reserves_required_months),
+    id: normalizeString(raw.id),
+    program_id: normalizeString(raw.program_id),
+    borrower_statuses: normalizeArray(raw.borrower_statuses),
+    occupancy_types: normalizeArray(raw.occupancy_types),
+    transaction_types: normalizeArray(raw.transaction_types),
+    income_types: normalizeArray(raw.income_types),
+    property_types: normalizeArray(raw.property_types),
+    min_credit_score: toNumber(raw.min_credit_score),
+    max_ltv: toNumber(raw.max_ltv),
+    max_dti: toNumber(raw.max_dti),
+    min_loan_amount: toNumber(raw.min_loan_amount),
+    max_loan_amount: toNumber(raw.max_loan_amount),
+    min_units: toNumber(raw.min_units),
+    max_units: toNumber(raw.max_units),
+    first_time_homebuyer_allowed: toBooleanOrNull(raw.first_time_homebuyer_allowed),
+    reserves_required_months: toNumber(raw.reserves_required_months),
     guideline_notes:
-      row?.guideline_notes === null || row?.guideline_notes === undefined
+      raw.guideline_notes === null || raw.guideline_notes === undefined
         ? null
-        : String(row.guideline_notes),
-    ask_before_match: normalizeArray(row?.ask_before_match),
-    programs: normalizePrograms(row?.programs),
+        : String(raw.guideline_notes),
+    ask_before_match: normalizeArray(raw.ask_before_match),
+    programs: normalizeProgramRelation(raw.programs),
   };
 }
 
 function includesOrEmpty(list: string[], value: string): boolean {
   if (!list || list.length === 0) return true;
   return list.includes(value);
+}
+
+function parseJsonSafely<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
 }
 
 function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
@@ -261,8 +328,163 @@ function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
     notes: [],
     missing_items: [],
     blockers: [],
-    score: 100,
+    strengths: [],
+    concerns: [],
+    explanation: "",
+    score: 50,
   };
+}
+
+function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInput) {
+  const slug = bucket.program_slug.toLowerCase();
+  const name = bucket.program_name.toLowerCase();
+  const combined = `${slug} ${name}`;
+
+  if (input.borrower_status === "itin_borrower" && combined.includes("itin")) {
+    bucket.score += 18;
+    bucket.strengths.push("Direct ITIN borrower fit.");
+  }
+
+  if (input.income_type === "bank_statements" && combined.includes("bank")) {
+    bucket.score += 16;
+    bucket.strengths.push("Program identity directly aligns with bank-statement qualification.");
+  }
+
+  if (input.income_type === "dscr" && (combined.includes("dscr") || combined.includes("investor"))) {
+    bucket.score += 16;
+    bucket.strengths.push("Program identity directly aligns with DSCR / investor qualification.");
+  }
+
+  if (input.occupancy_type === "investment_property" && combined.includes("investor")) {
+    bucket.score += 10;
+    bucket.strengths.push("Program identity strongly fits investment-property direction.");
+  }
+
+  if (
+    combined.includes("jade") ||
+    combined.includes("opal") ||
+    combined.includes("plus") ||
+    combined.includes("umbrella")
+  ) {
+    bucket.score -= 4;
+    bucket.concerns.push("This appears to be a broader umbrella option rather than the narrowest direct-fit path.");
+  }
+}
+
+function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input: QualificationInput) {
+  if (input.credit_score !== null && row.min_credit_score !== null) {
+    const cushion = input.credit_score - row.min_credit_score;
+
+    if (cushion >= 80) {
+      bucket.score += 10;
+      bucket.strengths.push("Credit profile appears comfortably above the minimum floor.");
+    } else if (cushion >= 40) {
+      bucket.score += 6;
+      bucket.strengths.push("Credit profile appears solid for this path.");
+    } else if (cushion >= 0) {
+      bucket.score += 2;
+      bucket.notes.push("Credit score clears the floor but is not far above it.");
+    }
+  }
+
+  if (input.ltv !== null && row.max_ltv !== null) {
+    const cushion = row.max_ltv - input.ltv;
+
+    if (cushion >= 20) {
+      bucket.score += 10;
+      bucket.strengths.push("LTV appears materially inside the guideline ceiling.");
+    } else if (cushion >= 10) {
+      bucket.score += 6;
+      bucket.strengths.push("LTV appears comfortably inside the guideline ceiling.");
+    } else if (cushion >= 0) {
+      bucket.score += 2;
+      bucket.notes.push("LTV is allowed but relatively close to the upper boundary.");
+    }
+  }
+
+  if (input.dti !== null && row.max_dti !== null) {
+    const cushion = row.max_dti - input.dti;
+
+    if (cushion >= 15) {
+      bucket.score += 8;
+      bucket.strengths.push("DTI appears comfortably inside the guideline ceiling.");
+    } else if (cushion >= 7) {
+      bucket.score += 4;
+      bucket.strengths.push("DTI appears acceptable for this path.");
+    } else if (cushion >= 0) {
+      bucket.score += 1;
+      bucket.notes.push("DTI is allowed but relatively close to the upper boundary.");
+    }
+  }
+
+  if (input.loan_amount !== null) {
+    if (row.min_loan_amount !== null && input.loan_amount >= row.min_loan_amount) {
+      bucket.score += 2;
+    }
+    if (row.max_loan_amount !== null && input.loan_amount <= row.max_loan_amount) {
+      bucket.score += 2;
+    }
+  }
+
+  if (input.units !== null) {
+    if (row.min_units !== null && input.units >= row.min_units) {
+      bucket.score += 1;
+    }
+    if (row.max_units !== null && input.units <= row.max_units) {
+      bucket.score += 1;
+    }
+  }
+
+  if (input.first_time_homebuyer !== null) {
+    if (row.first_time_homebuyer_allowed === true && input.first_time_homebuyer === true) {
+      bucket.score += 3;
+      bucket.strengths.push("Program appears open to first-time-homebuyer layering.");
+    } else if (row.first_time_homebuyer_allowed === false && input.first_time_homebuyer === true) {
+      bucket.score -= 2;
+      bucket.concerns.push("Program may not be ideal for first-time-homebuyer benefit layering.");
+    }
+  }
+
+  if (row.reserves_required_months !== null) {
+    if (row.reserves_required_months >= 12) {
+      bucket.score -= 4;
+      bucket.concerns.push(`Higher reserve burden noted: ${row.reserves_required_months} month(s).`);
+    } else if (row.reserves_required_months >= 6) {
+      bucket.score -= 2;
+      bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s).`);
+    } else {
+      bucket.score += 1;
+      bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s).`);
+    }
+  }
+}
+
+function buildExplanation(bucket: MatchBucket): string {
+  const parts: string[] = [];
+
+  if (bucket.strengths.length > 0) {
+    parts.push(`Strong because ${bucket.strengths.join(" ")}`);
+  }
+
+  if (bucket.concerns.length > 0) {
+    parts.push(`Watch items: ${bucket.concerns.join(" ")}`);
+  }
+
+  if (bucket.blockers.length > 0) {
+    parts.push(`Eliminated because ${bucket.blockers.join(" ")}`);
+  }
+
+  if (bucket.missing_items.length > 0) {
+    parts.push(
+      `Still conditional because these items remain missing: ${bucket.missing_items.join(", ")}.`
+    );
+  }
+
+  if (parts.length === 0) {
+    return "Guideline reviewed. No major narrative explanation was generated.";
+  }
+
+  return parts.join(" ");
 }
 
 function evaluateRow(
@@ -273,31 +495,56 @@ function evaluateRow(
   const requiredAskFields = row.ask_before_match || [];
 
   for (const field of requiredAskFields) {
-    const value = (input as any)[field];
+    const value = (input as Record<string, unknown>)[field];
     if (isMissing(value)) {
       bucket.missing_items.push(FIELD_LABELS[field] || field);
-      bucket.score -= 8;
+      bucket.score -= 5;
     }
   }
 
-  if (input.borrower_status && !includesOrEmpty(row.borrower_statuses, input.borrower_status)) {
-    bucket.blockers.push("Borrower status does not fit this program.");
+  if (input.borrower_status) {
+    if (!includesOrEmpty(row.borrower_statuses, input.borrower_status)) {
+      bucket.blockers.push("Borrower status does not fit this program.");
+    } else {
+      bucket.score += 12;
+      bucket.strengths.push("Borrower status fits the program.");
+    }
   }
 
-  if (input.occupancy_type && !includesOrEmpty(row.occupancy_types, input.occupancy_type)) {
-    bucket.blockers.push("Occupancy does not fit this program.");
+  if (input.occupancy_type) {
+    if (!includesOrEmpty(row.occupancy_types, input.occupancy_type)) {
+      bucket.blockers.push("Occupancy does not fit this program.");
+    } else {
+      bucket.score += 10;
+      bucket.strengths.push("Occupancy fits the program.");
+    }
   }
 
-  if (input.transaction_type && !includesOrEmpty(row.transaction_types, input.transaction_type)) {
-    bucket.blockers.push("Transaction type does not fit this program.");
+  if (input.transaction_type) {
+    if (!includesOrEmpty(row.transaction_types, input.transaction_type)) {
+      bucket.blockers.push("Transaction type does not fit this program.");
+    } else {
+      bucket.score += 10;
+      bucket.strengths.push("Transaction type fits the program.");
+    }
   }
 
-  if (input.income_type && !includesOrEmpty(row.income_types, input.income_type)) {
-    bucket.blockers.push("Income documentation type does not fit this program.");
+  if (input.income_type) {
+    if (!includesOrEmpty(row.income_types, input.income_type)) {
+      bucket.blockers.push("Income documentation type does not fit this program.");
+    } else {
+      bucket.score += 12;
+      bucket.strengths.push("Income documentation type fits the program.");
+    }
   }
 
-  if (input.property_type && !includesOrEmpty(row.property_types, input.property_type)) {
-    bucket.blockers.push("Property type does not fit this program.");
+  if (input.property_type) {
+    if (!includesOrEmpty(row.property_types, input.property_type)) {
+      bucket.blockers.push("Property type does not fit this program.");
+    } else {
+      bucket.score += 8;
+      bucket.strengths.push("Property type fits the program.");
+    }
   }
 
   if (input.credit_score !== null && row.min_credit_score !== null) {
@@ -305,27 +552,18 @@ function evaluateRow(
       bucket.blockers.push(
         `Credit score is below the minimum guideline of ${row.min_credit_score}.`
       );
-    } else if (input.credit_score <= row.min_credit_score + 20) {
-      bucket.notes.push("Credit score is close to the floor for this program.");
-      bucket.score -= 5;
     }
   }
 
   if (input.ltv !== null && row.max_ltv !== null) {
     if (input.ltv > row.max_ltv) {
       bucket.blockers.push(`LTV exceeds the maximum guideline of ${row.max_ltv}%.`);
-    } else if (input.ltv >= row.max_ltv - 5) {
-      bucket.notes.push("LTV is near the upper guideline boundary.");
-      bucket.score -= 5;
     }
   }
 
   if (input.dti !== null && row.max_dti !== null) {
     if (input.dti > row.max_dti) {
       bucket.blockers.push(`DTI exceeds the maximum guideline of ${row.max_dti}%.`);
-    } else if (input.dti >= row.max_dti - 5) {
-      bucket.notes.push("DTI is near the upper guideline boundary.");
-      bucket.score -= 5;
     }
   }
 
@@ -358,17 +596,19 @@ function evaluateRow(
     row.first_time_homebuyer_allowed === false &&
     input.first_time_homebuyer === true
   ) {
-    bucket.notes.push("This program is not oriented to first-time-homebuyer benefit layering.");
-    bucket.score -= 4;
+    bucket.concerns.push("Program may not be ideal for first-time-homebuyer layering.");
+    bucket.score -= 3;
   }
+
+  addProgramIdentityScoring(bucket, input);
+  addBoundaryScoring(bucket, row, input);
 
   if (row.guideline_notes) {
     bucket.notes.push(row.guideline_notes);
   }
 
-  if (row.reserves_required_months !== null) {
-    bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s).`);
-  }
+  bucket.score = Math.max(1, Math.min(100, bucket.score));
+  bucket.explanation = buildExplanation(bucket);
 
   if (bucket.blockers.length > 0) {
     return { bucket, status: "eliminated" };
@@ -395,7 +635,7 @@ function nextMissingQuestion(input: QualificationInput): string {
   }
 
   if (!input.income_type) {
-    return "How will the borrower qualify: full-doc, bank statements, 1099, P&L, asset utilization, DSCR, no-ratio, WVOE, or another income path?";
+    return "How will the borrower qualify: full-doc, bank statements, 1099, P&L, asset utilization, DSCR, no-ratio, or another income path?";
   }
 
   if (!input.property_type) {
@@ -429,10 +669,147 @@ function nextMissingQuestion(input: QualificationInput): string {
   return "What compensating factor is strongest here: reserves, lower LTV, stronger credit, or stronger income documentation?";
 }
 
+async function getOpenAiEnhancement(args: {
+  input: QualificationInput;
+  strongMatches: MatchBucket[];
+  conditionalMatches: MatchBucket[];
+  eliminatedPaths: MatchBucket[];
+  defaultNextQuestion: string;
+}): Promise<OpenAiEnhancement> {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const { input, strongMatches, conditionalMatches, eliminatedPaths, defaultNextQuestion } = args;
+
+  const compactStrong = strongMatches.slice(0, 5).map((item) => ({
+    lender_name: item.lender_name,
+    program_name: item.program_name,
+    program_slug: item.program_slug,
+    loan_category: item.loan_category,
+    score: item.score,
+    explanation: item.explanation,
+    notes: item.notes,
+    strengths: item.strengths,
+    concerns: item.concerns,
+  }));
+
+  const compactConditional = conditionalMatches.slice(0, 5).map((item) => ({
+    lender_name: item.lender_name,
+    program_name: item.program_name,
+    program_slug: item.program_slug,
+    score: item.score,
+    missing_items: item.missing_items,
+    explanation: item.explanation,
+  }));
+
+  const compactEliminated = eliminatedPaths.slice(0, 5).map((item) => ({
+    lender_name: item.lender_name,
+    program_name: item.program_name,
+    program_slug: item.program_slug,
+    blockers: item.blockers,
+  }));
+
+  const prompt = `
+You are Finley Beyond, an internal mortgage qualification reasoning layer for Beyond Financing.
+
+Return strict JSON only in this exact shape:
+{
+  "topRecommendation": "string",
+  "whyItMatches": ["string"],
+  "cautionItems": ["string"],
+  "nextBestQuestion": "string"
+}
+
+Rules:
+- Be practical, mortgage-specific, and concise
+- Do not promise approval
+- Base your answer only on the structured scenario and the ranked match results below
+- If the structured results already show strong matches, explain the best current direction
+- If there are no strong matches, explain the best conditional direction
+- nextBestQuestion should be the single most useful follow-up question for narrowing the file
+
+Scenario:
+${JSON.stringify(input, null, 2)}
+
+Strong matches:
+${JSON.stringify(compactStrong, null, 2)}
+
+Conditional matches:
+${JSON.stringify(compactConditional, null, 2)}
+
+Eliminated paths:
+${JSON.stringify(compactEliminated, null, 2)}
+
+Fallback next question:
+${defaultNextQuestion}
+`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You generate concise internal mortgage match explanations in strict JSON.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+
+    if (typeof content !== "string" || !content.trim()) return null;
+
+    const parsed = parseJsonSafely<{
+      topRecommendation?: unknown;
+      whyItMatches?: unknown;
+      cautionItems?: unknown;
+      nextBestQuestion?: unknown;
+    }>(content);
+
+    if (!parsed) return null;
+
+    return {
+      topRecommendation:
+        typeof parsed.topRecommendation === "string"
+          ? parsed.topRecommendation
+          : "",
+      whyItMatches: Array.isArray(parsed.whyItMatches)
+        ? parsed.whyItMatches.map((x) => String(x)).filter(Boolean)
+        : [],
+      cautionItems: Array.isArray(parsed.cautionItems)
+        ? parsed.cautionItems.map((x) => String(x)).filter(Boolean)
+        : [],
+      nextBestQuestion:
+        typeof parsed.nextBestQuestion === "string" && parsed.nextBestQuestion.trim()
+          ? parsed.nextBestQuestion
+          : defaultNextQuestion,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const input = normalizeBody(body);
+
     const supabase = createClient();
 
     const { data, error } = await supabase
@@ -477,8 +854,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const rawRows: any[] = Array.isArray(data) ? data : [];
-    const rows: ProgramGuidelineRow[] = rawRows.map(normalizeGuidelineRow);
+    const rawRows = Array.isArray(data) ? (data as RawProgramGuidelineRow[]) : [];
+    const rows = rawRows.map(normalizeGuidelineRow).filter((row) => row.programs);
 
     const strong_matches: MatchBucket[] = [];
     const conditional_matches: MatchBucket[] = [];
@@ -496,6 +873,24 @@ export async function POST(req: Request) {
     conditional_matches.sort((a, b) => b.score - a.score);
     eliminated_paths.sort((a, b) => b.score - a.score);
 
+    const defaultNextQuestion = nextMissingQuestion(input);
+
+    const openai = await getOpenAiEnhancement({
+      input,
+      strongMatches: strong_matches,
+      conditionalMatches: conditional_matches,
+      eliminatedPaths: eliminated_paths,
+      defaultNextQuestion,
+    });
+
+    const topRecommendation =
+      openai?.topRecommendation ||
+      (strong_matches[0]
+        ? `${strong_matches[0].program_name} with ${strong_matches[0].lender_name}`
+        : conditional_matches[0]
+        ? `${conditional_matches[0].program_name} with ${conditional_matches[0].lender_name}`
+        : "No strong program direction yet.");
+
     return NextResponse.json({
       success: true,
       intake: input,
@@ -505,7 +900,9 @@ export async function POST(req: Request) {
         conditional_count: conditional_matches.length,
         eliminated_count: eliminated_paths.length,
       },
-      next_question: nextMissingQuestion(input),
+      next_question: openai?.nextBestQuestion || defaultNextQuestion,
+      top_recommendation: topRecommendation,
+      openai_enhancement: openai,
       strong_matches,
       conditional_matches,
       eliminated_paths,
