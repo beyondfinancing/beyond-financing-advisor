@@ -58,6 +58,8 @@ type QualificationInput = {
   loan_amount: number | null;
   units: number | null;
   first_time_homebuyer: boolean | null;
+  subject_state: string;
+  available_reserves_months: number | null;
 };
 
 type RawProgramRelation = {
@@ -96,6 +98,16 @@ type RawProgramGuidelineRow = {
   programs?: unknown;
 };
 
+type RawLenderStateEligibilityRow = {
+  lender_id?: unknown;
+  state_code?: unknown;
+  owner_occupied_allowed?: unknown;
+  non_owner_occupied_allowed?: unknown;
+  second_home_allowed?: unknown;
+  heloc_allowed?: unknown;
+  notes?: unknown;
+};
+
 type ProgramRelation = {
   id: string;
   name: string;
@@ -130,6 +142,16 @@ type ProgramGuidelineRow = {
   programs: ProgramRelation;
 };
 
+type LenderStateEligibility = {
+  lender_id: string;
+  state_code: string;
+  owner_occupied_allowed: boolean;
+  non_owner_occupied_allowed: boolean;
+  second_home_allowed: boolean;
+  heloc_allowed: boolean;
+  notes: string | null;
+};
+
 type MatchBucket = {
   lender_name: string;
   lender_id: string;
@@ -137,6 +159,7 @@ type MatchBucket = {
   program_slug: string;
   loan_category: string | null;
   guideline_id: string;
+  reserves_required_months: number | null;
   notes: string[];
   missing_items: string[];
   blockers: string[];
@@ -165,6 +188,8 @@ const FIELD_LABELS: Record<string, string> = {
   loan_amount: "loan amount",
   units: "unit count",
   first_time_homebuyer: "first-time-homebuyer status",
+  subject_state: "subject state",
+  available_reserves_months: "available reserves (months of PITIA)",
 };
 
 function toNumber(value: unknown): number | null {
@@ -193,30 +218,44 @@ function normalizeText(value: unknown): string {
     .replace(/\s+/g, " ");
 }
 
+function normalizeState(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 function mapBorrowerStatus(value: unknown): BorrowerStatus {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (["citizen", "us citizen", "u s citizen", "american citizen"].includes(v)) {
+  if (v === "citizen" || v === "us citizen" || v === "u s citizen" || v === "american citizen") {
     return "citizen";
   }
-  if (["permanent resident", "green card", "green card holder"].includes(v)) {
+  if (
+    v === "permanent_resident" ||
+    v === "permanent resident" ||
+    v === "green card" ||
+    v === "green card holder"
+  ) {
     return "permanent_resident";
   }
   if (
-    [
-      "non permanent resident",
-      "nonpermanent resident",
-      "visa",
-      "work visa",
-      "temporary visa",
-    ].includes(v)
+    v === "non_permanent_resident" ||
+    v === "non permanent resident" ||
+    v === "nonpermanent resident" ||
+    v === "visa" ||
+    v === "work visa" ||
+    v === "temporary visa"
   ) {
     return "non_permanent_resident";
   }
-  if (["itin", "itin borrower"].includes(v)) return "itin_borrower";
-  if (v === "daca") return "daca";
-  if (["foreign national", "foreign"].includes(v)) return "foreign_national";
+  if (v === "itin_borrower" || v === "itin borrower" || v === "itin") {
+    return "itin_borrower";
+  }
+  if (v === "daca") {
+    return "daca";
+  }
+  if (v === "foreign_national" || v === "foreign national" || v === "foreign") {
+    return "foreign_national";
+  }
 
   return "";
 }
@@ -226,13 +265,24 @@ function mapOccupancyType(value: unknown): OccupancyType {
 
   if (!v) return "";
   if (
-    ["primary", "primary residence", "owner occupied", "owner occupied primary"].includes(v)
+    v === "primary_residence" ||
+    v === "primary residence" ||
+    v === "primary" ||
+    v === "owner occupied" ||
+    v === "owner occupied primary"
   ) {
     return "primary_residence";
   }
-  if (["second home", "vacation home"].includes(v)) return "second_home";
+  if (v === "second_home" || v === "second home" || v === "vacation home") {
+    return "second_home";
+  }
   if (
-    ["investment", "investment property", "investor", "rental", "non owner occupied"].includes(v)
+    v === "investment_property" ||
+    v === "investment property" ||
+    v === "investment" ||
+    v === "investor" ||
+    v === "rental" ||
+    v === "non owner occupied"
   ) {
     return "investment_property";
   }
@@ -246,14 +296,25 @@ function mapTransactionType(value: unknown): TransactionType {
   if (!v) return "";
   if (v === "purchase") return "purchase";
   if (
-    ["rate term refinance", "rate term refi", "rate and term refinance", "refinance"].includes(v)
+    v === "rate_term_refinance" ||
+    v === "rate term refinance" ||
+    v === "rate term refi" ||
+    v === "rate and term refinance" ||
+    v === "refinance"
   ) {
     return "rate_term_refinance";
   }
-  if (["cash out refinance", "cash out refi", "cash out"].includes(v)) {
+  if (
+    v === "cash_out_refinance" ||
+    v === "cash out refinance" ||
+    v === "cash out refi" ||
+    v === "cash out"
+  ) {
     return "cash_out_refinance";
   }
-  if (["second lien", "heloc", "home equity"].includes(v)) return "second_lien";
+  if (v === "second_lien" || v === "second lien" || v === "heloc" || v === "home equity") {
+    return "second_lien";
+  }
 
   return "";
 }
@@ -262,17 +323,30 @@ function mapIncomeType(value: unknown): IncomeType {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (["full doc", "full documentation", "w2", "w 2"].includes(v)) return "full_doc";
-  if (["express doc"].includes(v)) return "express_doc";
-  if (["bank statements", "bank statement", "12 month bank statements"].includes(v)) {
+  if (v === "full_doc" || v === "full doc" || v === "full documentation" || v === "w2" || v === "w 2") {
+    return "full_doc";
+  }
+  if (v === "express_doc" || v === "express doc") return "express_doc";
+  if (
+    v === "bank_statements" ||
+    v === "bank statement" ||
+    v === "bank statements" ||
+    v === "12 month bank statements"
+  ) {
     return "bank_statements";
   }
   if (v === "1099") return "1099";
-  if (["pnl", "p and l", "profit and loss"].includes(v)) return "pnl";
-  if (["asset utilization", "asset depletion"].includes(v)) return "asset_utilization";
+  if (v === "pnl" || v === "p and l" || v === "profit and loss") return "pnl";
+  if (v === "asset_utilization" || v === "asset utilization" || v === "asset depletion") {
+    return "asset_utilization";
+  }
   if (v === "dscr") return "dscr";
-  if (["no ratio", "stated", "stated income"].includes(v)) return "no_ratio";
-  if (["wvoe", "written verification of employment"].includes(v)) return "wvoe";
+  if (v === "no_ratio" || v === "no ratio" || v === "stated" || v === "stated income") {
+    return "no_ratio";
+  }
+  if (v === "wvoe" || v === "written verification of employment") {
+    return "wvoe";
+  }
 
   return "";
 }
@@ -281,16 +355,31 @@ function mapPropertyType(value: unknown): PropertyType {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (["single family", "single family residence", "sfr", "1 unit", "1 unit sfr"].includes(v)) {
+  if (
+    v === "single_family" ||
+    v === "single family" ||
+    v === "single family residence" ||
+    v === "sfr" ||
+    v === "1 unit" ||
+    v === "1 unit sfr"
+  ) {
     return "single_family";
   }
   if (v === "condo") return "condo";
-  if (["townhouse", "townhome"].includes(v)) return "townhouse";
-  if (["2 unit", "duplex", "two unit"].includes(v)) return "2_unit";
-  if (["3 unit", "triplex", "three unit"].includes(v)) return "3_unit";
-  if (["4 unit", "four unit"].includes(v)) return "4_unit";
-  if (["mixed use", "mixed use property"].includes(v)) return "mixed_use";
-  if (["5 to 8 units", "5 8 units", "5 unit", "6 unit", "7 unit", "8 unit"].includes(v)) {
+  if (v === "townhouse" || v === "townhome") return "townhouse";
+  if (v === "2_unit" || v === "2 unit" || v === "duplex" || v === "two unit") return "2_unit";
+  if (v === "3_unit" || v === "3 unit" || v === "triplex" || v === "three unit") return "3_unit";
+  if (v === "4_unit" || v === "4 unit" || v === "four unit") return "4_unit";
+  if (v === "mixed_use" || v === "mixed use" || v === "mixed use property") return "mixed_use";
+  if (
+    v === "5_to_8_units" ||
+    v === "5 to 8 units" ||
+    v === "5 8 units" ||
+    v === "5 unit" ||
+    v === "6 unit" ||
+    v === "7 unit" ||
+    v === "8 unit"
+  ) {
     return "5_to_8_units";
   }
 
@@ -298,13 +387,7 @@ function mapPropertyType(value: unknown): PropertyType {
 }
 
 function inferUnitsFromPropertyType(propertyType: PropertyType): number | null {
-  if (
-    propertyType === "single_family" ||
-    propertyType === "condo" ||
-    propertyType === "townhouse"
-  ) {
-    return 1;
-  }
+  if (propertyType === "single_family" || propertyType === "condo" || propertyType === "townhouse") return 1;
   if (propertyType === "2_unit") return 2;
   if (propertyType === "3_unit") return 3;
   if (propertyType === "4_unit") return 4;
@@ -314,19 +397,11 @@ function inferUnitsFromPropertyType(propertyType: PropertyType): number | null {
 function normalizeBody(body: unknown): QualificationInput {
   const obj = (body ?? {}) as Record<string, unknown>;
 
-  const borrower_status = mapBorrowerStatus(
-    obj.borrower_status ?? obj.borrowerStatus ?? obj.status
-  );
-  const occupancy_type = mapOccupancyType(
-    obj.occupancy_type ?? obj.occupancyType ?? obj.occupancy
-  );
-  const transaction_type = mapTransactionType(
-    obj.transaction_type ?? obj.transactionType ?? obj.transaction
-  );
+  const borrower_status = mapBorrowerStatus(obj.borrower_status ?? obj.borrowerStatus ?? obj.status);
+  const occupancy_type = mapOccupancyType(obj.occupancy_type ?? obj.occupancyType ?? obj.occupancy);
+  const transaction_type = mapTransactionType(obj.transaction_type ?? obj.transactionType ?? obj.transaction);
   const income_type = mapIncomeType(obj.income_type ?? obj.incomeType ?? obj.income);
-  const property_type = mapPropertyType(
-    obj.property_type ?? obj.propertyType ?? obj.property
-  );
+  const property_type = mapPropertyType(obj.property_type ?? obj.propertyType ?? obj.property);
 
   const credit_score = toNumber(obj.credit_score ?? obj.creditScore ?? obj.credit);
   const ltv = toNumber(obj.ltv ?? obj.loan_to_value ?? obj.loanToValue);
@@ -335,6 +410,12 @@ function normalizeBody(body: unknown): QualificationInput {
   const explicitUnits = toNumber(obj.units ?? obj.unit_count ?? obj.unitCount);
   const first_time_homebuyer = toBooleanOrNull(
     obj.first_time_homebuyer ?? obj.firstTimeHomebuyer ?? obj.fthb
+  );
+  const subject_state = normalizeState(
+    obj.subject_state ?? obj.subjectState ?? obj.property_state ?? obj.propertyState ?? obj.state
+  );
+  const available_reserves_months = toNumber(
+    obj.available_reserves_months ?? obj.availableReservesMonths ?? obj.reserves_months ?? obj.reservesMonths
   );
 
   return {
@@ -349,6 +430,8 @@ function normalizeBody(body: unknown): QualificationInput {
     loan_amount,
     units: explicitUnits ?? inferUnitsFromPropertyType(property_type),
     first_time_homebuyer,
+    subject_state,
+    available_reserves_months,
   };
 }
 
@@ -379,7 +462,7 @@ function normalizeArray(value: unknown): string[] {
           .filter(Boolean);
       }
     } catch {
-      // ignore JSON parse error
+      // ignore parse error
     }
 
     return trimmed
@@ -454,6 +537,21 @@ function normalizeGuidelineRow(raw: RawProgramGuidelineRow): ProgramGuidelineRow
   };
 }
 
+function normalizeLenderStateEligibilityRow(raw: RawLenderStateEligibilityRow): LenderStateEligibility {
+  return {
+    lender_id: normalizeString(raw.lender_id),
+    state_code: normalizeState(raw.state_code),
+    owner_occupied_allowed: Boolean(raw.owner_occupied_allowed),
+    non_owner_occupied_allowed: Boolean(raw.non_owner_occupied_allowed),
+    second_home_allowed: Boolean(raw.second_home_allowed),
+    heloc_allowed: Boolean(raw.heloc_allowed),
+    notes:
+      raw.notes === null || raw.notes === undefined
+        ? null
+        : String(raw.notes),
+  };
+}
+
 function includesOrEmpty(list: string[], value: string): boolean {
   if (!list || list.length === 0) return true;
   return list.includes(value);
@@ -479,6 +577,7 @@ function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
     program_slug: row.programs?.slug || "",
     loan_category: row.programs?.loan_category || null,
     guideline_id: row.id,
+    reserves_required_months: row.reserves_required_months,
     notes: [],
     missing_items: [],
     blockers: [],
@@ -501,9 +600,7 @@ function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInpu
 
   if (input.income_type === "bank_statements" && combined.includes("bank")) {
     bucket.score += 16;
-    bucket.strengths.push(
-      "Program identity directly aligns with bank-statement qualification."
-    );
+    bucket.strengths.push("Program identity directly aligns with bank-statement qualification.");
   }
 
   if (input.income_type === "dscr" && (combined.includes("dscr") || combined.includes("investor"))) {
@@ -523,17 +620,11 @@ function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInpu
     combined.includes("umbrella")
   ) {
     bucket.score -= 4;
-    bucket.concerns.push(
-      "This appears to be a broader umbrella option rather than the narrowest direct-fit path."
-    );
+    bucket.concerns.push("This appears to be a broader umbrella option rather than the narrowest direct-fit path.");
   }
 }
 
-function addBoundaryScoring(
-  bucket: MatchBucket,
-  row: ProgramGuidelineRow,
-  input: QualificationInput
-) {
+function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input: QualificationInput) {
   if (input.credit_score !== null && row.min_credit_score !== null) {
     const cushion = input.credit_score - row.min_credit_score;
 
@@ -601,27 +692,35 @@ function addBoundaryScoring(
     if (row.first_time_homebuyer_allowed === true && input.first_time_homebuyer === true) {
       bucket.score += 3;
       bucket.strengths.push("Program appears open to first-time-homebuyer layering.");
-    } else if (
-      row.first_time_homebuyer_allowed === false &&
-      input.first_time_homebuyer === true
-    ) {
+    } else if (row.first_time_homebuyer_allowed === false && input.first_time_homebuyer === true) {
       bucket.score -= 2;
       bucket.concerns.push("Program may not be ideal for first-time-homebuyer benefit layering.");
     }
   }
 
   if (row.reserves_required_months !== null) {
-    if (row.reserves_required_months >= 12) {
-      bucket.score -= 4;
-      bucket.concerns.push(
-        `Higher reserve burden noted: ${row.reserves_required_months} month(s).`
-      );
-    } else if (row.reserves_required_months >= 6) {
-      bucket.score -= 2;
-      bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s).`);
+    if (input.available_reserves_months !== null) {
+      if (input.available_reserves_months >= row.reserves_required_months) {
+        bucket.score += 5;
+        bucket.strengths.push(
+          `Available reserves appear to cover the program requirement of ${row.reserves_required_months} month(s) PITIA.`
+        );
+      } else {
+        bucket.blockers.push(
+          `Available reserves appear below the required ${row.reserves_required_months} month(s) PITIA.`
+        );
+      }
     } else {
-      bucket.score += 1;
-      bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s).`);
+      if (row.reserves_required_months >= 12) {
+        bucket.score -= 4;
+        bucket.concerns.push(`Higher reserve burden noted: ${row.reserves_required_months} month(s) PITIA.`);
+      } else if (row.reserves_required_months >= 6) {
+        bucket.score -= 2;
+        bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s) PITIA.`);
+      } else {
+        bucket.score += 1;
+        bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s) PITIA.`);
+      }
     }
   }
 }
@@ -654,9 +753,63 @@ function buildExplanation(bucket: MatchBucket): string {
   return parts.join(" ");
 }
 
-function evaluateRow(
+function applyGenericCategoryBlockers(
+  bucket: MatchBucket,
   row: ProgramGuidelineRow,
   input: QualificationInput
+) {
+  const loanCategory = (row.programs?.loan_category || "").toLowerCase();
+
+  if (input.transaction_type === "purchase" && (loanCategory === "heloc" || loanCategory === "second")) {
+    bucket.blockers.push("Purchase scenarios should not be matched to HELOC or second-lien products.");
+  }
+}
+
+function applyLenderStateEligibility(
+  bucket: MatchBucket,
+  row: ProgramGuidelineRow,
+  input: QualificationInput,
+  lenderEligibilityMap: Map<string, LenderStateEligibility>
+) {
+  if (!input.subject_state || !row.programs?.lender_id) return;
+
+  const eligibility = lenderEligibilityMap.get(row.programs.lender_id);
+  if (!eligibility) return;
+
+  if (input.occupancy_type === "primary_residence" && !eligibility.owner_occupied_allowed) {
+    bucket.blockers.push(
+      `${bucket.lender_name} is not eligible for owner-occupied lending in ${input.subject_state}.`
+    );
+  }
+
+  if (input.occupancy_type === "second_home" && !eligibility.second_home_allowed) {
+    bucket.blockers.push(
+      `${bucket.lender_name} is not eligible for second-home lending in ${input.subject_state}.`
+    );
+  }
+
+  if (input.occupancy_type === "investment_property" && !eligibility.non_owner_occupied_allowed) {
+    bucket.blockers.push(
+      `${bucket.lender_name} is not eligible for non-owner-occupied lending in ${input.subject_state}.`
+    );
+  }
+
+  const loanCategory = (row.programs?.loan_category || "").toLowerCase();
+  if (loanCategory === "heloc" && !eligibility.heloc_allowed) {
+    bucket.blockers.push(
+      `${bucket.lender_name} is not eligible for HELOC lending in ${input.subject_state}.`
+    );
+  }
+
+  if (eligibility.notes) {
+    bucket.notes.push(`State eligibility note: ${eligibility.notes}`);
+  }
+}
+
+function evaluateRow(
+  row: ProgramGuidelineRow,
+  input: QualificationInput,
+  lenderEligibilityMap: Map<string, LenderStateEligibility>
 ): { bucket: MatchBucket; status: "strong" | "conditional" | "eliminated" } {
   const bucket = buildBaseBucket(row);
   const requiredAskFields = row.ask_before_match || [];
@@ -668,6 +821,9 @@ function evaluateRow(
       bucket.score -= 5;
     }
   }
+
+  applyGenericCategoryBlockers(bucket, row, input);
+  applyLenderStateEligibility(bucket, row, input, lenderEligibilityMap);
 
   if (input.borrower_status) {
     if (!includesOrEmpty(row.borrower_statuses, input.borrower_status)) {
@@ -784,8 +940,6 @@ function evaluateRow(
   bucket.explanation = buildExplanation(bucket);
 
   if (bucket.blockers.length > 0) {
-    bucket.score = Math.min(bucket.score, 59);
-    bucket.explanation = buildExplanation(bucket);
     return { bucket, status: "eliminated" };
   }
 
@@ -797,6 +951,10 @@ function evaluateRow(
 }
 
 function nextMissingQuestion(input: QualificationInput): string {
+  if (!input.subject_state) {
+    return "What is the subject property state?";
+  }
+
   if (!input.borrower_status) {
     return "What is the borrower’s status: U.S. citizen, permanent resident, non-permanent resident, ITIN borrower, DACA, or foreign national?";
   }
@@ -841,7 +999,11 @@ function nextMissingQuestion(input: QualificationInput): string {
     return "Is the borrower a first-time homebuyer?";
   }
 
-  return "What compensating factor is strongest here: reserves, lower LTV, stronger credit, or stronger income documentation?";
+  if (input.available_reserves_months === null) {
+    return "How many months of PITIA reserves are available?";
+  }
+
+  return "What compensating factor is strongest here: reserves, lower LTV, stronger credit, stronger income documentation, or property flexibility?";
 }
 
 async function getOpenAiEnhancement(args: {
@@ -871,6 +1033,7 @@ async function getOpenAiEnhancement(args: {
     notes: item.notes,
     strengths: item.strengths,
     concerns: item.concerns,
+    reserves_required_months: item.reserves_required_months,
   }));
 
   const compactConditional = conditionalMatches.slice(0, 5).map((item) => ({
@@ -880,6 +1043,8 @@ async function getOpenAiEnhancement(args: {
     score: item.score,
     missing_items: item.missing_items,
     explanation: item.explanation,
+    notes: item.notes,
+    reserves_required_months: item.reserves_required_months,
   }));
 
   const compactEliminated = eliminatedPaths.slice(0, 5).map((item) => ({
@@ -907,6 +1072,8 @@ Rules:
 - If the structured results already show strong matches, explain the best current direction
 - If there are no strong matches, explain the best conditional direction
 - nextBestQuestion should be the single most useful follow-up question for narrowing the file
+- do not ask for fields already present in the scenario
+- explicitly consider reserves and state eligibility when relevant
 
 Scenario:
 ${JSON.stringify(input, null, 2)}
@@ -1014,7 +1181,6 @@ export async function POST(req: Request) {
         reserves_required_months,
         guideline_notes,
         ask_before_match,
-        is_active,
         programs (
           id,
           name,
@@ -1039,12 +1205,42 @@ export async function POST(req: Request) {
     const rawRows = Array.isArray(data) ? (data as RawProgramGuidelineRow[]) : [];
     const rows = rawRows.map(normalizeGuidelineRow).filter((row) => row.programs);
 
+    const lenderIds = uniqueStrings(
+      rows.map((row) => row.programs?.lender_id || "").filter(Boolean)
+    );
+
+    let lenderEligibilityMap = new Map<string, LenderStateEligibility>();
+
+    if (input.subject_state && lenderIds.length > 0) {
+      const { data: eligibilityData } = await supabase
+        .from("lender_state_eligibility")
+        .select(`
+          lender_id,
+          state_code,
+          owner_occupied_allowed,
+          non_owner_occupied_allowed,
+          second_home_allowed,
+          heloc_allowed,
+          notes
+        `)
+        .eq("state_code", input.subject_state)
+        .in("lender_id", lenderIds);
+
+      const normalizedEligibility = Array.isArray(eligibilityData)
+        ? (eligibilityData as RawLenderStateEligibilityRow[]).map(normalizeLenderStateEligibilityRow)
+        : [];
+
+      lenderEligibilityMap = new Map(
+        normalizedEligibility.map((item) => [item.lender_id, item])
+      );
+    }
+
     const strong_matches: MatchBucket[] = [];
     const conditional_matches: MatchBucket[] = [];
     const eliminated_paths: MatchBucket[] = [];
 
     for (const row of rows) {
-      const result = evaluateRow(row, input);
+      const result = evaluateRow(row, input, lenderEligibilityMap);
 
       if (result.status === "strong") strong_matches.push(result.bucket);
       if (result.status === "conditional") conditional_matches.push(result.bucket);
