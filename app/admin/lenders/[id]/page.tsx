@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+
 import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import LenderDetailClient from "./LenderDetailClient";
@@ -19,21 +20,14 @@ type LenderRow = {
   created_at: string | null;
 };
 
-type LenderFileRow = {
-  id: string;
-  lender_id: string | null;
-  original_filename: string | null;
-  file_type: string | null;
-  program_group: string | null;
-  effective_date: string | null;
-  notes: string | null;
-  is_archived: boolean | null;
-  created_at: string | null;
-};
-
 type LenderStateEligibilityRow = {
+  lender_id: string;
   state_code: string | null;
-  eligibility_type: "owner_occupied" | "non_owner_occupied" | null;
+  owner_occupied_allowed: boolean | null;
+  non_owner_occupied_allowed: boolean | null;
+  second_home_allowed: boolean | null;
+  heloc_allowed: boolean | null;
+  notes: string | null;
 };
 
 function cardStyle(): CSSProperties {
@@ -55,6 +49,10 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString();
 }
 
+function normalizeState(value: string | null) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 export default async function LenderDetailPage({ params }: PageProps) {
   const signedIn = await isAdminSignedIn();
 
@@ -64,26 +62,19 @@ export default async function LenderDetailPage({ params }: PageProps) {
 
   const { id } = await params;
 
-  const [{ data: lender, error: lenderError }, { data: files, error: filesError }, { data: stateEligibility, error: stateEligibilityError }] =
+  const [{ data: lender, error: lenderError }, { data: stateEligibility, error: stateEligibilityError }] =
     await Promise.all([
       supabaseAdmin
         .from("lenders")
         .select("id, name, channel, states, created_at")
         .eq("id", id)
-        .maybeSingle<LenderRow>(),
-      supabaseAdmin
-        .from("lender_files")
-        .select(
-          "id, lender_id, original_filename, file_type, program_group, effective_date, notes, is_archived, created_at"
-        )
-        .eq("lender_id", id)
-        .order("created_at", { ascending: false })
-        .returns<LenderFileRow[]>(),
+        .maybeSingle(),
       supabaseAdmin
         .from("lender_state_eligibility")
-        .select("state_code, eligibility_type")
-        .eq("lender_id", id)
-        .returns<LenderStateEligibilityRow[]>(),
+        .select(
+          "lender_id, state_code, owner_occupied_allowed, non_owner_occupied_allowed, second_home_allowed, heloc_allowed, notes"
+        )
+        .eq("lender_id", id),
     ]);
 
   if (lenderError) {
@@ -94,31 +85,27 @@ export default async function LenderDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  if (filesError) {
-    throw new Error(filesError.message);
-  }
-
   if (stateEligibilityError) {
     throw new Error(stateEligibilityError.message);
   }
 
-  const activeFiles = (files ?? []).filter((file) => !file.is_archived);
-  const archivedFiles = (files ?? []).filter((file) => Boolean(file.is_archived));
+  const lenderRow = lender as LenderRow;
+  const eligibilityRows = (stateEligibility ?? []) as LenderStateEligibilityRow[];
 
   const ownerOccupiedStates = Array.from(
     new Set(
-      (stateEligibility ?? [])
-        .filter((row) => row.eligibility_type === "owner_occupied")
-        .map((row) => String(row.state_code ?? "").trim().toUpperCase())
+      eligibilityRows
+        .filter((row) => row.owner_occupied_allowed)
+        .map((row) => normalizeState(row.state_code))
         .filter(Boolean)
     )
   ).sort();
 
   const nonOwnerOccupiedStates = Array.from(
     new Set(
-      (stateEligibility ?? [])
-        .filter((row) => row.eligibility_type === "non_owner_occupied")
-        .map((row) => String(row.state_code ?? "").trim().toUpperCase())
+      eligibilityRows
+        .filter((row) => row.non_owner_occupied_allowed)
+        .map((row) => normalizeState(row.state_code))
         .filter(Boolean)
     )
   ).sort();
@@ -166,7 +153,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 lineHeight: 1.03,
               }}
             >
-              {lender.name || "Lender"}
+              {lenderRow.name || "Lender"}
             </h1>
 
             <p
@@ -178,9 +165,8 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 color: "#52627A",
               }}
             >
-              Edit lender identity, channels, owner-occupied footprint,
-              non-owner-occupied footprint, and review active and archived
-              lender documents from one place.
+              Edit lender identity, channels, owner-occupied footprint, and
+              non-owner-occupied footprint from one place.
             </p>
           </div>
 
@@ -232,10 +218,10 @@ export default async function LenderDetailPage({ params }: PageProps) {
           <div style={{ display: "grid", gap: 20 }}>
             <div style={cardStyle()}>
               <LenderDetailClient
-                lenderId={lender.id}
-                initialName={lender.name || ""}
-                initialChannels={Array.isArray(lender.channel) ? lender.channel : []}
-                initialLegacyStates={Array.isArray(lender.states) ? lender.states : []}
+                lenderId={lenderRow.id}
+                initialName={lenderRow.name || ""}
+                initialChannels={Array.isArray(lenderRow.channel) ? lenderRow.channel : []}
+                initialLegacyStates={Array.isArray(lenderRow.states) ? lenderRow.states : []}
                 initialOwnerOccupiedStates={ownerOccupiedStates}
                 initialNonOwnerOccupiedStates={nonOwnerOccupiedStates}
               />
@@ -263,10 +249,10 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 }}
               >
                 Deleting this lender removes the lender record. If the lender is
-                tied to programs or files, delete carefully.
+                tied to programs, delete carefully.
               </div>
 
-              <form action={`/api/admin/lenders/${lender.id}`} method="post">
+              <form action={`/api/admin/lenders/${lenderRow.id}`} method="post">
                 <input type="hidden" name="_method" value="DELETE" />
                 <button
                   type="submit"
@@ -297,12 +283,12 @@ export default async function LenderDetailPage({ params }: PageProps) {
 
               <div style={{ lineHeight: 1.9, color: "#4C5C76" }}>
                 <div>
-                  <strong>Name:</strong> {lender.name || "—"}
+                  <strong>Name:</strong> {lenderRow.name || "—"}
                 </div>
                 <div>
                   <strong>Channels:</strong>{" "}
-                  {Array.isArray(lender.channel) && lender.channel.length > 0
-                    ? lender.channel.join(", ")
+                  {Array.isArray(lenderRow.channel) && lenderRow.channel.length > 0
+                    ? lenderRow.channel.join(", ")
                     : "—"}
                 </div>
                 <div>
@@ -319,12 +305,12 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <strong>Legacy States Column:</strong>{" "}
-                  {Array.isArray(lender.states) && lender.states.length > 0
-                    ? lender.states.join(", ")
+                  {Array.isArray(lenderRow.states) && lenderRow.states.length > 0
+                    ? lenderRow.states.join(", ")
                     : "—"}
                 </div>
                 <div>
-                  <strong>Created:</strong> {formatDateTime(lender.created_at)}
+                  <strong>Created:</strong> {formatDateTime(lenderRow.created_at)}
                 </div>
               </div>
             </div>
@@ -332,18 +318,53 @@ export default async function LenderDetailPage({ params }: PageProps) {
 
           <div style={{ display: "grid", gap: 20 }}>
             <div style={cardStyle()}>
+              <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>
+                State Eligibility Summary
+              </h2>
+
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 16,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  marginBottom: 16,
+                  border: "1px solid #D9E1EC",
+                  borderRadius: 16,
+                  padding: 18,
+                  background: "#FBFCFE",
+                  color: "#4C5C76",
+                  lineHeight: 1.8,
                 }}
               >
-                <h2 style={{ margin: 0, fontSize: 18 }}>Active Documents</h2>
+                <div>
+                  <strong>Owner-Occupied:</strong>{" "}
+                  {ownerOccupiedStates.length > 0 ? ownerOccupiedStates.join(", ") : "—"}
+                </div>
+                <div>
+                  <strong>Non-Owner-Occupied:</strong>{" "}
+                  {nonOwnerOccupiedStates.length > 0
+                    ? nonOwnerOccupiedStates.join(", ")
+                    : "—"}
+                </div>
+              </div>
+            </div>
 
+            <div style={cardStyle()}>
+              <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>
+                Lender Files
+              </h2>
+
+              <div
+                style={{
+                  border: "1px solid #D9E1EC",
+                  borderRadius: 16,
+                  padding: 18,
+                  color: "#6A7A94",
+                  lineHeight: 1.7,
+                }}
+              >
+                File management is available from the main file center. This
+                detail page is currently focused on lender identity and state
+                eligibility.
+              </div>
+
+              <div style={{ marginTop: 16 }}>
                 <Link
                   href="/admin/files"
                   style={{
@@ -352,119 +373,9 @@ export default async function LenderDetailPage({ params }: PageProps) {
                     color: "#0096C7",
                   }}
                 >
-                  Upload / Replace Files
+                  Go to File Center
                 </Link>
               </div>
-
-              {activeFiles.length === 0 ? (
-                <div
-                  style={{
-                    border: "1px solid #D9E1EC",
-                    borderRadius: 16,
-                    padding: 18,
-                    color: "#6A7A94",
-                  }}
-                >
-                  No active lender documents are currently linked to this lender.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: 14 }}>
-                  {activeFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      style={{
-                        border: "1px solid #D9E1EC",
-                        borderRadius: 16,
-                        padding: 18,
-                        background: "#FBFCFE",
-                      }}
-                    >
-                      <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                        {file.original_filename || "Unnamed file"}
-                      </div>
-
-                      <div style={{ color: "#4C5C76", lineHeight: 1.8 }}>
-                        <div>
-                          <strong>Type:</strong> {file.file_type || "—"}
-                        </div>
-                        <div>
-                          <strong>Program / Group:</strong>{" "}
-                          {file.program_group || "—"}
-                        </div>
-                        <div>
-                          <strong>Effective Date:</strong>{" "}
-                          {file.effective_date || "—"}
-                        </div>
-                        <div>
-                          <strong>Notes:</strong> {file.notes || "—"}
-                        </div>
-                        <div>
-                          <strong>Uploaded:</strong>{" "}
-                          {formatDateTime(file.created_at)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={cardStyle()}>
-              <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>
-                Archived Backup Documents
-              </h2>
-
-              {archivedFiles.length === 0 ? (
-                <div
-                  style={{
-                    border: "1px solid #D9E1EC",
-                    borderRadius: 16,
-                    padding: 18,
-                    color: "#6A7A94",
-                  }}
-                >
-                  No archived backup documents yet for this lender.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: 14 }}>
-                  {archivedFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      style={{
-                        border: "1px solid #D9E1EC",
-                        borderRadius: 16,
-                        padding: 18,
-                        background: "#FBFCFE",
-                      }}
-                    >
-                      <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                        {file.original_filename || "Unnamed file"}
-                      </div>
-
-                      <div style={{ color: "#4C5C76", lineHeight: 1.8 }}>
-                        <div>
-                          <strong>Type:</strong> {file.file_type || "—"}
-                        </div>
-                        <div>
-                          <strong>Program / Group:</strong>{" "}
-                          {file.program_group || "—"}
-                        </div>
-                        <div>
-                          <strong>Effective Date:</strong>{" "}
-                          {file.effective_date || "—"}
-                        </div>
-                        <div>
-                          <strong>Notes:</strong> {file.notes || "—"}
-                        </div>
-                        <div>
-                          <strong>Archived:</strong>{" "}
-                          {formatDateTime(file.created_at)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>
