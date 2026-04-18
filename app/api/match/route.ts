@@ -545,10 +545,7 @@ function normalizeLenderStateEligibilityRow(raw: RawLenderStateEligibilityRow): 
     non_owner_occupied_allowed: Boolean(raw.non_owner_occupied_allowed),
     second_home_allowed: Boolean(raw.second_home_allowed),
     heloc_allowed: Boolean(raw.heloc_allowed),
-    notes:
-      raw.notes === null || raw.notes === undefined
-        ? null
-        : String(raw.notes),
+    notes: raw.notes === null || raw.notes === undefined ? null : String(raw.notes),
   };
 }
 
@@ -572,7 +569,7 @@ function uniqueStrings(values: string[]): string[] {
 function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
   return {
     lender_name: row.programs?.lenders?.name || "Unknown Lender",
-    lender_id: row.programs?.lenders?.id || row.programs?.lender_id || "",
+    lender_id: row.programs?.lenders?.id || "",
     program_name: row.programs?.name || "Unknown Program",
     program_slug: row.programs?.slug || "",
     loan_category: row.programs?.loan_category || null,
@@ -763,6 +760,10 @@ function applyGenericCategoryBlockers(
   }
 }
 
+function makeEligibilityKey(lenderId: string, stateCode: string): string {
+  return `${lenderId}__${stateCode}`;
+}
+
 function applyLenderStateEligibility(
   bucket: MatchBucket,
   row: ProgramGuidelineRow,
@@ -771,8 +772,15 @@ function applyLenderStateEligibility(
 ) {
   if (!input.subject_state || !row.programs?.lender_id) return;
 
-  const eligibility = lenderEligibilityMap.get(row.programs.lender_id);
-  if (!eligibility) return;
+  const key = makeEligibilityKey(row.programs.lender_id, input.subject_state);
+  const eligibility = lenderEligibilityMap.get(key);
+
+  if (!eligibility) {
+    bucket.blockers.push(
+      `${bucket.lender_name} is not configured as eligible in ${input.subject_state}.`
+    );
+    return;
+  }
 
   if (input.occupancy_type === "primary_residence" && !eligibility.owner_occupied_allowed) {
     bucket.blockers.push(
@@ -793,9 +801,9 @@ function applyLenderStateEligibility(
   }
 
   const loanCategory = (row.programs?.loan_category || "").toLowerCase();
-  if ((loanCategory === "heloc" || input.transaction_type === "second_lien") && !eligibility.heloc_allowed) {
+  if (loanCategory === "heloc" && !eligibility.heloc_allowed) {
     bucket.blockers.push(
-      `${bucket.lender_name} is not eligible for HELOC / second-lien lending in ${input.subject_state}.`
+      `${bucket.lender_name} is not eligible for HELOC lending in ${input.subject_state}.`
     );
   }
 
@@ -888,11 +896,15 @@ function evaluateRow(
 
   if (input.loan_amount !== null) {
     if (row.min_loan_amount !== null && input.loan_amount < row.min_loan_amount) {
-      bucket.blockers.push(`Loan amount is below the minimum guideline of $${row.min_loan_amount.toLocaleString()}.`);
+      bucket.blockers.push(
+        `Loan amount is below the minimum guideline of $${row.min_loan_amount.toLocaleString()}.`
+      );
     }
 
     if (row.max_loan_amount !== null && input.loan_amount > row.max_loan_amount) {
-      bucket.blockers.push(`Loan amount exceeds the maximum guideline of $${row.max_loan_amount.toLocaleString()}.`);
+      bucket.blockers.push(
+        `Loan amount exceeds the maximum guideline of $${row.max_loan_amount.toLocaleString()}.`
+      );
     }
   }
 
@@ -1007,13 +1019,7 @@ async function getOpenAiEnhancement(args: {
 }): Promise<OpenAiEnhancement> {
   if (!process.env.OPENAI_API_KEY) return null;
 
-  const {
-    input,
-    strongMatches,
-    conditionalMatches,
-    eliminatedPaths,
-    defaultNextQuestion,
-  } = args;
+  const { input, strongMatches, conditionalMatches, eliminatedPaths, defaultNextQuestion } = args;
 
   const compactStrong = strongMatches.slice(0, 5).map((item) => ({
     lender_name: item.lender_name,
@@ -1097,8 +1103,7 @@ ${defaultNextQuestion}
         messages: [
           {
             role: "system",
-            content:
-              "You generate concise internal mortgage match explanations in strict JSON.",
+            content: "You generate concise internal mortgage match explanations in strict JSON.",
           },
           {
             role: "user",
@@ -1126,9 +1131,7 @@ ${defaultNextQuestion}
 
     return {
       topRecommendation:
-        typeof parsed.topRecommendation === "string"
-          ? parsed.topRecommendation
-          : "",
+        typeof parsed.topRecommendation === "string" ? parsed.topRecommendation : "",
       whyItMatches: Array.isArray(parsed.whyItMatches)
         ? parsed.whyItMatches.map((x) => String(x)).filter(Boolean)
         : [],
@@ -1147,8 +1150,9 @@ ${defaultNextQuestion}
 
 export async function POST(req: Request) {
   try {
-    const payload = await req.json();
-    const input = normalizeBody(payload);
+    const body = await req.json();
+    const input = normalizeBody(body);
+
     const supabase = await createClient();
 
     const { data, error } = await supabase
@@ -1194,14 +1198,13 @@ export async function POST(req: Request) {
     }
 
     const rawRows = Array.isArray(data) ? (data as RawProgramGuidelineRow[]) : [];
-    let rows = rawRows.map(normalizeGuidelineRow).filter((row) => row.programs);
+    const rows = rawRows.map(normalizeGuidelineRow).filter((row) => row.programs);
 
     const lenderIds = uniqueStrings(
       rows.map((row) => row.programs?.lender_id || "").filter(Boolean)
     );
 
-    let lenderEligibilityMap = new Map<string, LenderStateEligibility>();
-    let allowedLenderIds: Set<string> | null = null;
+    const lenderEligibilityMap = new Map<string, LenderStateEligibility>();
 
     if (input.subject_state && lenderIds.length > 0) {
       const { data: eligibilityData, error: eligibilityError } = await supabase
@@ -1229,32 +1232,8 @@ export async function POST(req: Request) {
         ? (eligibilityData as RawLenderStateEligibilityRow[]).map(normalizeLenderStateEligibilityRow)
         : [];
 
-      lenderEligibilityMap = new Map(
-        normalizedEligibility.map((item) => [item.lender_id, item])
-      );
-
-      const occupancyMode =
-        input.occupancy_type === "primary_residence"
-          ? "owner_occupied"
-          : input.occupancy_type === "second_home"
-          ? "second_home"
-          : input.occupancy_type === "investment_property"
-          ? "non_owner_occupied"
-          : null;
-
-      if (occupancyMode) {
-        const eligibleRows = normalizedEligibility.filter((item) => {
-          if (occupancyMode === "owner_occupied") return item.owner_occupied_allowed;
-          if (occupancyMode === "second_home") return item.second_home_allowed;
-          return item.non_owner_occupied_allowed;
-        });
-
-        allowedLenderIds = new Set(eligibleRows.map((item) => item.lender_id));
-
-        rows = rows.filter((row) => {
-          const lenderId = row.programs?.lender_id || "";
-          return allowedLenderIds?.has(lenderId);
-        });
+      for (const item of normalizedEligibility) {
+        lenderEligibilityMap.set(makeEligibilityKey(item.lender_id, item.state_code), item);
       }
     }
 
@@ -1317,8 +1296,6 @@ export async function POST(req: Request) {
         active_lender_count: activeLendersChecked.length,
         active_lenders_checked: activeLendersChecked,
         matched_lenders_in_results: matchedLendersInResults,
-        filtered_by_state_and_occupancy:
-          input.subject_state && input.occupancy_type ? true : false,
       },
       next_question: openai?.nextBestQuestion || defaultNextQuestion,
       top_recommendation: topRecommendation,
