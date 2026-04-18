@@ -44,14 +44,26 @@ type MatchInput = {
   firstTimeHomebuyer?: boolean | null;
 };
 
+type ProgramShape = {
+  id: string;
+  name: string;
+  slug: string;
+  loan_category: string | null;
+  lender_id: string;
+  lenders: {
+    id: string;
+    name: string;
+  } | null;
+};
+
 type GuidelineRow = {
   id: string;
   program_id: string;
-  borrower_statuses: string[] | null;
-  occupancy_types: string[] | null;
-  transaction_types: string[] | null;
-  income_types: string[] | null;
-  property_types: string[] | null;
+  borrower_statuses: string[];
+  occupancy_types: string[];
+  transaction_types: string[];
+  income_types: string[];
+  property_types: string[];
   min_credit_score: number | null;
   max_ltv: number | null;
   max_dti: number | null;
@@ -67,21 +79,94 @@ type GuidelineRow = {
   guideline_summary: string | null;
   overlay_notes: string | null;
   missing_items_prompt: string | null;
-  programs: {
-    id: string;
-    name: string;
-    slug: string;
-    loan_category: string | null;
-    lender_id: string;
-    lenders: {
-      id: string;
-      name: string;
-    } | null;
-  } | null;
+  programs: ProgramShape | null;
 };
 
-function includesOrEmpty(list: string[] | null, value: string | undefined) {
-  if (!list || list.length === 0) return true;
+type RawRow = Record<string, unknown>;
+
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function toNullableNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toNullableBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function toNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function normalizeProgram(value: unknown): ProgramShape | null {
+  if (!value || typeof value !== "object") return null;
+
+  const raw = value as Record<string, unknown>;
+
+  let lenderValue: unknown = raw.lenders;
+
+  if (Array.isArray(lenderValue)) {
+    lenderValue = lenderValue.length > 0 ? lenderValue[0] : null;
+  }
+
+  const lender =
+    lenderValue && typeof lenderValue === "object"
+      ? {
+          id: typeof (lenderValue as Record<string, unknown>).id === "string"
+            ? ((lenderValue as Record<string, unknown>).id as string)
+            : "",
+          name: typeof (lenderValue as Record<string, unknown>).name === "string"
+            ? ((lenderValue as Record<string, unknown>).name as string)
+            : "Unknown Lender",
+        }
+      : null;
+
+  return {
+    id: typeof raw.id === "string" ? raw.id : "",
+    name: typeof raw.name === "string" ? raw.name : "Unknown Program",
+    slug: typeof raw.slug === "string" ? raw.slug : "",
+    loan_category: typeof raw.loan_category === "string" ? raw.loan_category : null,
+    lender_id: typeof raw.lender_id === "string" ? raw.lender_id : "",
+    lenders: lender,
+  };
+}
+
+function normalizeGuidelineRow(value: unknown): GuidelineRow | null {
+  if (!value || typeof value !== "object") return null;
+
+  const raw = value as RawRow;
+
+  return {
+    id: typeof raw.id === "string" ? raw.id : "",
+    program_id: typeof raw.program_id === "string" ? raw.program_id : "",
+    borrower_statuses: toStringArray(raw.borrower_statuses),
+    occupancy_types: toStringArray(raw.occupancy_types),
+    transaction_types: toStringArray(raw.transaction_types),
+    income_types: toStringArray(raw.income_types),
+    property_types: toStringArray(raw.property_types),
+    min_credit_score: toNullableNumber(raw.min_credit_score),
+    max_ltv: toNullableNumber(raw.max_ltv),
+    max_dti: toNullableNumber(raw.max_dti),
+    min_loan_amount: toNullableNumber(raw.min_loan_amount),
+    max_loan_amount: toNullableNumber(raw.max_loan_amount),
+    max_units: toNullableNumber(raw.max_units),
+    requires_itin: toNullableBoolean(raw.requires_itin),
+    allows_itin: toNullableBoolean(raw.allows_itin),
+    allows_daca: toNullableBoolean(raw.allows_daca),
+    allows_foreign_national: toNullableBoolean(raw.allows_foreign_national),
+    allows_non_permanent_resident: toNullableBoolean(raw.allows_non_permanent_resident),
+    allows_first_time_homebuyer: toNullableBoolean(raw.allows_first_time_homebuyer),
+    guideline_summary: toNullableString(raw.guideline_summary),
+    overlay_notes: toNullableString(raw.overlay_notes),
+    missing_items_prompt: toNullableString(raw.missing_items_prompt),
+    programs: normalizeProgram(raw.programs),
+  };
+}
+
+function includesOrEmpty(list: string[], value: string | undefined) {
+  if (!list.length) return true;
   if (!value) return true;
   return list.includes(value);
 }
@@ -159,7 +244,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const rows = (Array.isArray(data) ? data : []) as GuidelineRow[];
+    const rows: GuidelineRow[] = Array.isArray(data)
+      ? data
+          .map(normalizeGuidelineRow)
+          .filter((row): row is GuidelineRow => row !== null)
+      : [];
 
     const strong_matches: unknown[] = [];
     const conditional_matches: unknown[] = [];
@@ -184,57 +273,57 @@ export async function POST(req: Request) {
       pushMissing(missing, units === null, "units");
 
       if (!includesOrEmpty(row.borrower_statuses, borrowerStatus)) {
-        hardFails.push(`Borrower status not allowed for this program.`);
+        hardFails.push("Borrower status not allowed for this program.");
       }
 
       if (!includesOrEmpty(row.occupancy_types, occupancyType)) {
-        hardFails.push(`Occupancy type not allowed.`);
+        hardFails.push("Occupancy type not allowed.");
       }
 
       if (!includesOrEmpty(row.transaction_types, transactionType)) {
-        hardFails.push(`Transaction type not allowed.`);
+        hardFails.push("Transaction type not allowed.");
       }
 
       if (!includesOrEmpty(row.income_types, incomeType)) {
-        hardFails.push(`Income type not allowed.`);
+        hardFails.push("Income type not allowed.");
       }
 
       if (!includesOrEmpty(row.property_types, propertyType)) {
-        hardFails.push(`Property type not allowed.`);
+        hardFails.push("Property type not allowed.");
       }
 
       if (borrowerStatus === "itin") {
         if (row.requires_itin === false) {
-          hardFails.push(`Program is not structured for ITIN borrowers.`);
+          hardFails.push("Program is not structured for ITIN borrowers.");
         }
         if (row.allows_itin === false) {
-          hardFails.push(`ITIN borrowers not allowed.`);
+          hardFails.push("ITIN borrowers not allowed.");
         }
       }
 
       if (borrowerStatus === "daca" && row.allows_daca === false) {
-        hardFails.push(`DACA borrowers not allowed.`);
+        hardFails.push("DACA borrowers not allowed.");
       }
 
       if (
         borrowerStatus === "foreign_national" &&
         row.allows_foreign_national === false
       ) {
-        hardFails.push(`Foreign national borrowers not allowed.`);
+        hardFails.push("Foreign national borrowers not allowed.");
       }
 
       if (
         borrowerStatus === "non_permanent_resident" &&
         row.allows_non_permanent_resident === false
       ) {
-        hardFails.push(`Non-permanent residents not allowed.`);
+        hardFails.push("Non-permanent residents not allowed.");
       }
 
       if (
         firstTimeHomebuyer === true &&
         row.allows_first_time_homebuyer === false
       ) {
-        hardFails.push(`First-time homebuyers not allowed.`);
+        hardFails.push("First-time homebuyers not allowed.");
       }
 
       if (creditScore !== null && row.min_credit_score !== null) {
@@ -244,7 +333,7 @@ export async function POST(req: Request) {
           );
         }
       } else if (row.min_credit_score !== null) {
-        softFlags.push(`Minimum credit score must be confirmed.`);
+        softFlags.push("Minimum credit score must be confirmed.");
       }
 
       if (ltv !== null && row.max_ltv !== null) {
@@ -252,7 +341,7 @@ export async function POST(req: Request) {
           hardFails.push(`LTV ${ltv}% exceeds max ${row.max_ltv}%.`);
         }
       } else if (row.max_ltv !== null) {
-        softFlags.push(`LTV must be confirmed.`);
+        softFlags.push("LTV must be confirmed.");
       }
 
       if (dti !== null && row.max_dti !== null) {
@@ -260,7 +349,7 @@ export async function POST(req: Request) {
           hardFails.push(`DTI ${dti}% exceeds max ${row.max_dti}%.`);
         }
       } else if (row.max_dti !== null) {
-        softFlags.push(`DTI must be confirmed.`);
+        softFlags.push("DTI must be confirmed.");
       }
 
       if (loanAmount !== null && row.min_loan_amount !== null) {
@@ -278,7 +367,7 @@ export async function POST(req: Request) {
           );
         }
       } else if (row.max_loan_amount !== null) {
-        softFlags.push(`Final loan amount must be confirmed.`);
+        softFlags.push("Final loan amount must be confirmed.");
       }
 
       if (units !== null && row.max_units !== null) {
@@ -286,7 +375,7 @@ export async function POST(req: Request) {
           hardFails.push(`Unit count ${units} exceeds max ${row.max_units}.`);
         }
       } else if (row.max_units !== null) {
-        softFlags.push(`Unit count must be confirmed.`);
+        softFlags.push("Unit count must be confirmed.");
       }
 
       for (const item of missing) {
