@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 type LenderRow = {
   id: string;
   name: string | null;
-  channel: string | null;
+  channel: string[] | null;
   states: string[] | null;
   created_at: string | null;
 };
@@ -34,7 +34,7 @@ function inputStyle(): CSSProperties {
   return {
     width: "100%",
     padding: "14px 16px",
-    borderRadius: 12,
+    borderRadius: 14,
     border: "1px solid #C8D3E3",
     fontSize: 16,
     outline: "none",
@@ -44,67 +44,59 @@ function inputStyle(): CSSProperties {
   };
 }
 
+function multiSelectStyle(height = 120): CSSProperties {
+  return {
+    ...inputStyle(),
+    height,
+    padding: 12,
+  };
+}
+
 function primaryButtonStyle(): CSSProperties {
   return {
+    width: "100%",
     background: "#263366",
     color: "#FFFFFF",
     border: "none",
-    borderRadius: 12,
-    padding: "14px 18px",
-    fontWeight: 700,
+    borderRadius: 14,
+    padding: "16px 18px",
+    fontWeight: 800,
+    fontSize: 16,
     cursor: "pointer",
   };
 }
 
-function pillStyle(): CSSProperties {
+function badgeStyle(): CSSProperties {
   return {
     display: "inline-block",
     padding: "6px 10px",
     borderRadius: 999,
-    background: "#EEF4FF",
+    background: "#E8EEF8",
     color: "#263366",
     fontSize: 12,
-    fontWeight: 700,
+    fontWeight: 800,
     marginRight: 8,
     marginBottom: 8,
   };
 }
 
 export default async function AdminLendersPage() {
-  if (!(await isAdminSignedIn())) {
+  const signedIn = await isAdminSignedIn();
+
+  if (!signedIn) {
     redirect("/admin/login");
   }
 
-  async function createLender(formData: FormData) {
-    "use server";
-
-    const name = String(formData.get("name") || "").trim();
-    const channels = formData.getAll("channels").map(String);
-    const states = formData.getAll("states").map(String);
-
-    if (!name || channels.length === 0 || states.length === 0) {
-      redirect("/admin/lenders?error=Please complete lender name, channels, and states.");
-    }
-
-    const { error } = await supabaseAdmin.from("lenders").insert({
-      name,
-      channel: channels.join(", "),
-      states,
-    });
-
-    if (error) {
-      redirect(`/admin/lenders?error=${encodeURIComponent(error.message)}`);
-    }
-
-    redirect("/admin/lenders?success=Lender created successfully.");
-  }
-
-  const { data: lenders } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("lenders")
-    .select("*")
+    .select("id, name, channel, states, created_at")
     .order("created_at", { ascending: false });
 
-  const lenderList: LenderRow[] = lenders || [];
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const lenders: LenderRow[] = Array.isArray(data) ? (data as LenderRow[]) : [];
 
   return (
     <main
@@ -113,29 +105,31 @@ export default async function AdminLendersPage() {
         background: "#F1F3F8",
         color: "#263366",
         fontFamily: "Arial, Helvetica, sans-serif",
+        padding: "34px 18px 48px",
       }}
     >
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
             gap: 16,
+            alignItems: "flex-start",
             flexWrap: "wrap",
-            marginBottom: 18,
+            marginBottom: 22,
           }}
         >
           <div>
             <div
               style={{
                 display: "inline-block",
-                padding: "8px 14px",
+                padding: "6px 12px",
                 borderRadius: 999,
                 background: "#E8EEF8",
                 color: "#263366",
                 fontSize: 12,
-                fontWeight: 700,
-                marginBottom: 12,
+                fontWeight: 800,
+                marginBottom: 10,
               }}
             >
               LENDER MANAGEMENT
@@ -143,9 +137,9 @@ export default async function AdminLendersPage() {
 
             <h1
               style={{
-                margin: "0 0 12px",
-                fontSize: "clamp(34px, 6vw, 58px)",
-                lineHeight: 1.08,
+                margin: 0,
+                fontSize: "clamp(42px, 7vw, 72px)",
+                lineHeight: 1.04,
               }}
             >
               Manage Lenders
@@ -153,11 +147,11 @@ export default async function AdminLendersPage() {
 
             <p
               style={{
-                margin: 0,
-                color: "#5A6A84",
+                margin: "14px 0 0",
+                color: "#52637D",
+                lineHeight: 1.55,
                 fontSize: 18,
-                lineHeight: 1.6,
-                maxWidth: 920,
+                maxWidth: 980,
               }}
             >
               Create lenders here. Click any lender to open its dedicated detail
@@ -165,59 +159,167 @@ export default async function AdminLendersPage() {
             </p>
           </div>
 
-          <div style={{ alignSelf: "flex-start" }}>
-            <Link
-              href="/admin"
-              style={{
-                color: "#263366",
-                fontWeight: 700,
-                textDecoration: "none",
-              }}
-            >
-              Back to Admin Home
-            </Link>
-          </div>
+          <Link
+            href="/admin"
+            style={{
+              color: "#263366",
+              textDecoration: "none",
+              fontWeight: 800,
+              fontSize: 16,
+            }}
+          >
+            Back to Admin Home
+          </Link>
         </div>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "380px 1fr",
+            gridTemplateColumns: "380px minmax(0, 1fr)",
             gap: 20,
             alignItems: "start",
           }}
         >
           <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 18 }}>Create Lender</h2>
-            <p style={{ color: "#5A6A84", lineHeight: 1.7 }}>
+            <h2 style={{ marginTop: 0, marginBottom: 18, fontSize: 18 }}>
+              Create Lender
+            </h2>
+
+            <p
+              style={{
+                marginTop: 0,
+                color: "#52637D",
+                lineHeight: 1.6,
+                fontSize: 16,
+              }}
+            >
               Use one lender record per institution. Add all active channels under
               that one lender.
             </p>
 
-            <form action={createLender} style={{ display: "grid", gap: 14 }}>
+            <form
+              action="/api/admin/lenders"
+              method="post"
+              style={{ display: "grid", gap: 16 }}
+            >
               <div>
-                <div style={{ fontWeight: 700, marginBottom: 8 }}>Lender Name</div>
-                <input name="name" style={inputStyle()} placeholder="Example: UWM" />
+                <label
+                  htmlFor="name"
+                  style={{
+                    display: "block",
+                    fontWeight: 800,
+                    marginBottom: 8,
+                    fontSize: 15,
+                  }}
+                >
+                  Lender Name
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  placeholder="Example: UWM"
+                  style={inputStyle()}
+                  required
+                />
               </div>
 
               <div>
-                <div style={{ fontWeight: 700, marginBottom: 8 }}>Channels</div>
-                <select name="channels" multiple size={3} style={{ ...inputStyle(), height: 118 }}>
+                <label
+                  htmlFor="channels"
+                  style={{
+                    display: "block",
+                    fontWeight: 800,
+                    marginBottom: 8,
+                    fontSize: 15,
+                  }}
+                >
+                  Channels
+                </label>
+                <select
+                  id="channels"
+                  name="channels"
+                  multiple
+                  style={multiSelectStyle(118)}
+                  required
+                >
                   <option value="Retail">Retail</option>
                   <option value="Wholesale">Wholesale</option>
                   <option value="Correspondent">Correspondent</option>
                 </select>
+                <div
+                  style={{
+                    marginTop: 8,
+                    color: "#6A7A92",
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Hold Ctrl on Windows or Command on Mac to select more than one.
+                </div>
               </div>
 
               <div>
-                <div style={{ fontWeight: 700, marginBottom: 8 }}>States</div>
-                <select name="states" multiple size={10} style={{ ...inputStyle(), height: 230 }}>
+                <label
+                  htmlFor="ownerOccupiedStates"
+                  style={{
+                    display: "block",
+                    fontWeight: 800,
+                    marginBottom: 8,
+                    fontSize: 15,
+                  }}
+                >
+                  Owner-Occupied States
+                </label>
+                <select
+                  id="ownerOccupiedStates"
+                  name="ownerOccupiedStates"
+                  multiple
+                  style={multiSelectStyle(220)}
+                >
                   {US_STATES.map((state) => (
-                    <option key={state} value={state}>
+                    <option key={`oo-${state}`} value={state}>
                       {state}
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="nonOwnerOccupiedStates"
+                  style={{
+                    display: "block",
+                    fontWeight: 800,
+                    marginBottom: 8,
+                    fontSize: 15,
+                  }}
+                >
+                  Non-Owner-Occupied States
+                </label>
+                <select
+                  id="nonOwnerOccupiedStates"
+                  name="nonOwnerOccupiedStates"
+                  multiple
+                  style={multiSelectStyle(220)}
+                >
+                  {US_STATES.map((state) => (
+                    <option key={`noo-${state}`} value={state}>
+                      {state}
+                    </option>
+                  ))}
+                </select>
+                <div
+                  style={{
+                    marginTop: 8,
+                    color: "#6A7A92",
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  This structure lets the qualification engine distinguish
+                  owner-occupied licensing from non-owner-occupied licensing.
+                </div>
               </div>
 
               <button type="submit" style={primaryButtonStyle()}>
@@ -227,90 +329,121 @@ export default async function AdminLendersPage() {
           </section>
 
           <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 18 }}>Current Lenders</h2>
-            <div style={{ color: "#5A6A84", marginBottom: 16 }}>
-              Total lenders: {lenderList.length}
+            <h2 style={{ marginTop: 0, marginBottom: 10, fontSize: 18 }}>
+              Current Lenders
+            </h2>
+
+            <div
+              style={{
+                color: "#6A7A92",
+                fontSize: 16,
+                marginBottom: 20,
+              }}
+            >
+              Total lenders: {lenders.length}
             </div>
 
-            {lenderList.length === 0 ? (
-              <div
-                style={{
-                  border: "1px solid #D9E1EC",
-                  background: "#F8FAFC",
-                  color: "#6A7890",
-                  borderRadius: 16,
-                  padding: 18,
-                }}
-              >
-                No lenders found yet.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                {lenderList.map((lender) => {
-                  const channels = (lender.channel || "")
-                    .split(",")
-                    .map((x) => x.trim())
-                    .filter(Boolean);
+            <div style={{ display: "grid", gap: 14 }}>
+              {lenders.map((lender) => (
+                <div
+                  key={lender.id}
+                  style={{
+                    border: "1px solid #D9E1EC",
+                    borderRadius: 22,
+                    padding: 18,
+                    background: "#FFFFFF",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: "1 1 420px" }}>
+                      <div
+                        style={{
+                          fontSize: 20,
+                          fontWeight: 900,
+                          lineHeight: 1.35,
+                          marginBottom: 10,
+                        }}
+                      >
+                        {lender.name || "Unnamed Lender"}
+                      </div>
 
-                  return (
-                    <Link
-                      key={lender.id}
-                      href={`/admin/lenders/${lender.id}`}
+                      <div style={{ marginBottom: 8 }}>
+                        {(lender.channel || []).map((channel) => (
+                          <span key={`${lender.id}-${channel}`} style={badgeStyle()}>
+                            {channel}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div
+                        style={{
+                          color: "#5A6A84",
+                          fontSize: 16,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        States: {(lender.states || []).length > 0
+                          ? lender.states?.join(", ")
+                          : "None listed"}
+                      </div>
+                    </div>
+
+                    <div
                       style={{
-                        ...cardStyle(),
-                        textDecoration: "none",
-                        color: "#263366",
-                        padding: 18,
+                        textAlign: "right",
+                        minWidth: 180,
                       }}
                     >
                       <div
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          flexWrap: "wrap",
+                          color: "#6A7A92",
+                          fontSize: 15,
+                          marginBottom: 8,
                         }}
                       >
-                        <div style={{ flex: 1, minWidth: 280 }}>
-                          <div style={{ fontSize: 18, fontWeight: 800 }}>
-                            {lender.name || "Unnamed Lender"}
-                          </div>
-
-                          <div style={{ marginTop: 10 }}>
-                            {channels.map((channel) => (
-                              <span key={channel} style={pillStyle()}>
-                                {channel}
-                              </span>
-                            ))}
-                          </div>
-
-                          <div style={{ marginTop: 10, color: "#5A6A84" }}>
-                            States: {(lender.states || []).join(", ") || "-"}
-                          </div>
-                        </div>
-
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ color: "#5A6A84" }}>
-                            {lender.created_at
-                              ? new Date(lender.created_at).toLocaleString()
-                              : "-"}
-                          </div>
-                          <div
-                            style={{
-                              marginTop: 10,
-                              fontWeight: 700,
-                              color: "#0096C7",
-                            }}
-                          >
-                            Open Lender →
-                          </div>
-                        </div>
+                        {lender.created_at
+                          ? new Date(lender.created_at).toLocaleString()
+                          : "No date"}
                       </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
+
+                      <Link
+                        href={`/admin/lenders/${lender.id}`}
+                        style={{
+                          color: "#0096C7",
+                          textDecoration: "none",
+                          fontWeight: 900,
+                          fontSize: 16,
+                        }}
+                      >
+                        Open Lender →
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {lenders.length === 0 && (
+                <div
+                  style={{
+                    border: "1px solid #D9E1EC",
+                    borderRadius: 18,
+                    padding: 18,
+                    color: "#6A7A92",
+                    background: "#FFFFFF",
+                  }}
+                >
+                  No lenders created yet.
+                </div>
+              )}
+            </div>
           </section>
         </div>
       </div>
