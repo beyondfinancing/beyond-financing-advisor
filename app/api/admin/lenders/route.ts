@@ -1,26 +1,16 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { signInAdminSession } from "@/lib/admin-auth";
 
 type EligibilityType = "owner_occupied" | "non_owner_occupied";
 
-type LenderInsertRow = {
-  name: string;
-  channel: string[] | null;
-  states: string[] | null;
+type CreateLenderBody = {
+  name?: string;
+  channel?: string[];
+  states?: string[];
+  ownerOccupiedStates?: string[];
+  nonOwnerOccupiedStates?: string[];
 };
-
-const US_STATES = [
-  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-  "DC",
-];
-
-function normalizeString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -28,7 +18,7 @@ function normalizeStringArray(value: unknown): string[] {
   return Array.from(
     new Set(
       value
-        .map((item) => normalizeString(item).toUpperCase())
+        .map((item) => String(item ?? "").trim().toUpperCase())
         .filter(Boolean)
     )
   );
@@ -40,112 +30,113 @@ function normalizeChannelArray(value: unknown): string[] {
   return Array.from(
     new Set(
       value
-        .map((item) => normalizeString(item))
+        .map((item) => String(item ?? "").trim())
         .filter(Boolean)
     )
   );
 }
 
-function keepValidStates(states: string[]): string[] {
-  return states.filter((state) => US_STATES.includes(state));
+function mergeStatesForLegacyColumn(
+  ownerOccupiedStates: string[],
+  nonOwnerOccupiedStates: string[],
+  fallbackStates: string[]
+): string[] {
+  const merged = Array.from(
+    new Set([
+      ...ownerOccupiedStates,
+      ...nonOwnerOccupiedStates,
+      ...fallbackStates,
+    ])
+  );
+
+  return merged.sort();
 }
 
-function buildEligibilityRows(args: {
-  lenderId: string;
-  ownerOccupiedStates: string[];
-  nonOwnerOccupiedStates: string[];
-}) {
-  const { lenderId, ownerOccupiedStates, nonOwnerOccupiedStates } = args;
-
-  const ownerRows = ownerOccupiedStates.map((state_code) => ({
-    lender_id: lenderId,
-    state_code,
-    eligibility_type: "owner_occupied" as EligibilityType,
-    is_active: true,
-  }));
-
-  const nonOwnerRows = nonOwnerOccupiedStates.map((state_code) => ({
-    lender_id: lenderId,
-    state_code,
-    eligibility_type: "non_owner_occupied" as EligibilityType,
-    is_active: true,
-  }));
-
-  return [...ownerRows, ...nonOwnerRows];
+async function requireAdminApi() {
+  const ok = await signInAdminSession();
+  return ok;
 }
 
 export async function POST(req: Request) {
+  const isAdmin = await requireAdminApi();
+
+  if (!isAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    const contentType = req.headers.get("content-type") || "";
+    const body = (await req.json()) as CreateLenderBody;
 
-    if (!contentType.includes("application/json")) {
+    const name = String(body.name ?? "").trim();
+    const channel = normalizeChannelArray(body.channel);
+    const fallbackStates = normalizeStringArray(body.states);
+    const ownerOccupiedStates = normalizeStringArray(body.ownerOccupiedStates);
+    const nonOwnerOccupiedStates = normalizeStringArray(body.nonOwnerOccupiedStates);
+
+    if (!name) {
       return NextResponse.json(
-        { success: false, error: "Expected application/json request body." },
+        { error: "Lender name is required." },
         { status: 400 }
       );
     }
 
-    const body = (await req.json()) as Record<string, unknown>;
-
-    const lenderName = normalizeString(body.name);
-    const channels = normalizeChannelArray(body.channels);
-    const ownerOccupiedStates = keepValidStates(
-      normalizeStringArray(body.ownerOccupiedStates)
-    );
-    const nonOwnerOccupiedStates = keepValidStates(
-      normalizeStringArray(body.nonOwnerOccupiedStates)
-    );
-
-    const combinedStates = Array.from(
-      new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
-    );
-
-    if (!lenderName) {
+    if (channel.length === 0) {
       return NextResponse.json(
-        { success: false, error: "Lender name is required." },
+        { error: "Select at least one channel." },
         { status: 400 }
       );
     }
 
-    const lenderPayload: LenderInsertRow = {
-      name: lenderName,
-      channel: channels.length > 0 ? channels : null,
-      states: combinedStates.length > 0 ? combinedStates : null,
-    };
+    const mergedStates = mergeStatesForLegacyColumn(
+      ownerOccupiedStates,
+      nonOwnerOccupiedStates,
+      fallbackStates
+    );
 
-    const { data: insertedLender, error: lenderError } = await supabaseAdmin
+    const { data: lender, error: lenderError } = await supabaseAdmin
       .from("lenders")
-      .insert(lenderPayload)
+      .insert({
+        name,
+        channel,
+        states: mergedStates,
+      })
       .select("id, name, channel, states, created_at")
       .single();
 
-    if (lenderError || !insertedLender) {
+    if (lenderError || !lender) {
       return NextResponse.json(
-        {
-          success: false,
-          error: lenderError?.message || "Failed to create lender.",
-        },
+        { error: lenderError?.message || "Failed to create lender." },
         { status: 500 }
       );
     }
 
-    const eligibilityRows = buildEligibilityRows({
-      lenderId: insertedLender.id,
-      ownerOccupiedStates,
-      nonOwnerOccupiedStates,
-    });
+    const stateEligibilityRows: {
+      lender_id: string;
+      state_code: string;
+      eligibility_type: EligibilityType;
+    }[] = [
+      ...ownerOccupiedStates.map((state_code) => ({
+        lender_id: lender.id,
+        state_code,
+        eligibility_type: "owner_occupied" as const,
+      })),
+      ...nonOwnerOccupiedStates.map((state_code) => ({
+        lender_id: lender.id,
+        state_code,
+        eligibility_type: "non_owner_occupied" as const,
+      })),
+    ];
 
-    if (eligibilityRows.length > 0) {
+    if (stateEligibilityRows.length > 0) {
       const { error: eligibilityError } = await supabaseAdmin
         .from("lender_state_eligibility")
-        .insert(eligibilityRows);
+        .insert(stateEligibilityRows);
 
       if (eligibilityError) {
-        await supabaseAdmin.from("lenders").delete().eq("id", insertedLender.id);
+        await supabaseAdmin.from("lenders").delete().eq("id", lender.id);
 
         return NextResponse.json(
           {
-            success: false,
             error:
               eligibilityError.message ||
               "Failed to save lender state eligibility.",
@@ -157,8 +148,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      lender: insertedLender,
-      lender_state_eligibility: {
+      lender: {
+        ...lender,
         owner_occupied_states: ownerOccupiedStates,
         non_owner_occupied_states: nonOwnerOccupiedStates,
       },
@@ -166,11 +157,8 @@ export async function POST(req: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        success: false,
         error:
-          error instanceof Error
-            ? error.message
-            : "Unexpected lender creation error.",
+          error instanceof Error ? error.message : "Unexpected server error.",
       },
       { status: 500 }
     );
