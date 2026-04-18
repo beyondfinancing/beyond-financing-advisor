@@ -16,8 +16,9 @@ type LenderRow = {
 
 type LenderStateEligibilityRow = {
   lender_id: string;
-  eligibility_type: "owner_occupied" | "non_owner_occupied";
-  state_code: string;
+  state_code: string | null;
+  owner_occupied_allowed: boolean | null;
+  non_owner_occupied_allowed: boolean | null;
 };
 
 type LenderSummary = {
@@ -52,6 +53,10 @@ function badgeStyle(): CSSProperties {
   };
 }
 
+function normalizeState(value: string | null): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 export default async function AdminLendersPage() {
   const signedIn = await isAdminSignedIn();
 
@@ -68,21 +73,24 @@ export default async function AdminLendersPage() {
     throw new Error(lendersError.message);
   }
 
-  const lenderIds = (lendersData || []).map((row) => row.id);
+  const lenderRows = ((lendersData ?? []) as LenderRow[]).filter((row) => row?.id);
+  const lenderIds = lenderRows.map((row) => row.id);
 
   let stateEligibilityRows: LenderStateEligibilityRow[] = [];
 
   if (lenderIds.length > 0) {
     const { data: eligibilityData, error: eligibilityError } = await supabaseAdmin
       .from("lender_state_eligibility")
-      .select("lender_id, eligibility_type, state_code")
+      .select(
+        "lender_id, state_code, owner_occupied_allowed, non_owner_occupied_allowed"
+      )
       .in("lender_id", lenderIds);
 
     if (eligibilityError) {
       throw new Error(eligibilityError.message);
     }
 
-    stateEligibilityRows = (eligibilityData || []) as LenderStateEligibilityRow[];
+    stateEligibilityRows = (eligibilityData ?? []) as LenderStateEligibilityRow[];
   }
 
   const eligibilityMap = new Map<
@@ -94,41 +102,44 @@ export default async function AdminLendersPage() {
   >();
 
   for (const row of stateEligibilityRows) {
-    const current = eligibilityMap.get(row.lender_id) || {
+    const lenderId = String(row.lender_id ?? "").trim();
+    const stateCode = normalizeState(row.state_code);
+
+    if (!lenderId || !stateCode) continue;
+
+    const current = eligibilityMap.get(lenderId) || {
       owner_occupied_states: [],
       non_owner_occupied_states: [],
     };
 
-    if (row.eligibility_type === "owner_occupied") {
-      current.owner_occupied_states.push(row.state_code);
+    if (row.owner_occupied_allowed) {
+      current.owner_occupied_states.push(stateCode);
     }
 
-    if (row.eligibility_type === "non_owner_occupied") {
-      current.non_owner_occupied_states.push(row.state_code);
+    if (row.non_owner_occupied_allowed) {
+      current.non_owner_occupied_states.push(stateCode);
     }
 
-    eligibilityMap.set(row.lender_id, current);
+    eligibilityMap.set(lenderId, current);
   }
 
-  const initialLenders: LenderSummary[] = ((lendersData || []) as LenderRow[]).map(
-    (row) => {
-      const eligibility = eligibilityMap.get(row.id);
+  const initialLenders: LenderSummary[] = lenderRows.map((row) => {
+    const eligibility = eligibilityMap.get(row.id);
 
-      return {
-        id: row.id,
-        name: row.name,
-        channel: row.channel,
-        states: row.states,
-        created_at: row.created_at,
-        owner_occupied_states: Array.from(
-          new Set((eligibility?.owner_occupied_states || []).filter(Boolean))
-        ).sort(),
-        non_owner_occupied_states: Array.from(
-          new Set((eligibility?.non_owner_occupied_states || []).filter(Boolean))
-        ).sort(),
-      };
-    }
-  );
+    return {
+      id: row.id,
+      name: row.name,
+      channel: Array.isArray(row.channel) ? row.channel : [],
+      states: Array.isArray(row.states) ? row.states : [],
+      created_at: row.created_at,
+      owner_occupied_states: Array.from(
+        new Set((eligibility?.owner_occupied_states ?? []).filter(Boolean))
+      ).sort(),
+      non_owner_occupied_states: Array.from(
+        new Set((eligibility?.non_owner_occupied_states ?? []).filter(Boolean))
+      ).sort(),
+    };
+  });
 
   return (
     <main style={pageShellStyle()}>
@@ -166,7 +177,7 @@ export default async function AdminLendersPage() {
               }}
             >
               Create lenders here. Click any lender to open its dedicated detail
-              page for editing, deletion, file tracking, and future overlay logic.
+              page for editing, deletion, and state-footprint management.
             </p>
           </div>
 
