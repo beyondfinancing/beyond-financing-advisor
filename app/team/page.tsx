@@ -74,6 +74,19 @@ type LiveMatchResponse = {
   matches?: LiveMatch[];
 };
 
+type PasswordOverrideMap = Record<string, string>;
+
+type ProfessionalSession = {
+  isAuthenticated: boolean;
+  loginId: string;
+  role: TeamRole;
+  name: string;
+  email?: string;
+};
+
+const PROFESSIONAL_SESSION_KEY = "beyond_professional_session";
+const TEAM_PASSWORD_OVERRIDES_KEY = "beyond_team_password_overrides";
+
 const ACCESS_CREDENTIALS: AccessCredential[] = [
   {
     loginId: "1625542",
@@ -363,6 +376,54 @@ function extractReply(data: unknown): string {
   return "";
 }
 
+function loadPasswordOverrides(): PasswordOverrideMap {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(TEAM_PASSWORD_OVERRIDES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as PasswordOverrideMap;
+  } catch {
+    return {};
+  }
+}
+
+function savePasswordOverrides(value: PasswordOverrideMap) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TEAM_PASSWORD_OVERRIDES_KEY, JSON.stringify(value));
+}
+
+function storeProfessionalSession(user: AccessCredential) {
+  if (typeof window === "undefined") return;
+
+  const session: ProfessionalSession = {
+    isAuthenticated: true,
+    loginId: user.loginId,
+    role: user.role,
+    name: user.displayName,
+    email: user.email,
+  };
+
+  window.localStorage.setItem(PROFESSIONAL_SESSION_KEY, JSON.stringify(session));
+}
+
+function clearProfessionalSession() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(PROFESSIONAL_SESSION_KEY);
+}
+
+function findCredentialByLoginOrEmail(value: string): AccessCredential | undefined {
+  const normalized = value.trim().toLowerCase();
+
+  return ACCESS_CREDENTIALS.find((item) => {
+    const loginMatch = item.loginId.trim().toLowerCase() === normalized;
+    const emailMatch = (item.email || "").trim().toLowerCase() === normalized;
+    return loginMatch || emailMatch;
+  });
+}
+
 export default function TeamPage() {
   const [accessLoginId, setAccessLoginId] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
@@ -371,6 +432,13 @@ export default function TeamPage() {
   const [authorizedUser, setAuthorizedUser] = useState<AccessCredential | null>(
     null
   );
+
+  const [showResetPanel, setShowResetPanel] = useState(false);
+  const [resetLoginIdOrEmail, setResetLoginIdOrEmail] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
 
   const [scenario, setScenario] = useState<TeamScenario>({
     borrowerName: "",
@@ -410,6 +478,44 @@ export default function TeamPage() {
   >([]);
   const [liveMatchError, setLiveMatchError] = useState("");
   const [loadingLiveMatches, setLoadingLiveMatches] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.localStorage.getItem(PROFESSIONAL_SESSION_KEY);
+      if (!raw) return;
+
+      const session = JSON.parse(raw) as ProfessionalSession;
+      if (!session?.isAuthenticated || !session.loginId) return;
+
+      const credential = ACCESS_CREDENTIALS.find(
+        (item) => item.loginId === session.loginId
+      );
+
+      if (!credential) return;
+
+      setAuthorizedUser(credential);
+      setAccessGranted(true);
+      setAccessLoginId(credential.loginId);
+      setScenario((prev) => ({
+        ...prev,
+        professionalName: credential.displayName,
+        professionalEmail: credential.email || prev.professionalEmail,
+        role: credential.role,
+      }));
+      setMessages([
+        {
+          role: "assistant",
+          content: `Welcome ${credential.displayName}. ${getRoleObjective(
+            credential.role
+          )}`,
+        },
+      ]);
+    } catch {
+      // ignore bad session
+    }
+  }, []);
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(scenario.homePrice || 0);
@@ -613,17 +719,24 @@ export default function TeamPage() {
   );
 
   const handleAccessLogin = () => {
-    const credential = ACCESS_CREDENTIALS.find(
-      (item) =>
-        item.loginId.trim().toLowerCase() ===
-          accessLoginId.trim().toLowerCase() &&
-        item.password === accessPassword
-    );
+    const credential = findCredentialByLoginOrEmail(accessLoginId);
 
     if (!credential) {
       setAccessError("Invalid login credentials. Please try again.");
       setAccessGranted(false);
       setAuthorizedUser(null);
+      clearProfessionalSession();
+      return;
+    }
+
+    const overrides = loadPasswordOverrides();
+    const effectivePassword = overrides[credential.loginId] || credential.password;
+
+    if (effectivePassword !== accessPassword) {
+      setAccessError("Invalid login credentials. Please try again.");
+      setAccessGranted(false);
+      setAuthorizedUser(null);
+      clearProfessionalSession();
       return;
     }
 
@@ -632,6 +745,9 @@ export default function TeamPage() {
     setAccessGranted(true);
     setChatError("");
     setEmailError("");
+    setResetError("");
+    setResetSuccess("");
+    storeProfessionalSession(credential);
 
     setScenario((prev) => ({
       ...prev,
@@ -648,6 +764,45 @@ export default function TeamPage() {
         )}`,
       },
     ]);
+  };
+
+  const handlePasswordReset = () => {
+    setResetError("");
+    setResetSuccess("");
+
+    const credential = findCredentialByLoginOrEmail(resetLoginIdOrEmail);
+
+    if (!credential) {
+      setResetError("No matching professional account was found for that Login ID or email.");
+      return;
+    }
+
+    if (!resetNewPassword.trim()) {
+      setResetError("Please enter a new password.");
+      return;
+    }
+
+    if (resetNewPassword.trim().length < 10) {
+      setResetError("The new password must contain at least 10 characters.");
+      return;
+    }
+
+    if (resetNewPassword !== resetConfirmPassword) {
+      setResetError("The new password and confirmation do not match.");
+      return;
+    }
+
+    const overrides = loadPasswordOverrides();
+    overrides[credential.loginId] = resetNewPassword;
+    savePasswordOverrides(overrides);
+
+    setResetSuccess(
+      `Password reset completed for ${credential.displayName}. You can now sign in with ${credential.email || credential.loginId}.`
+    );
+    setResetLoginIdOrEmail("");
+    setResetNewPassword("");
+    setResetConfirmPassword("");
+    setAccessError("");
   };
 
   const sendMessage = async () => {
@@ -819,6 +974,16 @@ export default function TeamPage() {
     setEmailError("");
   };
 
+  const handleSignOut = () => {
+    setAccessGranted(false);
+    setAuthorizedUser(null);
+    setAccessLoginId("");
+    setAccessPassword("");
+    setChatError("");
+    setEmailError("");
+    clearProfessionalSession();
+  };
+
   if (!accessGranted) {
     return (
       <main
@@ -889,17 +1054,20 @@ export default function TeamPage() {
               }}
             >
               <div>
-                <strong>Loan Officer Login ID:</strong> NMLS #
+                <strong>Loan Officer Login ID:</strong> NMLS # or company email
               </div>
               <div>
                 <strong>Loan Officer Assistant / Processor Login ID:</strong>{" "}
-                Company NMLS # + initials
+                Company NMLS # + initials or company email
               </div>
               <div>
                 <strong>Example:</strong> Finley Beyond = 2394496FB
               </div>
               <div>
                 <strong>Borrowers:</strong> no login required
+              </div>
+              <div>
+                <strong>Current Sandro test login:</strong> 1625542 or pansini@beyondfinancing.com
               </div>
             </div>
 
@@ -911,7 +1079,7 @@ export default function TeamPage() {
               }}
             >
               <input
-                placeholder="Login ID"
+                placeholder="Login ID or Email"
                 value={accessLoginId}
                 onChange={(e) => setAccessLoginId(e.target.value)}
                 style={inputStyle()}
@@ -947,6 +1115,7 @@ export default function TeamPage() {
                 flexWrap: "wrap",
                 gap: 12,
                 marginTop: 18,
+                alignItems: "center",
               }}
             >
               <button
@@ -955,6 +1124,18 @@ export default function TeamPage() {
                 style={buttonPrimaryStyle(false)}
               >
                 Access Team Workspace
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowResetPanel((prev) => !prev);
+                  setResetError("");
+                  setResetSuccess("");
+                }}
+                style={buttonSecondaryStyle(false)}
+              >
+                {showResetPanel ? "Hide Reset Password" : "Forgot / Reset Password"}
               </button>
 
               <Link
@@ -969,6 +1150,105 @@ export default function TeamPage() {
                 Back to Beyond Intelligence
               </Link>
             </div>
+
+            {showResetPanel && (
+              <div
+                style={{
+                  marginTop: 18,
+                  paddingTop: 18,
+                  borderTop: "1px solid #E0E7F0",
+                }}
+              >
+                <h3 style={{ margin: "0 0 12px 0", fontSize: 18 }}>
+                  Reset Password
+                </h3>
+
+                <div
+                  style={{
+                    background: "#F8FAFC",
+                    border: "1px solid #D9E1EC",
+                    borderRadius: 16,
+                    padding: 16,
+                    lineHeight: 1.7,
+                    marginBottom: 16,
+                    color: "#4B5C78",
+                  }}
+                >
+                  This reset works for the current browser/device as a testing recovery tool. It is not yet the final production-grade password reset system.
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr",
+                    gap: 14,
+                  }}
+                >
+                  <input
+                    placeholder="Enter Login ID or Email"
+                    value={resetLoginIdOrEmail}
+                    onChange={(e) => setResetLoginIdOrEmail(e.target.value)}
+                    style={inputStyle()}
+                  />
+                  <input
+                    type="password"
+                    placeholder="New Password"
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    style={inputStyle()}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Confirm New Password"
+                    value={resetConfirmPassword}
+                    onChange={(e) => setResetConfirmPassword(e.target.value)}
+                    style={inputStyle()}
+                  />
+                </div>
+
+                {resetError && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      background: "#FFF4F2",
+                      border: "1px solid #F3C5BC",
+                      color: "#8A3B2F",
+                      borderRadius: 14,
+                      padding: 14,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {resetError}
+                  </div>
+                )}
+
+                {resetSuccess && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      background: "#EEF9F1",
+                      border: "1px solid #B7E0C1",
+                      color: "#206A3A",
+                      borderRadius: 14,
+                      padding: 14,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {resetSuccess}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 16 }}>
+                  <button
+                    type="button"
+                    onClick={handlePasswordReset}
+                    style={buttonPrimaryStyle(false)}
+                  >
+                    Save New Password
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div
               style={{
@@ -1063,14 +1343,7 @@ export default function TeamPage() {
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button
               type="button"
-              onClick={() => {
-                setAccessGranted(false);
-                setAuthorizedUser(null);
-                setAccessLoginId("");
-                setAccessPassword("");
-                setChatError("");
-                setEmailError("");
-              }}
+              onClick={handleSignOut}
               style={buttonSecondaryStyle(false)}
             >
               Sign Out
