@@ -1,27 +1,32 @@
-import type { CSSProperties } from "react";
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { isAdminSignedIn } from "@/lib/admin-auth";
-import { supabaseAdmin } from "@/lib/supabase";
+"use client";
 
-type LenderRow = {
+import React, { useEffect, useMemo, useState } from "react";
+
+type LenderOption = {
   id: string;
-  name: string | null;
+  name: string;
 };
 
-type LenderDocumentRow = {
+type ProgramOption = {
   id: string;
   lender_id: string;
-  document_type: string | null;
-  original_filename: string | null;
-  stored_filename: string | null;
-  mime_type: string | null;
-  file_size: number | null;
-  status: string | null;
+  name: string;
+  slug: string;
+};
+
+type ActiveDocument = {
+  id: string;
+  lender_id: string;
+  lender_name: string;
+  document_type: string;
+  document_group: string;
+  program_id: string | null;
+  original_filename: string;
   effective_date: string | null;
+  uploaded_at: string;
+  is_active: boolean;
   notes: string | null;
-  uploaded_at: string | null;
-  archived_at: string | null;
+  size_bytes: number | null;
 };
 
 const DOCUMENT_TYPES = [
@@ -32,515 +37,613 @@ const DOCUMENT_TYPES = [
   "Program Matrix",
   "Qualification Guide",
   "Other",
-];
+] as const;
 
-function cardStyle(): CSSProperties {
-  return {
-    background: "#FFFFFF",
-    border: "1px solid #D9E1EC",
-    borderRadius: 22,
-    padding: 22,
-    boxShadow: "0 10px 28px rgba(38,51,102,0.06)",
-  };
-}
+const MASTER_GROUP_OPTIONS = [
+  "Master",
+  "General",
+  "All Programs",
+] as const;
 
-function inputStyle(): CSSProperties {
-  return {
-    width: "100%",
-    padding: "14px 16px",
-    borderRadius: 12,
-    border: "1px solid #C8D3E3",
-    fontSize: 16,
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#FFFFFF",
-    color: "#263366",
-  };
-}
+type UploadFormState = {
+  lenderId: string;
+  documentType: string;
+  documentGroup: string;
+  programId: string;
+  effectiveDate: string;
+  notes: string;
+  file: File | null;
+};
 
-function textareaStyle(): CSSProperties {
-  return {
-    ...inputStyle(),
-    minHeight: 110,
-    resize: "vertical",
-  };
-}
+export default function ManageLenderFilesPage() {
+  const [lenders, setLenders] = useState<LenderOption[]>([]);
+  const [programs, setPrograms] = useState<ProgramOption[]>([]);
+  const [activeDocuments, setActiveDocuments] = useState<ActiveDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
-function buttonPrimaryStyle(): CSSProperties {
-  return {
-    width: "100%",
-    background: "#263366",
-    color: "#FFFFFF",
-    border: "none",
-    borderRadius: 12,
-    padding: "14px 18px",
-    fontWeight: 700,
-    fontSize: 16,
-    cursor: "pointer",
-  };
-}
-
-function buttonSecondaryStyle(): CSSProperties {
-  return {
-    background: "#0096C7",
-    color: "#FFFFFF",
-    border: "none",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: "pointer",
-  };
-}
-
-function badgeStyle(): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "#E8EEF8",
-    color: "#263366",
-    fontSize: 12,
-    fontWeight: 700,
-  };
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleString("en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+  const [form, setForm] = useState<UploadFormState>({
+    lenderId: "",
+    documentType: "",
+    documentGroup: "Master",
+    programId: "",
+    effectiveDate: "",
+    notes: "",
+    file: null,
   });
-}
 
-function formatFileSize(size: number | null): string {
-  if (!size || size <= 0) return "—";
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
-}
+  useEffect(() => {
+    void loadPageData();
+  }, []);
 
-export default async function AdminFilesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ success?: string; error?: string }>;
-}) {
-  if (!(await isAdminSignedIn())) {
-    redirect("/admin/login");
+  const filteredPrograms = useMemo(() => {
+    if (!form.lenderId) return [];
+    return programs.filter((program) => program.lender_id === form.lenderId);
+  }, [programs, form.lenderId]);
+
+  const groupRequired = useMemo(() => {
+    return (
+      form.documentType === "Program Matrix" ||
+      form.documentType === "Programs" ||
+      form.documentType === "Qualification Guide" ||
+      form.documentType === "Overlays"
+    );
+  }, [form.documentType]);
+
+  async function loadPageData() {
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const [lendersRes, programsRes, docsRes] = await Promise.all([
+        fetch("/api/admin/lenders"),
+        fetch("/api/admin/programs"),
+        fetch("/api/admin/lender-files/active"),
+      ]);
+
+      const lendersJson = await lendersRes.json();
+      const programsJson = await programsRes.json();
+      const docsJson = await docsRes.json();
+
+      if (!lendersRes.ok) throw new Error(lendersJson?.error || "Failed to load lenders.");
+      if (!programsRes.ok) throw new Error(programsJson?.error || "Failed to load programs.");
+      if (!docsRes.ok) throw new Error(docsJson?.error || "Failed to load active documents.");
+
+      setLenders(Array.isArray(lendersJson?.lenders) ? lendersJson.lenders : []);
+      setPrograms(Array.isArray(programsJson?.programs) ? programsJson.programs : []);
+      setActiveDocuments(Array.isArray(docsJson?.documents) ? docsJson.documents : []);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to load page data.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const params = await searchParams;
+  function updateForm<K extends keyof UploadFormState>(key: K, value: UploadFormState[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
 
-  const [{ data: lendersData, error: lendersError }, { data: docsData, error: docsError }] =
-    await Promise.all([
-      supabaseAdmin.from("lenders").select("id, name").order("name", { ascending: true }),
-      supabaseAdmin
-        .from("lender_documents")
-        .select("*")
-        .order("uploaded_at", { ascending: false }),
-    ]);
+  function handleLenderChange(value: string) {
+    setForm((prev) => ({
+      ...prev,
+      lenderId: value,
+      programId: "",
+      documentGroup: "Master",
+    }));
+  }
 
-  const lenders: LenderRow[] =
-    lendersError || !Array.isArray(lendersData) ? [] : (lendersData as LenderRow[]);
+  function handleDocumentTypeChange(value: string) {
+    const shouldDefaultToMaster =
+      value !== "Program Matrix" &&
+      value !== "Programs" &&
+      value !== "Qualification Guide" &&
+      value !== "Overlays";
 
-  const documents: LenderDocumentRow[] =
-    docsError || !Array.isArray(docsData) ? [] : (docsData as LenderDocumentRow[]);
+    setForm((prev) => ({
+      ...prev,
+      documentType: value,
+      documentGroup: shouldDefaultToMaster ? "Master" : prev.documentGroup || "",
+      programId: shouldDefaultToMaster ? "" : prev.programId,
+    }));
+  }
 
-  const lenderMap = new Map(lenders.map((lender) => [lender.id, lender.name || "Unnamed lender"]));
-  const activeDocuments = documents.filter((doc) => doc.status === "active");
-  const archivedDocuments = documents.filter((doc) => doc.status === "archived");
+  function handleProgramGroupChange(value: string) {
+    const matchedProgram = filteredPrograms.find((program) => program.name === value);
+
+    setForm((prev) => ({
+      ...prev,
+      documentGroup: value,
+      programId: matchedProgram?.id || "",
+    }));
+  }
+
+  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setErrorMessage("");
+
+    if (!form.lenderId) {
+      setErrorMessage("Please select a lender.");
+      return;
+    }
+
+    if (!form.documentType) {
+      setErrorMessage("Please select a document type.");
+      return;
+    }
+
+    if (groupRequired && !form.documentGroup.trim()) {
+      setErrorMessage("Please select or enter a program/document group.");
+      return;
+    }
+
+    if (!groupRequired && !form.documentGroup.trim()) {
+      setErrorMessage("Document group is required.");
+      return;
+    }
+
+    if (!form.file) {
+      setErrorMessage("Please choose a file.");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const payload = new FormData();
+      payload.append("lenderId", form.lenderId);
+      payload.append("documentType", form.documentType);
+      payload.append("documentGroup", form.documentGroup.trim());
+      payload.append("programId", form.programId || "");
+      payload.append("effectiveDate", form.effectiveDate || "");
+      payload.append("notes", form.notes || "");
+      payload.append("file", form.file);
+
+      const response = await fetch("/api/admin/lender-files/upload", {
+        method: "POST",
+        body: payload,
+      });
+
+      const json = await response.json();
+
+      if (!response.ok) {
+        throw new Error(json?.error || "Upload failed.");
+      }
+
+      setMessage(
+        `Upload successful. Active slot updated for ${json?.slotLabel || "selected document slot"}.`
+      );
+
+      setForm({
+        lenderId: "",
+        documentType: "",
+        documentGroup: "Master",
+        programId: "",
+        effectiveDate: "",
+        notes: "",
+        file: null,
+      });
+
+      const fileInput = document.getElementById("lender-file-input") as HTMLInputElement | null;
+      if (fileInput) fileInput.value = "";
+
+      await loadPageData();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleArchiveNow(documentId: string) {
+    setMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/lender-files/archive", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ documentId }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok) {
+        throw new Error(json?.error || "Archive failed.");
+      }
+
+      setMessage("Document archived successfully.");
+      await loadPageData();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Archive failed.");
+    }
+  }
+
+  const groupedDocuments = useMemo(() => {
+    return [...activeDocuments].sort((a, b) => {
+      const lenderCompare = a.lender_name.localeCompare(b.lender_name);
+      if (lenderCompare !== 0) return lenderCompare;
+
+      const typeCompare = a.document_type.localeCompare(b.document_type);
+      if (typeCompare !== 0) return typeCompare;
+
+      return a.document_group.localeCompare(b.document_group);
+    });
+  }, [activeDocuments]);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#F1F3F8",
-        color: "#263366",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
-    >
-      <div style={{ maxWidth: 1420, margin: "0 auto", padding: 24 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
-            flexWrap: "wrap",
-            marginBottom: 22,
-          }}
-        >
-          <div style={{ maxWidth: 1000 }}>
-            <div
-              style={{
-                display: "inline-block",
-                padding: "8px 14px",
-                borderRadius: 999,
-                background: "#E8EEF8",
-                color: "#263366",
-                fontSize: 12,
-                fontWeight: 700,
-                marginBottom: 12,
-              }}
-            >
-              FILE INTAKE
-            </div>
-
-            <h1
-              style={{
-                margin: "0 0 10px",
-                fontSize: "clamp(40px, 7vw, 58px)",
-                lineHeight: 1.05,
-              }}
-            >
-              Manage Lender Files
-            </h1>
-
-            <p
-              style={{
-                margin: 0,
-                color: "#5A6A84",
-                lineHeight: 1.7,
-                fontSize: 16,
-                maxWidth: 1020,
-              }}
-            >
-              Upload lender documents by type. When a new file is uploaded for the
-              same lender and document type, the system keeps the new one active
+    <main style={styles.page}>
+      <div style={styles.wrap}>
+        <div style={styles.headerRow}>
+          <div>
+            <div style={styles.eyebrow}>FILE INTAKE</div>
+            <h1 style={styles.title}>Manage Lender Files</h1>
+            <p style={styles.subtitle}>
+              Upload lender documents by type and program group. When a new file is uploaded for
+              the same lender, document type, and document group, the system keeps the new one active
               and archives the previous one as backup.
             </p>
           </div>
 
-          <div style={{ paddingTop: 10 }}>
-            <Link
-              href="/admin"
-              style={{
-                color: "#263366",
-                fontWeight: 700,
-                textDecoration: "none",
-              }}
-            >
-              Back to Admin Home
-            </Link>
-          </div>
+          <a href="/admin" style={styles.backLink}>
+            Back to Admin Home
+          </a>
         </div>
 
-        {params.success && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#EEF8EA",
-              color: "#2F6B2F",
-              border: "1px solid #B9D7AF",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.success}
-          </div>
-        )}
+        {message ? <div style={styles.successBox}>{message}</div> : null}
+        {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
 
-        {params.error && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              color: "#8A3B2F",
-              border: "1px solid #F3C5BC",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            {params.error}
-          </div>
-        )}
-
-        {(lendersError || docsError) && (
-          <div
-            style={{
-              marginBottom: 18,
-              background: "#FFF4F2",
-              color: "#8A3B2F",
-              border: "1px solid #F3C5BC",
-              borderRadius: 14,
-              padding: 16,
-              lineHeight: 1.6,
-            }}
-          >
-            Database read error: {lendersError?.message || docsError?.message}
-          </div>
-        )}
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(360px, 430px) minmax(0, 1fr)",
-            gap: 20,
-            alignItems: "start",
-          }}
-        >
-          <section style={cardStyle()}>
-            <h2 style={{ marginTop: 0, fontSize: 18 }}>Upload New File</h2>
-
-            <p
-              style={{
-                marginTop: 0,
-                color: "#5A6A84",
-                lineHeight: 1.7,
-                fontSize: 14,
-              }}
-            >
-              This upload flow is classification-first. The selected document type
-              determines how the system tracks the file and which active version
-              it replaces.
+        <div style={styles.grid}>
+          <section style={styles.card}>
+            <h2 style={styles.cardTitle}>Upload New File</h2>
+            <p style={styles.cardText}>
+              This upload flow is classification-first. The selected lender, document type,
+              and program/document group determine which active version it replaces.
             </p>
 
-            <form
-              action="/api/admin/files"
-              method="POST"
-              encType="multipart/form-data"
-            >
-              <input type="hidden" name="action" value="upload" />
+            <form onSubmit={handleUpload}>
+              <label style={styles.label}>Lender</label>
+              <select
+                style={styles.input}
+                value={form.lenderId}
+                onChange={(e) => handleLenderChange(e.target.value)}
+              >
+                <option value="">Select lender</option>
+                {lenders.map((lender) => (
+                  <option key={lender.id} value={lender.id}>
+                    {lender.name}
+                  </option>
+                ))}
+              </select>
 
-              <div style={{ display: "grid", gap: 14 }}>
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Lender
-                  </label>
-                  <select name="lender_id" required style={inputStyle()}>
-                    <option value="">Select lender</option>
-                    {lenders.map((lender) => (
-                      <option key={lender.id} value={lender.id}>
-                        {lender.name || "Unnamed lender"}
+              <label style={styles.label}>Document Type</label>
+              <select
+                style={styles.input}
+                value={form.documentType}
+                onChange={(e) => handleDocumentTypeChange(e.target.value)}
+              >
+                <option value="">Select document type</option>
+                {DOCUMENT_TYPES.map((docType) => (
+                  <option key={docType} value={docType}>
+                    {docType}
+                  </option>
+                ))}
+              </select>
+
+              <label style={styles.label}>Program / Document Group</label>
+              <select
+                style={styles.input}
+                value={form.documentGroup}
+                onChange={(e) => handleProgramGroupChange(e.target.value)}
+              >
+                {!groupRequired && MASTER_GROUP_OPTIONS.map((group) => (
+                  <option key={group} value={group}>
+                    {group}
+                  </option>
+                ))}
+
+                {groupRequired && (
+                  <>
+                    <option value="">Select document group</option>
+                    <option value="Master">Master</option>
+                    {filteredPrograms.map((program) => (
+                      <option key={program.id} value={program.name}>
+                        {program.name}
                       </option>
                     ))}
-                  </select>
-                </div>
+                  </>
+                )}
+              </select>
 
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Document Type
-                  </label>
-                  <select name="document_type" required style={inputStyle()}>
-                    <option value="">Select document type</option>
-                    {DOCUMENT_TYPES.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <label style={styles.label}>Effective Date</label>
+              <input
+                style={styles.input}
+                type="date"
+                value={form.effectiveDate}
+                onChange={(e) => updateForm("effectiveDate", e.target.value)}
+              />
 
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Effective Date
-                  </label>
-                  <input type="date" name="effective_date" style={inputStyle()} />
-                </div>
+              <label style={styles.label}>Notes</label>
+              <textarea
+                style={styles.textarea}
+                value={form.notes}
+                onChange={(e) => updateForm("notes", e.target.value)}
+                placeholder="Optional notes such as lender bulletin date, pricing release note, or admin comments."
+              />
 
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    Notes
-                  </label>
-                  <textarea
-                    name="notes"
-                    style={textareaStyle()}
-                    placeholder="Optional notes such as lender bulletin date, pricing release note, or admin comments."
-                  />
-                </div>
+              <label style={styles.label}>File</label>
+              <input
+                id="lender-file-input"
+                style={styles.input}
+                type="file"
+                onChange={(e) => updateForm("file", e.target.files?.[0] || null)}
+              />
 
-                <div>
-                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
-                    File
-                  </label>
-                  <input
-                    type="file"
-                    name="file"
-                    required
-                    style={inputStyle()}
-                    accept=".pdf,.xlsx,.xls,.csv,.doc,.docx"
-                  />
-                </div>
-
-                <button type="submit" style={buttonPrimaryStyle()}>
-                  Upload & Activate File
-                </button>
-              </div>
+              <button type="submit" style={styles.primaryButton} disabled={uploading}>
+                {uploading ? "Uploading..." : "Upload File"}
+              </button>
             </form>
           </section>
 
-          <div style={{ display: "grid", gap: 20 }}>
-            <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0, fontSize: 18 }}>Active Documents</h2>
-              <div style={{ color: "#5A6A84", marginBottom: 18, fontSize: 14 }}>
-                Active files: {activeDocuments.length}
-              </div>
+          <section style={styles.card}>
+            <h2 style={styles.cardTitle}>Active Documents</h2>
+            <p style={styles.cardText}>Active files: {groupedDocuments.length}</p>
 
-              {activeDocuments.length === 0 ? (
-                <div
-                  style={{
-                    background: "#F8FAFC",
-                    border: "1px solid #D9E1EC",
-                    borderRadius: 16,
-                    padding: 18,
-                    color: "#5A6A84",
-                    lineHeight: 1.7,
-                  }}
-                >
-                  No active lender documents have been uploaded yet.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: 16 }}>
-                  {activeDocuments.map((doc) => (
-                    <div
-                      key={doc.id}
-                      style={{
-                        border: "1px solid #D9E1EC",
-                        borderRadius: 18,
-                        padding: 18,
-                        background: "#F8FAFC",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          flexWrap: "wrap",
-                          alignItems: "flex-start",
-                        }}
-                      >
-                        <div style={{ flex: "1 1 360px", minWidth: 0 }}>
-                          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-                            {lenderMap.get(doc.lender_id) || "Unknown lender"}
-                          </div>
-
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-                            <span style={badgeStyle()}>{doc.document_type || "Unknown Type"}</span>
-                            <span style={badgeStyle()}>ACTIVE</span>
-                          </div>
-
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                              gap: 12,
-                              color: "#4B5C78",
-                              lineHeight: 1.7,
-                              marginBottom: 12,
-                            }}
-                          >
-                            <div>
-                              <strong style={{ color: "#263366" }}>Original File:</strong>
-                              <br />
-                              {doc.original_filename || "—"}
-                            </div>
-                            <div>
-                              <strong style={{ color: "#263366" }}>Effective Date:</strong>
-                              <br />
-                              {doc.effective_date || "—"}
-                            </div>
-                            <div>
-                              <strong style={{ color: "#263366" }}>Uploaded:</strong>
-                              <br />
-                              {formatDate(doc.uploaded_at)}
-                            </div>
-                            <div>
-                              <strong style={{ color: "#263366" }}>Size:</strong>
-                              <br />
-                              {formatFileSize(doc.file_size)}
-                            </div>
-                          </div>
-
-                          <div
-                            style={{
-                              background: "#FFFFFF",
-                              border: "1px solid #D9E1EC",
-                              borderRadius: 14,
-                              padding: 14,
-                              color: "#4B5C78",
-                              lineHeight: 1.7,
-                            }}
-                          >
-                            <strong style={{ color: "#263366" }}>Notes:</strong>
-                            <div style={{ marginTop: 6 }}>{doc.notes || "—"}</div>
-                          </div>
-                        </div>
-
-                        <form action="/api/admin/files" method="POST">
-                          <input type="hidden" name="action" value="archive" />
-                          <input type="hidden" name="id" value={doc.id} />
-                          <button type="submit" style={buttonSecondaryStyle()}>
-                            Archive Now
-                          </button>
-                        </form>
+            {loading ? (
+              <div style={styles.infoBox}>Loading...</div>
+            ) : groupedDocuments.length === 0 ? (
+              <div style={styles.infoBox}>No active documents found.</div>
+            ) : (
+              groupedDocuments.map((doc) => (
+                <div key={doc.id} style={styles.docCard}>
+                  <div style={styles.docHeader}>
+                    <div>
+                      <h3 style={styles.docTitle}>{doc.lender_name}</h3>
+                      <div style={styles.badgeRow}>
+                        <span style={styles.badge}>{doc.document_type}</span>
+                        <span style={styles.badgeSecondary}>{doc.document_group || "Master"}</span>
+                        <span style={styles.badgeSecondary}>ACTIVE</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </section>
 
-            <section style={cardStyle()}>
-              <h2 style={{ marginTop: 0, fontSize: 18 }}>Archived Backup Documents</h2>
-              <div style={{ color: "#5A6A84", marginBottom: 18, fontSize: 14 }}>
-                Archived files: {archivedDocuments.length}
-              </div>
-
-              {archivedDocuments.length === 0 ? (
-                <div
-                  style={{
-                    background: "#F8FAFC",
-                    border: "1px solid #D9E1EC",
-                    borderRadius: 16,
-                    padding: 18,
-                    color: "#5A6A84",
-                    lineHeight: 1.7,
-                  }}
-                >
-                  No archived backup files yet.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: 14 }}>
-                  {archivedDocuments.map((doc) => (
-                    <div
-                      key={doc.id}
-                      style={{
-                        border: "1px solid #D9E1EC",
-                        borderRadius: 16,
-                        padding: 16,
-                        background: "#F8FAFC",
-                      }}
+                    <button
+                      style={styles.archiveButton}
+                      onClick={() => handleArchiveNow(doc.id)}
                     >
-                      <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                        {lenderMap.get(doc.lender_id) || "Unknown lender"} — {doc.document_type || "Unknown Type"}
-                      </div>
-                      <div style={{ color: "#5A6A84", lineHeight: 1.7 }}>
-                        Original file: {doc.original_filename || "—"}
-                        <br />
-                        Effective date: {doc.effective_date || "—"}
-                        <br />
-                        Uploaded: {formatDate(doc.uploaded_at)}
-                        <br />
-                        Archived: {formatDate(doc.archived_at)}
+                      Archive Now
+                    </button>
+                  </div>
+
+                  <div style={styles.docMetaGrid}>
+                    <div>
+                      <strong>Original File:</strong>
+                      <div>{doc.original_filename}</div>
+                    </div>
+
+                    <div>
+                      <strong>Effective Date:</strong>
+                      <div>{doc.effective_date || "—"}</div>
+                    </div>
+
+                    <div>
+                      <strong>Uploaded:</strong>
+                      <div>{new Date(doc.uploaded_at).toLocaleString()}</div>
+                    </div>
+
+                    <div>
+                      <strong>Size:</strong>
+                      <div>
+                        {doc.size_bytes ? `${(doc.size_bytes / 1024).toFixed(1)} KB` : "—"}
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <div style={styles.notesBox}>
+                    <strong>Notes:</strong>
+                    <div>{doc.notes || "—"}</div>
+                  </div>
                 </div>
-              )}
-            </section>
-          </div>
+              ))
+            )}
+          </section>
         </div>
       </div>
     </main>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    backgroundColor: "#f4f6fb",
+    color: "#263366",
+    fontFamily: "Arial, Helvetica, sans-serif",
+  },
+  wrap: {
+    maxWidth: 1400,
+    margin: "0 auto",
+    padding: "28px 18px 40px",
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    marginBottom: 24,
+    flexWrap: "wrap",
+  },
+  eyebrow: {
+    fontSize: 13,
+    fontWeight: 700,
+    letterSpacing: 0.5,
+    color: "#5b7097",
+    marginBottom: 10,
+  },
+  title: {
+    fontSize: 60,
+    lineHeight: 1.05,
+    margin: 0,
+    fontWeight: 400,
+  },
+  subtitle: {
+    maxWidth: 980,
+    fontSize: 16,
+    lineHeight: 1.7,
+    color: "#4b628c",
+  },
+  backLink: {
+    color: "#263366",
+    textDecoration: "none",
+    fontWeight: 700,
+    marginTop: 8,
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "420px 1fr",
+    gap: 20,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 20,
+    boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
+  },
+  cardTitle: {
+    margin: 0,
+    fontSize: 22,
+    marginBottom: 8,
+  },
+  cardText: {
+    color: "#4b628c",
+    lineHeight: 1.6,
+    marginTop: 0,
+    marginBottom: 14,
+  },
+  label: {
+    display: "block",
+    marginTop: 14,
+    marginBottom: 8,
+    fontWeight: 700,
+    fontSize: 14,
+  },
+  input: {
+    width: "100%",
+    border: "1px solid #c8d5eb",
+    borderRadius: 14,
+    padding: "14px 16px",
+    fontSize: 15,
+    backgroundColor: "#fff",
+  },
+  textarea: {
+    width: "100%",
+    minHeight: 110,
+    border: "1px solid #c8d5eb",
+    borderRadius: 14,
+    padding: "14px 16px",
+    fontSize: 15,
+    resize: "vertical",
+  },
+  primaryButton: {
+    width: "100%",
+    marginTop: 16,
+    backgroundColor: "#263366",
+    color: "#fff",
+    border: "none",
+    borderRadius: 14,
+    padding: "14px 18px",
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  successBox: {
+    backgroundColor: "#ecfdf3",
+    border: "1px solid #86efac",
+    color: "#166534",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  errorBox: {
+    backgroundColor: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#991b1b",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  infoBox: {
+    backgroundColor: "#f8fbff",
+    border: "1px solid #d9e6f7",
+    color: "#4b628c",
+    borderRadius: 14,
+    padding: 14,
+  },
+  docCard: {
+    border: "1px solid #d7e2f2",
+    borderRadius: 20,
+    padding: 18,
+    marginTop: 14,
+  },
+  docHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 14,
+  },
+  docTitle: {
+    margin: 0,
+    fontSize: 20,
+  },
+  badgeRow: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    marginTop: 10,
+  },
+  badge: {
+    display: "inline-block",
+    backgroundColor: "#eef4ff",
+    color: "#1e3a8a",
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  badgeSecondary: {
+    display: "inline-block",
+    backgroundColor: "#f4f6fb",
+    color: "#263366",
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  archiveButton: {
+    backgroundColor: "#0096C7",
+    color: "#fff",
+    border: "none",
+    borderRadius: 14,
+    padding: "12px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  docMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 14,
+    marginBottom: 14,
+    lineHeight: 1.6,
+  },
+  notesBox: {
+    backgroundColor: "#f8fbff",
+    border: "1px solid #d9e6f7",
+    borderRadius: 14,
+    padding: 14,
+    lineHeight: 1.6,
+  },
+};
