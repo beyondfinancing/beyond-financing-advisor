@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type BorrowerStatus =
@@ -107,7 +107,17 @@ type MatchResponse = {
   };
 };
 
+type ProfessionalSession = {
+  isAuthenticated?: boolean;
+  role?: string;
+  name?: string;
+  email?: string;
+  nmls?: string;
+} | null;
+
+const PROFESSIONAL_LOGIN_PATH = "/team-login";
 const BORROWER_MODE_PATH = "/borrower";
+const PROFESSIONAL_SESSION_KEY = "beyond_professional_session";
 
 const initialForm: QualificationInput = {
   borrower_status: "",
@@ -130,6 +140,22 @@ function safeArray<T>(value: T[] | null | undefined): T[] {
 function labelize(value: string | null | undefined) {
   if (!value) return "—";
   return value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function parseProfessionalSession(): ProfessionalSession {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(PROFESSIONAL_SESSION_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as ProfessionalSession;
+    if (!parsed || typeof parsed !== "object") return null;
+
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function buildChatSummary(data: MatchResponse): string {
@@ -166,6 +192,9 @@ function buildChatSummary(data: MatchResponse): string {
 export default function FinleyPage() {
   const router = useRouter();
 
+  const [authChecked, setAuthChecked] = useState(false);
+  const [professionalSession, setProfessionalSession] = useState<ProfessionalSession>(null);
+
   const [form, setForm] = useState<QualificationInput>(initialForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -183,6 +212,18 @@ export default function FinleyPage() {
   const [topRecommendation, setTopRecommendation] = useState("");
   const [openAiEnhancement, setOpenAiEnhancement] = useState<OpenAiEnhancement>(null);
   const [lenderSummary, setLenderSummary] = useState<MatchResponse["lender_summary"]>(null);
+
+  useEffect(() => {
+    const session = parseProfessionalSession();
+
+    if (!session?.isAuthenticated) {
+      router.replace(PROFESSIONAL_LOGIN_PATH);
+      return;
+    }
+
+    setProfessionalSession(session);
+    setAuthChecked(true);
+  }, [router]);
 
   const hasResults =
     strongMatches.length > 0 ||
@@ -457,6 +498,40 @@ export default function FinleyPage() {
     );
   }
 
+  if (!authChecked) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "#f3f6fb",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          fontFamily: "Arial, Helvetica, sans-serif",
+          color: "#263366",
+        }}
+      >
+        <div
+          style={{
+            background: "#ffffff",
+            borderRadius: 24,
+            padding: 28,
+            boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+            textAlign: "center",
+            maxWidth: 520,
+            width: "100%",
+          }}
+        >
+          <h2 style={{ margin: "0 0 12px 0" }}>Checking professional access...</h2>
+          <div style={{ color: "#4b5d7a", lineHeight: 1.6 }}>
+            Redirecting to the professional login screen if credentials are required.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main
       style={{
@@ -506,6 +581,14 @@ export default function FinleyPage() {
           >
             AI-powered mortgage qualification and program matching supervised by an Independent Certified Mortgage Advisor.
           </div>
+
+          {professionalSession?.name && (
+            <div style={{ marginTop: 14, fontSize: 15, opacity: 0.95 }}>
+              Signed in as <strong>{professionalSession.name}</strong>
+              {professionalSession.role ? ` — ${professionalSession.role}` : ""}
+              {professionalSession.nmls ? ` (${professionalSession.nmls})` : ""}
+            </div>
+          )}
         </section>
 
         {successMessage && (
