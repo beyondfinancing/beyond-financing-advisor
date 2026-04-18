@@ -572,7 +572,7 @@ function uniqueStrings(values: string[]): string[] {
 function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
   return {
     lender_name: row.programs?.lenders?.name || "Unknown Lender",
-    lender_id: row.programs?.lenders?.id || "",
+    lender_id: row.programs?.lenders?.id || row.programs?.lender_id || "",
     program_name: row.programs?.name || "Unknown Program",
     program_slug: row.programs?.slug || "",
     loan_category: row.programs?.loan_category || null,
@@ -741,9 +741,7 @@ function buildExplanation(bucket: MatchBucket): string {
   }
 
   if (bucket.missing_items.length > 0) {
-    parts.push(
-      `Still conditional because these items remain missing: ${bucket.missing_items.join(", ")}.`
-    );
+    parts.push(`Still conditional because these items remain missing: ${bucket.missing_items.join(", ")}.`);
   }
 
   if (parts.length === 0) {
@@ -795,9 +793,9 @@ function applyLenderStateEligibility(
   }
 
   const loanCategory = (row.programs?.loan_category || "").toLowerCase();
-  if (loanCategory === "heloc" && !eligibility.heloc_allowed) {
+  if ((loanCategory === "heloc" || input.transaction_type === "second_lien") && !eligibility.heloc_allowed) {
     bucket.blockers.push(
-      `${bucket.lender_name} is not eligible for HELOC lending in ${input.subject_state}.`
+      `${bucket.lender_name} is not eligible for HELOC / second-lien lending in ${input.subject_state}.`
     );
   }
 
@@ -872,9 +870,7 @@ function evaluateRow(
 
   if (input.credit_score !== null && row.min_credit_score !== null) {
     if (input.credit_score < row.min_credit_score) {
-      bucket.blockers.push(
-        `Credit score is below the minimum guideline of ${row.min_credit_score}.`
-      );
+      bucket.blockers.push(`Credit score is below the minimum guideline of ${row.min_credit_score}.`);
     }
   }
 
@@ -892,15 +888,11 @@ function evaluateRow(
 
   if (input.loan_amount !== null) {
     if (row.min_loan_amount !== null && input.loan_amount < row.min_loan_amount) {
-      bucket.blockers.push(
-        `Loan amount is below the minimum guideline of $${row.min_loan_amount.toLocaleString()}.`
-      );
+      bucket.blockers.push(`Loan amount is below the minimum guideline of $${row.min_loan_amount.toLocaleString()}.`);
     }
 
     if (row.max_loan_amount !== null && input.loan_amount > row.max_loan_amount) {
-      bucket.blockers.push(
-        `Loan amount exceeds the maximum guideline of $${row.max_loan_amount.toLocaleString()}.`
-      );
+      bucket.blockers.push(`Loan amount exceeds the maximum guideline of $${row.max_loan_amount.toLocaleString()}.`);
     }
   }
 
@@ -1155,10 +1147,9 @@ ${defaultNextQuestion}
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const input = normalizeBody(body);
-
-    const supabase = createClient();
+    const payload = await req.json();
+    const input = normalizeBody(payload);
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from("program_guidelines")
@@ -1203,16 +1194,17 @@ export async function POST(req: Request) {
     }
 
     const rawRows = Array.isArray(data) ? (data as RawProgramGuidelineRow[]) : [];
-    const rows = rawRows.map(normalizeGuidelineRow).filter((row) => row.programs);
+    let rows = rawRows.map(normalizeGuidelineRow).filter((row) => row.programs);
 
     const lenderIds = uniqueStrings(
       rows.map((row) => row.programs?.lender_id || "").filter(Boolean)
     );
 
     let lenderEligibilityMap = new Map<string, LenderStateEligibility>();
+    let allowedLenderIds: Set<string> | null = null;
 
     if (input.subject_state && lenderIds.length > 0) {
-      const { data: eligibilityData } = await supabase
+      const { data: eligibilityData, error: eligibilityError } = await supabase
         .from("lender_state_eligibility")
         .select(`
           lender_id,
@@ -1226,6 +1218,13 @@ export async function POST(req: Request) {
         .eq("state_code", input.subject_state)
         .in("lender_id", lenderIds);
 
+      if (eligibilityError) {
+        return NextResponse.json(
+          { success: false, error: eligibilityError.message },
+          { status: 500 }
+        );
+      }
+
       const normalizedEligibility = Array.isArray(eligibilityData)
         ? (eligibilityData as RawLenderStateEligibilityRow[]).map(normalizeLenderStateEligibilityRow)
         : [];
@@ -1233,6 +1232,30 @@ export async function POST(req: Request) {
       lenderEligibilityMap = new Map(
         normalizedEligibility.map((item) => [item.lender_id, item])
       );
+
+      const occupancyMode =
+        input.occupancy_type === "primary_residence"
+          ? "owner_occupied"
+          : input.occupancy_type === "second_home"
+          ? "second_home"
+          : input.occupancy_type === "investment_property"
+          ? "non_owner_occupied"
+          : null;
+
+      if (occupancyMode) {
+        const eligibleRows = normalizedEligibility.filter((item) => {
+          if (occupancyMode === "owner_occupied") return item.owner_occupied_allowed;
+          if (occupancyMode === "second_home") return item.second_home_allowed;
+          return item.non_owner_occupied_allowed;
+        });
+
+        allowedLenderIds = new Set(eligibleRows.map((item) => item.lender_id));
+
+        rows = rows.filter((row) => {
+          const lenderId = row.programs?.lender_id || "";
+          return allowedLenderIds?.has(lenderId);
+        });
+      }
     }
 
     const strong_matches: MatchBucket[] = [];
@@ -1294,6 +1317,8 @@ export async function POST(req: Request) {
         active_lender_count: activeLendersChecked.length,
         active_lenders_checked: activeLendersChecked,
         matched_lenders_in_results: matchedLendersInResults,
+        filtered_by_state_and_occupancy:
+          input.subject_state && input.occupancy_type ? true : false,
       },
       next_question: openai?.nextBestQuestion || defaultNextQuestion,
       top_recommendation: topRecommendation,
