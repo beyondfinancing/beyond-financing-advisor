@@ -197,13 +197,23 @@ function mapBorrowerStatus(value: unknown): BorrowerStatus {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (["citizen", "us citizen", "u s citizen", "american citizen"].includes(v)) return "citizen";
-  if (["permanent resident", "green card", "green card holder"].includes(v))
+  if (["citizen", "us citizen", "u s citizen", "american citizen"].includes(v)) {
+    return "citizen";
+  }
+  if (["permanent resident", "green card", "green card holder"].includes(v)) {
     return "permanent_resident";
+  }
   if (
-    ["non permanent resident", "nonpermanent resident", "visa", "work visa", "temporary visa"].includes(v)
-  )
+    [
+      "non permanent resident",
+      "nonpermanent resident",
+      "visa",
+      "work visa",
+      "temporary visa",
+    ].includes(v)
+  ) {
     return "non_permanent_resident";
+  }
   if (["itin", "itin borrower"].includes(v)) return "itin_borrower";
   if (v === "daca") return "daca";
   if (["foreign national", "foreign"].includes(v)) return "foreign_national";
@@ -217,13 +227,15 @@ function mapOccupancyType(value: unknown): OccupancyType {
   if (!v) return "";
   if (
     ["primary", "primary residence", "owner occupied", "owner occupied primary"].includes(v)
-  )
+  ) {
     return "primary_residence";
+  }
   if (["second home", "vacation home"].includes(v)) return "second_home";
   if (
     ["investment", "investment property", "investor", "rental", "non owner occupied"].includes(v)
-  )
+  ) {
     return "investment_property";
+  }
 
   return "";
 }
@@ -235,10 +247,12 @@ function mapTransactionType(value: unknown): TransactionType {
   if (v === "purchase") return "purchase";
   if (
     ["rate term refinance", "rate term refi", "rate and term refinance", "refinance"].includes(v)
-  )
+  ) {
     return "rate_term_refinance";
-  if (["cash out refinance", "cash out refi", "cash out"].includes(v))
+  }
+  if (["cash out refinance", "cash out refi", "cash out"].includes(v)) {
     return "cash_out_refinance";
+  }
   if (["second lien", "heloc", "home equity"].includes(v)) return "second_lien";
 
   return "";
@@ -250,8 +264,9 @@ function mapIncomeType(value: unknown): IncomeType {
   if (!v) return "";
   if (["full doc", "full documentation", "w2", "w 2"].includes(v)) return "full_doc";
   if (["express doc"].includes(v)) return "express_doc";
-  if (["bank statements", "bank statement", "12 month bank statements"].includes(v))
+  if (["bank statements", "bank statement", "12 month bank statements"].includes(v)) {
     return "bank_statements";
+  }
   if (v === "1099") return "1099";
   if (["pnl", "p and l", "profit and loss"].includes(v)) return "pnl";
   if (["asset utilization", "asset depletion"].includes(v)) return "asset_utilization";
@@ -266,23 +281,30 @@ function mapPropertyType(value: unknown): PropertyType {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (["single family", "single family residence", "sfr", "1 unit", "1 unit sfr"].includes(v))
+  if (["single family", "single family residence", "sfr", "1 unit", "1 unit sfr"].includes(v)) {
     return "single_family";
+  }
   if (v === "condo") return "condo";
   if (["townhouse", "townhome"].includes(v)) return "townhouse";
   if (["2 unit", "duplex", "two unit"].includes(v)) return "2_unit";
   if (["3 unit", "triplex", "three unit"].includes(v)) return "3_unit";
   if (["4 unit", "four unit"].includes(v)) return "4_unit";
   if (["mixed use", "mixed use property"].includes(v)) return "mixed_use";
-  if (["5 to 8 units", "5 8 units", "5 unit", "6 unit", "7 unit", "8 unit"].includes(v))
+  if (["5 to 8 units", "5 8 units", "5 unit", "6 unit", "7 unit", "8 unit"].includes(v)) {
     return "5_to_8_units";
+  }
 
   return "";
 }
 
 function inferUnitsFromPropertyType(propertyType: PropertyType): number | null {
-  if (propertyType === "single_family" || propertyType === "condo" || propertyType === "townhouse")
+  if (
+    propertyType === "single_family" ||
+    propertyType === "condo" ||
+    propertyType === "townhouse"
+  ) {
     return 1;
+  }
   if (propertyType === "2_unit") return 2;
   if (propertyType === "3_unit") return 3;
   if (propertyType === "4_unit") return 4;
@@ -292,7 +314,9 @@ function inferUnitsFromPropertyType(propertyType: PropertyType): number | null {
 function normalizeBody(body: unknown): QualificationInput {
   const obj = (body ?? {}) as Record<string, unknown>;
 
-  const borrower_status = mapBorrowerStatus(obj.borrower_status ?? obj.borrowerStatus ?? obj.status);
+  const borrower_status = mapBorrowerStatus(
+    obj.borrower_status ?? obj.borrowerStatus ?? obj.status
+  );
   const occupancy_type = mapOccupancyType(
     obj.occupancy_type ?? obj.occupancyType ?? obj.occupancy
   );
@@ -477,7 +501,9 @@ function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInpu
 
   if (input.income_type === "bank_statements" && combined.includes("bank")) {
     bucket.score += 16;
-    bucket.strengths.push("Program identity directly aligns with bank-statement qualification.");
+    bucket.strengths.push(
+      "Program identity directly aligns with bank-statement qualification."
+    );
   }
 
   if (input.income_type === "dscr" && (combined.includes("dscr") || combined.includes("investor"))) {
@@ -497,11 +523,17 @@ function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInpu
     combined.includes("umbrella")
   ) {
     bucket.score -= 4;
-    bucket.concerns.push("This appears to be a broader umbrella option rather than the narrowest direct-fit path.");
+    bucket.concerns.push(
+      "This appears to be a broader umbrella option rather than the narrowest direct-fit path."
+    );
   }
 }
 
-function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input: QualificationInput) {
+function addBoundaryScoring(
+  bucket: MatchBucket,
+  row: ProgramGuidelineRow,
+  input: QualificationInput
+) {
   if (input.credit_score !== null && row.min_credit_score !== null) {
     const cushion = input.credit_score - row.min_credit_score;
 
@@ -569,7 +601,10 @@ function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input
     if (row.first_time_homebuyer_allowed === true && input.first_time_homebuyer === true) {
       bucket.score += 3;
       bucket.strengths.push("Program appears open to first-time-homebuyer layering.");
-    } else if (row.first_time_homebuyer_allowed === false && input.first_time_homebuyer === true) {
+    } else if (
+      row.first_time_homebuyer_allowed === false &&
+      input.first_time_homebuyer === true
+    ) {
       bucket.score -= 2;
       bucket.concerns.push("Program may not be ideal for first-time-homebuyer benefit layering.");
     }
@@ -578,7 +613,9 @@ function addBoundaryScoring(bucket: MatchBucket, row: ProgramGuidelineRow, input
   if (row.reserves_required_months !== null) {
     if (row.reserves_required_months >= 12) {
       bucket.score -= 4;
-      bucket.concerns.push(`Higher reserve burden noted: ${row.reserves_required_months} month(s).`);
+      bucket.concerns.push(
+        `Higher reserve burden noted: ${row.reserves_required_months} month(s).`
+      );
     } else if (row.reserves_required_months >= 6) {
       bucket.score -= 2;
       bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s).`);
@@ -737,10 +774,18 @@ function evaluateRow(
     bucket.notes.push(row.guideline_notes);
   }
 
+  bucket.notes = uniqueStrings(bucket.notes);
+  bucket.missing_items = uniqueStrings(bucket.missing_items);
+  bucket.blockers = uniqueStrings(bucket.blockers);
+  bucket.strengths = uniqueStrings(bucket.strengths);
+  bucket.concerns = uniqueStrings(bucket.concerns);
+
   bucket.score = Math.max(1, Math.min(100, bucket.score));
   bucket.explanation = buildExplanation(bucket);
 
   if (bucket.blockers.length > 0) {
+    bucket.score = Math.min(bucket.score, 59);
+    bucket.explanation = buildExplanation(bucket);
     return { bucket, status: "eliminated" };
   }
 
@@ -1071,4 +1116,46 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+```text
+
+## Safest way to replace it
+
+In GitHub or your editor:
+
+1. Open `app/api/match/route.ts`
+2. Click inside the file
+3. Press `Ctrl + A`
+4. Paste the full script above
+5. Save
+6. Redeploy or commit
+
+## Fastest safe way to avoid mistakes
+
+When a file is not tiny, replacing the **entire file** is safer than editing pieces.
+
+Use piece-by-piece replacement only when:
+- the file is extremely large
+- only one tiny function is changing
+- you are comfortable searching exact blocks
+
+For your case, full replacement is the safer path.
+
+## After you save it
+
+Retest your two Hoppscotch cases:
+
+### DSCR investment
+```json
+{
+  "borrower_status": "foreign national",
+  "occupancy": "investment",
+  "transaction": "purchase",
+  "income": "dscr",
+  "property": "single family",
+  "credit": 700,
+  "ltv": 75,
+  "dti": 45,
+  "loan_amount": 450000,
+  "first_time_homebuyer": false
 }
