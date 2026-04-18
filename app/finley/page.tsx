@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type BorrowerStatus =
   | ""
@@ -71,16 +72,33 @@ type MatchBucket = {
   notes?: string[] | null;
   missing_items?: string[] | null;
   blockers?: string[] | null;
+  strengths?: string[] | null;
+  concerns?: string[] | null;
+  explanation?: string;
   score?: number;
 };
+
+type OpenAiEnhancement = {
+  topRecommendation?: string;
+  whyItMatches?: string[] | null;
+  cautionItems?: string[] | null;
+  nextBestQuestion?: string;
+} | null;
 
 type MatchResponse = {
   success: boolean;
   error?: string;
   next_question?: string;
+  top_recommendation?: string;
+  openai_enhancement?: OpenAiEnhancement;
   strong_matches?: MatchBucket[] | null;
   conditional_matches?: MatchBucket[] | null;
   eliminated_paths?: MatchBucket[] | null;
+  lender_summary?: {
+    active_lender_count?: number;
+    active_lenders_checked?: string[];
+    matched_lenders_in_results?: string[];
+  } | null;
   summary?: {
     total_guidelines_checked?: number;
     strong_count?: number;
@@ -88,6 +106,8 @@ type MatchResponse = {
     eliminated_count?: number;
   };
 };
+
+const BORROWER_MODE_PATH = "/borrower";
 
 const initialForm: QualificationInput = {
   borrower_status: "",
@@ -109,18 +129,22 @@ function safeArray<T>(value: T[] | null | undefined): T[] {
 
 function labelize(value: string | null | undefined) {
   if (!value) return "—";
-  return value
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function buildChatSummary(data: MatchResponse): string {
   const strong = safeArray(data.strong_matches);
   const conditional = safeArray(data.conditional_matches);
   const eliminated = safeArray(data.eliminated_paths);
+  const ai = data.openai_enhancement;
 
   if (!data.success) {
     return data.error || "Match request failed.";
+  }
+
+  if (ai?.topRecommendation) {
+    const nextQuestion = ai.nextBestQuestion || data.next_question || "";
+    return `${ai.topRecommendation}. ${nextQuestion}`.trim();
   }
 
   if (strong.length > 0) {
@@ -140,6 +164,8 @@ function buildChatSummary(data: MatchResponse): string {
 }
 
 export default function FinleyPage() {
+  const router = useRouter();
+
   const [form, setForm] = useState<QualificationInput>(initialForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -154,6 +180,9 @@ export default function FinleyPage() {
   const [strongMatches, setStrongMatches] = useState<MatchBucket[]>([]);
   const [conditionalMatches, setConditionalMatches] = useState<MatchBucket[]>([]);
   const [eliminatedPaths, setEliminatedPaths] = useState<MatchBucket[]>([]);
+  const [topRecommendation, setTopRecommendation] = useState("");
+  const [openAiEnhancement, setOpenAiEnhancement] = useState<OpenAiEnhancement>(null);
+  const [lenderSummary, setLenderSummary] = useState<MatchResponse["lender_summary"]>(null);
 
   const hasResults =
     strongMatches.length > 0 ||
@@ -168,11 +197,25 @@ export default function FinleyPage() {
     };
   }, [strongMatches, conditionalMatches, eliminatedPaths]);
 
+  const matchedLenders = useMemo(() => {
+    const all = [
+      ...strongMatches.map((x) => x.lender_name || ""),
+      ...conditionalMatches.map((x) => x.lender_name || ""),
+      ...eliminatedPaths.map((x) => x.lender_name || ""),
+    ].filter(Boolean);
+
+    return Array.from(new Set(all));
+  }, [strongMatches, conditionalMatches, eliminatedPaths]);
+
   function updateField<K extends keyof QualificationInput>(
     key: K,
     value: QualificationInput[K]
   ) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function goToBorrowerMode() {
+    router.push(BORROWER_MODE_PATH);
   }
 
   async function runQualificationMatch() {
@@ -217,10 +260,15 @@ export default function FinleyPage() {
       setStrongMatches(normalizedStrong);
       setConditionalMatches(normalizedConditional);
       setEliminatedPaths(normalizedEliminated);
+      setTopRecommendation(data.top_recommendation || "");
+      setOpenAiEnhancement(data.openai_enhancement || null);
+      setLenderSummary(data.lender_summary || null);
+
       setNextQuestion(
         data.next_question ||
           "Please continue by providing the next missing qualification detail so I can narrow lender and program fit more precisely."
       );
+
       setSuccessMessage("Match analysis completed successfully.");
 
       setChatMessages((prev) => [
@@ -238,10 +286,14 @@ export default function FinleyPage() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unexpected error running match.";
+
       setError(message);
       setStrongMatches([]);
       setConditionalMatches([]);
       setEliminatedPaths([]);
+      setTopRecommendation("");
+      setOpenAiEnhancement(null);
+      setLenderSummary(null);
     } finally {
       setLoading(false);
     }
@@ -259,10 +311,16 @@ export default function FinleyPage() {
     setChatInput("");
   }
 
-  function renderBucketCard(item: MatchBucket, type: "strong" | "conditional" | "eliminated", index: number) {
+  function renderBucketCard(
+    item: MatchBucket,
+    type: "strong" | "conditional" | "eliminated",
+    index: number
+  ) {
     const notes = safeArray(item.notes);
     const missingItems = safeArray(item.missing_items);
     const blockers = safeArray(item.blockers);
+    const strengths = safeArray(item.strengths);
+    const concerns = safeArray(item.concerns);
 
     return (
       <div
@@ -275,7 +333,14 @@ export default function FinleyPage() {
           background: "#ffffff",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
           <div>
             <h3 style={{ margin: "0 0 8px 0", color: "#263366" }}>
               {item.program_name || "Unknown Program"}
@@ -309,7 +374,13 @@ export default function FinleyPage() {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
           <div>
             <strong>Program Slug:</strong> {item.program_slug || "—"}
           </div>
@@ -320,6 +391,35 @@ export default function FinleyPage() {
             <strong>Guideline ID:</strong> {item.guideline_id || "—"}
           </div>
         </div>
+
+        {item.explanation && (
+          <div style={{ marginTop: 16, color: "#4b5d7a", lineHeight: 1.65 }}>
+            <strong>Explanation</strong>
+            <div style={{ marginTop: 8 }}>{item.explanation}</div>
+          </div>
+        )}
+
+        {strengths.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <strong>Strengths</strong>
+            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+              {strengths.map((text, i) => (
+                <li key={`strength-${i}`}>{text}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {concerns.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <strong>Concerns</strong>
+            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+              {concerns.map((text, i) => (
+                <li key={`concern-${i}`}>{text}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {notes.length > 0 && (
           <div style={{ marginTop: 16 }}>
@@ -362,7 +462,7 @@ export default function FinleyPage() {
       style={{
         minHeight: "100vh",
         background: "#f3f6fb",
-        padding: "28px 20px 60px",
+        padding: "20px 14px 44px",
         fontFamily: "Arial, Helvetica, sans-serif",
         color: "#263366",
       }}
@@ -372,16 +472,38 @@ export default function FinleyPage() {
           style={{
             background: "linear-gradient(90deg, #263366 0%, #0096C7 100%)",
             borderRadius: 28,
-            padding: "28px 28px 30px",
+            padding: "22px 22px 24px",
             color: "#ffffff",
-            marginBottom: 22,
+            marginBottom: 18,
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 700, opacity: 0.9, marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              opacity: 0.92,
+              marginBottom: 8,
+            }}
+          >
             BEYOND INTELLIGENCE™
           </div>
-          <h1 style={{ fontSize: 56, lineHeight: 1, margin: "0 0 12px 0" }}>Finley Beyond</h1>
-          <div style={{ fontSize: 20, lineHeight: 1.45 }}>
+
+          <h1
+            style={{
+              fontSize: "clamp(36px, 7vw, 56px)",
+              lineHeight: 1.02,
+              margin: "0 0 10px 0",
+            }}
+          >
+            Finley Beyond
+          </h1>
+
+          <div
+            style={{
+              fontSize: "clamp(16px, 2.6vw, 20px)",
+              lineHeight: 1.5,
+            }}
+          >
             AI-powered mortgage qualification and program matching supervised by an Independent Certified Mortgage Advisor.
           </div>
         </section>
@@ -416,10 +538,26 @@ export default function FinleyPage() {
           </div>
         )}
 
+        {topRecommendation && (
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #cfe0f6",
+              color: "#263366",
+              borderRadius: 18,
+              padding: "16px 18px",
+              marginBottom: 18,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Top Recommendation:</strong> {topRecommendation}
+          </div>
+        )}
+
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.15fr 0.85fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
             gap: 20,
             alignItems: "start",
           }}
@@ -428,11 +566,15 @@ export default function FinleyPage() {
             style={{
               background: "#ffffff",
               borderRadius: 28,
-              padding: 24,
+              padding: 22,
               boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+              minWidth: 0,
             }}
           >
-            <h2 style={{ fontSize: 32, margin: "0 0 14px 0" }}>Qualification Intake</h2>
+            <h2 style={{ fontSize: "clamp(24px, 4vw, 32px)", margin: "0 0 14px 0" }}>
+              Qualification Intake
+            </h2>
+
             <p style={{ color: "#4b5d7a", lineHeight: 1.6 }}>
               Use this screen to gather decisive qualification facts, eliminate ineligible paths, and surface lender/program combinations still in play.
             </p>
@@ -451,7 +593,15 @@ export default function FinleyPage() {
               Finley Beyond should think like a real mortgage professional: collect missing qualification facts, eliminate impossible paths, and narrow the best program options instead of stopping at incomplete intake.
             </div>
 
-            <div style={{ display: "flex", gap: 12, marginTop: 18, marginBottom: 18 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                marginTop: 18,
+                marginBottom: 18,
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 type="button"
                 style={{
@@ -461,12 +611,15 @@ export default function FinleyPage() {
                   borderRadius: 16,
                   padding: "14px 18px",
                   fontWeight: 700,
+                  cursor: "default",
                 }}
               >
                 Professional Mode
               </button>
+
               <button
                 type="button"
+                onClick={goToBorrowerMode}
                 style={{
                   background: "#eef4fb",
                   color: "#263366",
@@ -474,6 +627,7 @@ export default function FinleyPage() {
                   borderRadius: 16,
                   padding: "14px 18px",
                   fontWeight: 700,
+                  cursor: "pointer",
                 }}
               >
                 Borrower Mode
@@ -483,13 +637,19 @@ export default function FinleyPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                 gap: 14,
               }}
             >
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Borrower Status</label>
-                <select value={form.borrower_status} onChange={(e) => updateField("borrower_status", e.target.value as BorrowerStatus)} style={inputStyle}>
+                <label style={labelStyle}>Borrower Status</label>
+                <select
+                  value={form.borrower_status}
+                  onChange={(e) =>
+                    updateField("borrower_status", e.target.value as BorrowerStatus)
+                  }
+                  style={inputStyle}
+                >
                   <option value="">Select status</option>
                   <option value="citizen">U.S. Citizen</option>
                   <option value="permanent_resident">Permanent Resident</option>
@@ -501,8 +661,14 @@ export default function FinleyPage() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Occupancy Type</label>
-                <select value={form.occupancy_type} onChange={(e) => updateField("occupancy_type", e.target.value as OccupancyType)} style={inputStyle}>
+                <label style={labelStyle}>Occupancy Type</label>
+                <select
+                  value={form.occupancy_type}
+                  onChange={(e) =>
+                    updateField("occupancy_type", e.target.value as OccupancyType)
+                  }
+                  style={inputStyle}
+                >
                   <option value="">Select occupancy</option>
                   <option value="primary_residence">Primary Residence</option>
                   <option value="second_home">Second Home</option>
@@ -511,8 +677,14 @@ export default function FinleyPage() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Transaction Type</label>
-                <select value={form.transaction_type} onChange={(e) => updateField("transaction_type", e.target.value as TransactionType)} style={inputStyle}>
+                <label style={labelStyle}>Transaction Type</label>
+                <select
+                  value={form.transaction_type}
+                  onChange={(e) =>
+                    updateField("transaction_type", e.target.value as TransactionType)
+                  }
+                  style={inputStyle}
+                >
                   <option value="">Select transaction type</option>
                   <option value="purchase">Purchase</option>
                   <option value="rate_term_refinance">Rate-Term Refinance</option>
@@ -522,8 +694,14 @@ export default function FinleyPage() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Income Type</label>
-                <select value={form.income_type} onChange={(e) => updateField("income_type", e.target.value as IncomeType)} style={inputStyle}>
+                <label style={labelStyle}>Income Type</label>
+                <select
+                  value={form.income_type}
+                  onChange={(e) =>
+                    updateField("income_type", e.target.value as IncomeType)
+                  }
+                  style={inputStyle}
+                >
                   <option value="">Select income type</option>
                   <option value="full_doc">Full Doc</option>
                   <option value="express_doc">Express Doc</option>
@@ -538,8 +716,14 @@ export default function FinleyPage() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Property Type</label>
-                <select value={form.property_type} onChange={(e) => updateField("property_type", e.target.value as PropertyType)} style={inputStyle}>
+                <label style={labelStyle}>Property Type</label>
+                <select
+                  value={form.property_type}
+                  onChange={(e) =>
+                    updateField("property_type", e.target.value as PropertyType)
+                  }
+                  style={inputStyle}
+                >
                   <option value="">Select property type</option>
                   <option value="single_family">Single Family</option>
                   <option value="condo">Condo</option>
@@ -553,33 +737,59 @@ export default function FinleyPage() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Credit Score</label>
-                <input value={form.credit_score} onChange={(e) => updateField("credit_score", e.target.value)} style={inputStyle} />
+                <label style={labelStyle}>Credit Score</label>
+                <input
+                  value={form.credit_score}
+                  onChange={(e) => updateField("credit_score", e.target.value)}
+                  style={inputStyle}
+                />
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>LTV %</label>
-                <input value={form.ltv} onChange={(e) => updateField("ltv", e.target.value)} style={inputStyle} />
+                <label style={labelStyle}>LTV %</label>
+                <input
+                  value={form.ltv}
+                  onChange={(e) => updateField("ltv", e.target.value)}
+                  style={inputStyle}
+                />
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>DTI %</label>
-                <input value={form.dti} onChange={(e) => updateField("dti", e.target.value)} style={inputStyle} />
+                <label style={labelStyle}>DTI %</label>
+                <input
+                  value={form.dti}
+                  onChange={(e) => updateField("dti", e.target.value)}
+                  style={inputStyle}
+                />
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Loan Amount</label>
-                <input value={form.loan_amount} onChange={(e) => updateField("loan_amount", e.target.value)} style={inputStyle} />
+                <label style={labelStyle}>Loan Amount</label>
+                <input
+                  value={form.loan_amount}
+                  onChange={(e) => updateField("loan_amount", e.target.value)}
+                  style={inputStyle}
+                />
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Units</label>
-                <input value={form.units} onChange={(e) => updateField("units", e.target.value)} style={inputStyle} />
+                <label style={labelStyle}>Units</label>
+                <input
+                  value={form.units}
+                  onChange={(e) => updateField("units", e.target.value)}
+                  style={inputStyle}
+                />
               </div>
 
               <div>
-                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>First-Time Homebuyer</label>
-                <select value={form.first_time_homebuyer} onChange={(e) => updateField("first_time_homebuyer", e.target.value as "" | "yes" | "no")} style={inputStyle}>
+                <label style={labelStyle}>First-Time Homebuyer</label>
+                <select
+                  value={form.first_time_homebuyer}
+                  onChange={(e) =>
+                    updateField("first_time_homebuyer", e.target.value as "" | "yes" | "no")
+                  }
+                  style={inputStyle}
+                >
                   <option value="">Select</option>
                   <option value="yes">Yes</option>
                   <option value="no">No</option>
@@ -612,11 +822,14 @@ export default function FinleyPage() {
             style={{
               background: "#ffffff",
               borderRadius: 28,
-              padding: 24,
+              padding: 22,
               boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+              minWidth: 0,
             }}
           >
-            <h2 style={{ fontSize: 32, margin: "0 0 14px 0" }}>Finley Conversation</h2>
+            <h2 style={{ fontSize: "clamp(24px, 4vw, 32px)", margin: "0 0 14px 0" }}>
+              Finley Conversation
+            </h2>
 
             <div
               style={{
@@ -632,8 +845,57 @@ export default function FinleyPage() {
               {nextQuestion}
             </div>
 
+            {openAiEnhancement && (
+              <div
+                style={{
+                  background: "#f8fbff",
+                  border: "1px solid #cfe0f6",
+                  borderRadius: 18,
+                  padding: 18,
+                  color: "#263366",
+                  lineHeight: 1.65,
+                  marginBottom: 18,
+                }}
+              >
+                {openAiEnhancement.topRecommendation && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong>Finley Direction:</strong> {openAiEnhancement.topRecommendation}
+                  </div>
+                )}
+
+                {safeArray(openAiEnhancement.whyItMatches).length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong>Why It Matches</strong>
+                    <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+                      {safeArray(openAiEnhancement.whyItMatches).map((item, i) => (
+                        <li key={`ai-why-${i}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {safeArray(openAiEnhancement.cautionItems).length > 0 && (
+                  <div>
+                    <strong>Caution Items</strong>
+                    <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+                      {safeArray(openAiEnhancement.cautionItems).map((item, i) => (
+                        <li key={`ai-caution-${i}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {chatMessages.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  marginBottom: 18,
+                }}
+              >
                 {chatMessages.map((msg, index) => (
                   <div
                     key={index}
@@ -668,6 +930,7 @@ export default function FinleyPage() {
                 fontSize: 16,
                 outline: "none",
                 marginBottom: 16,
+                color: "#263366",
               }}
             />
 
@@ -688,24 +951,43 @@ export default function FinleyPage() {
             </button>
 
             <div style={{ marginTop: 24, color: "#4b5d7a", lineHeight: 1.7 }}>
-              <div><strong>Strong Matches:</strong> {summaryText.strong}</div>
-              <div><strong>Conditional Matches:</strong> {summaryText.conditional}</div>
-              <div><strong>Eliminated Paths:</strong> {summaryText.eliminated}</div>
+              <div>
+                <strong>Strong Matches:</strong> {summaryText.strong}
+              </div>
+              <div>
+                <strong>Conditional Matches:</strong> {summaryText.conditional}
+              </div>
+              <div>
+                <strong>Eliminated Paths:</strong> {summaryText.eliminated}
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <strong>Matched Lenders in Results:</strong>{" "}
+                {matchedLenders.length > 0 ? matchedLenders.join(", ") : "None yet"}
+              </div>
+
+              {lenderSummary && (
+                <div style={{ marginTop: 10 }}>
+                  <div>
+                    <strong>Active Lenders Checked:</strong>{" "}
+                    {lenderSummary.active_lender_count ?? 0}
+                  </div>
+                  <div>
+                    <strong>Lenders Loaded in Engine:</strong>{" "}
+                    {safeArray(lenderSummary.active_lenders_checked).length > 0
+                      ? safeArray(lenderSummary.active_lenders_checked).join(", ")
+                      : "None returned"}
+                  </div>
+                </div>
+              )}
+
               {!hasResults && <div style={{ marginTop: 8 }}>Run the qualification match first.</div>}
             </div>
           </section>
         </div>
 
-        <section
-          style={{
-            background: "#ffffff",
-            borderRadius: 28,
-            padding: 24,
-            boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
-            marginTop: 22,
-          }}
-        >
-          <h2 style={{ fontSize: 30, margin: "0 0 16px 0" }}>Strong Matches</h2>
+        <section style={resultsSectionStyle}>
+          <h2 style={resultsTitleStyle}>Strong Matches</h2>
           {strongMatches.length === 0 ? (
             <div style={{ color: "#4b5d7a" }}>No strong matches yet.</div>
           ) : (
@@ -713,16 +995,8 @@ export default function FinleyPage() {
           )}
         </section>
 
-        <section
-          style={{
-            background: "#ffffff",
-            borderRadius: 28,
-            padding: 24,
-            boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
-            marginTop: 22,
-          }}
-        >
-          <h2 style={{ fontSize: 30, margin: "0 0 16px 0" }}>Conditional Matches</h2>
+        <section style={resultsSectionStyle}>
+          <h2 style={resultsTitleStyle}>Conditional Matches</h2>
           {conditionalMatches.length === 0 ? (
             <div style={{ color: "#4b5d7a" }}>No conditional matches.</div>
           ) : (
@@ -730,16 +1004,8 @@ export default function FinleyPage() {
           )}
         </section>
 
-        <section
-          style={{
-            background: "#ffffff",
-            borderRadius: 28,
-            padding: 24,
-            boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
-            marginTop: 22,
-          }}
-        >
-          <h2 style={{ fontSize: 30, margin: "0 0 16px 0" }}>Eliminated Paths</h2>
+        <section style={resultsSectionStyle}>
+          <h2 style={resultsTitleStyle}>Eliminated Paths</h2>
           {eliminatedPaths.length === 0 ? (
             <div style={{ color: "#4b5d7a" }}>No eliminated paths yet.</div>
           ) : (
@@ -751,6 +1017,12 @@ export default function FinleyPage() {
   );
 }
 
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontWeight: 700,
+  marginBottom: 8,
+};
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
   borderRadius: 16,
@@ -760,4 +1032,18 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
   background: "#ffffff",
   color: "#263366",
+  minWidth: 0,
+};
+
+const resultsSectionStyle: React.CSSProperties = {
+  background: "#ffffff",
+  borderRadius: 28,
+  padding: 22,
+  boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+  marginTop: 20,
+};
+
+const resultsTitleStyle: React.CSSProperties = {
+  fontSize: "clamp(24px, 4vw, 30px)",
+  margin: "0 0 16px 0",
 };
