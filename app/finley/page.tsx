@@ -60,6 +60,8 @@ type QualificationInput = {
   loan_amount: string;
   units: string;
   first_time_homebuyer: "" | "yes" | "no";
+  subject_state: string;
+  available_reserves_months: string;
 };
 
 type MatchBucket = {
@@ -69,6 +71,7 @@ type MatchBucket = {
   program_slug?: string;
   loan_category?: string | null;
   guideline_id?: string;
+  reserves_required_months?: number | null;
   notes?: string[] | null;
   missing_items?: string[] | null;
   blockers?: string[] | null;
@@ -131,6 +134,8 @@ const initialForm: QualificationInput = {
   loan_amount: "",
   units: "",
   first_time_homebuyer: "",
+  subject_state: "",
+  available_reserves_months: "",
 };
 
 function safeArray<T>(value: T[] | null | undefined): T[] {
@@ -169,34 +174,23 @@ function buildChatSummary(data: MatchResponse): string {
   }
 
   if (ai?.topRecommendation) {
-    const nextQuestion = ai.nextBestQuestion || data.next_question || "";
-    return `${ai.topRecommendation}. ${nextQuestion}`.trim();
+    return ai.topRecommendation;
   }
 
   if (strong.length > 0) {
     const top = strong[0];
-    return `I found ${strong.length} strong match(es). The top current direction is ${top.program_name || "a program"} with ${top.lender_name || "a lender"}. ${data.next_question || ""}`.trim();
+    return `I found ${strong.length} strong match(es). The top current direction is ${top.program_name || "a program"} with ${top.lender_name || "a lender"}.`;
   }
 
   if (conditional.length > 0) {
-    return `I found ${conditional.length} conditional path(s). We are close, but I still need more qualification detail before presenting a stronger direction. ${data.next_question || ""}`.trim();
+    return `I found ${conditional.length} conditional path(s). We are close, but at least one remaining qualification or operational rule still needs to be clarified.`;
   }
 
   if (eliminated.length > 0) {
-    return `The currently loaded guidelines appear to eliminate the visible paths for this exact combination so far. ${data.next_question || "Please adjust or confirm the qualification data so I can reassess."}`.trim();
+    return `The currently loaded guidelines appear to eliminate the visible paths for this exact combination so far.`;
   }
 
-  return data.next_question || "No visible paths were identified yet. Please confirm the next qualification detail.";
-}
-
-function getTopConditionalMissingItems(matches: MatchBucket[]): string[] {
-  const top = safeArray(matches)[0];
-  return safeArray(top?.missing_items);
-}
-
-function getTopEliminatedBlockers(matches: MatchBucket[]): string[] {
-  const top = safeArray(matches)[0];
-  return safeArray(top?.blockers);
+  return "No visible paths were identified yet. Please confirm the next qualification detail.";
 }
 
 export default function FinleyPage() {
@@ -258,14 +252,6 @@ export default function FinleyPage() {
     return Array.from(new Set(all));
   }, [strongMatches, conditionalMatches, eliminatedPaths]);
 
-  const topConditionalMissingItems = useMemo(() => {
-    return getTopConditionalMissingItems(conditionalMatches);
-  }, [conditionalMatches]);
-
-  const topEliminatedBlockers = useMemo(() => {
-    return getTopEliminatedBlockers(eliminatedPaths);
-  }, [eliminatedPaths]);
-
   function updateField<K extends keyof QualificationInput>(
     key: K,
     value: QualificationInput[K]
@@ -281,6 +267,13 @@ export default function FinleyPage() {
     setLoading(true);
     setError("");
     setSuccessMessage("");
+    setTopRecommendation("");
+    setOpenAiEnhancement(null);
+    setStrongMatches([]);
+    setConditionalMatches([]);
+    setEliminatedPaths([]);
+    setLenderSummary(null);
+    setChatMessages([]);
 
     try {
       const payload = {
@@ -298,6 +291,8 @@ export default function FinleyPage() {
           form.first_time_homebuyer === ""
             ? ""
             : form.first_time_homebuyer === "yes",
+        subject_state: form.subject_state,
+        available_reserves_months: form.available_reserves_months,
       };
 
       const res = await fetch("/api/match", {
@@ -325,13 +320,12 @@ export default function FinleyPage() {
 
       setNextQuestion(
         data.next_question ||
-          "Please continue by providing the next missing qualification detail so I can narrow lender and program fit more precisely."
+          "Please continue by providing the next qualification detail so I can narrow lender and program fit more precisely."
       );
 
       setSuccessMessage("Match analysis completed successfully.");
 
-      setChatMessages((prev) => [
-        ...prev,
+      setChatMessages([
         {
           role: "assistant",
           content: buildChatSummary({
@@ -448,6 +442,12 @@ export default function FinleyPage() {
           </div>
           <div>
             <strong>Guideline ID:</strong> {item.guideline_id || "—"}
+          </div>
+          <div>
+            <strong>Required Reserves:</strong>{" "}
+            {item.reserves_required_months !== null && item.reserves_required_months !== undefined
+              ? `${item.reserves_required_months} month(s) PITIA`
+              : "—"}
           </div>
         </div>
 
@@ -743,6 +743,16 @@ export default function FinleyPage() {
               }}
             >
               <div>
+                <label style={labelStyle}>Subject State</label>
+                <input
+                  value={form.subject_state}
+                  onChange={(e) => updateField("subject_state", e.target.value.toUpperCase())}
+                  placeholder="MA"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
                 <label style={labelStyle}>Borrower Status</label>
                 <select
                   value={form.borrower_status}
@@ -896,6 +906,16 @@ export default function FinleyPage() {
                   <option value="no">No</option>
                 </select>
               </div>
+
+              <div>
+                <label style={labelStyle}>Available Reserves (Months of PITIA)</label>
+                <input
+                  value={form.available_reserves_months}
+                  onChange={(e) => updateField("available_reserves_months", e.target.value)}
+                  placeholder="6"
+                  style={inputStyle}
+                />
+              </div>
             </div>
 
             <div style={{ marginTop: 22 }}>
@@ -946,9 +966,7 @@ export default function FinleyPage() {
               {nextQuestion}
             </div>
 
-            {(openAiEnhancement ||
-              topConditionalMissingItems.length > 0 ||
-              topEliminatedBlockers.length > 0) && (
+            {openAiEnhancement && (
               <div
                 style={{
                   background: "#f8fbff",
@@ -960,51 +978,28 @@ export default function FinleyPage() {
                   marginBottom: 18,
                 }}
               >
-                {(openAiEnhancement?.topRecommendation || topRecommendation) && (
+                {openAiEnhancement.topRecommendation && (
                   <div style={{ marginBottom: 12 }}>
-                    <strong>Finley Direction:</strong>{" "}
-                    {openAiEnhancement?.topRecommendation || topRecommendation}
+                    <strong>Finley Direction:</strong> {openAiEnhancement.topRecommendation}
                   </div>
                 )}
 
-                {safeArray(openAiEnhancement?.whyItMatches).length > 0 && (
+                {safeArray(openAiEnhancement.whyItMatches).length > 0 && (
                   <div style={{ marginBottom: 12 }}>
                     <strong>Why It Matches</strong>
                     <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-                      {safeArray(openAiEnhancement?.whyItMatches).map((item, i) => (
+                      {safeArray(openAiEnhancement.whyItMatches).map((item, i) => (
                         <li key={`ai-why-${i}`}>{item}</li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {topConditionalMissingItems.length > 0 && (
-                  <div style={{ marginBottom: 12 }}>
-                    <strong>Missing Items from Rule Engine</strong>
-                    <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-                      {topConditionalMissingItems.map((item, i) => (
-                        <li key={`missing-${i}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {topEliminatedBlockers.length > 0 && (
-                  <div style={{ marginBottom: 12 }}>
-                    <strong>Primary Blockers from Rule Engine</strong>
-                    <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-                      {topEliminatedBlockers.map((item, i) => (
-                        <li key={`blocker-${i}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {safeArray(openAiEnhancement?.cautionItems).length > 0 && (
+                {safeArray(openAiEnhancement.cautionItems).length > 0 && (
                   <div>
-                    <strong>AI Commentary</strong>
+                    <strong>Caution Items</strong>
                     <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-                      {safeArray(openAiEnhancement?.cautionItems).map((item, i) => (
+                      {safeArray(openAiEnhancement.cautionItems).map((item, i) => (
                         <li key={`ai-caution-${i}`}>{item}</li>
                       ))}
                     </ul>
