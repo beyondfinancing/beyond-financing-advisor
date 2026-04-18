@@ -2,819 +2,762 @@
 
 import React, { useMemo, useState } from "react";
 
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
+type BorrowerStatus =
+  | ""
+  | "citizen"
+  | "permanent_resident"
+  | "non_permanent_resident"
+  | "itin_borrower"
+  | "daca"
+  | "foreign_national";
+
+type OccupancyType =
+  | ""
+  | "primary_residence"
+  | "second_home"
+  | "investment_property";
+
+type TransactionType =
+  | ""
+  | "purchase"
+  | "rate_term_refinance"
+  | "cash_out_refinance"
+  | "second_lien";
+
+type IncomeType =
+  | ""
+  | "full_doc"
+  | "express_doc"
+  | "bank_statements"
+  | "1099"
+  | "pnl"
+  | "asset_utilization"
+  | "dscr"
+  | "no_ratio"
+  | "wvoe";
+
+type PropertyType =
+  | ""
+  | "single_family"
+  | "condo"
+  | "townhouse"
+  | "2_unit"
+  | "3_unit"
+  | "4_unit"
+  | "mixed_use"
+  | "5_to_8_units";
+
+type QualificationInput = {
+  borrower_status: BorrowerStatus;
+  occupancy_type: OccupancyType;
+  transaction_type: TransactionType;
+  income_type: IncomeType;
+  property_type: PropertyType;
+  credit_score: string;
+  ltv: string;
+  dti: string;
+  loan_amount: string;
+  units: string;
+  first_time_homebuyer: "" | "yes" | "no";
+};
+
+type MatchBucket = {
+  lender_name?: string;
+  lender_id?: string;
+  program_name?: string;
+  program_slug?: string;
+  loan_category?: string | null;
+  guideline_id?: string;
+  notes?: string[] | null;
+  missing_items?: string[] | null;
+  blockers?: string[] | null;
+  score?: number;
 };
 
 type MatchResponse = {
-  strong_matches: Array<{
-    lender_name: string;
-    program_name: string;
-    program_slug: string;
-    loan_category: string | null;
-    guideline_summary: string | null;
-    overlay_notes: string | null;
-    missing_items_prompt: string | null;
-    missing_items: string[];
-    soft_flags: string[];
-  }>;
-  conditional_matches: Array<{
-    lender_name: string;
-    program_name: string;
-    program_slug: string;
-    loan_category: string | null;
-    guideline_summary: string | null;
-    overlay_notes: string | null;
-    missing_items_prompt: string | null;
-    missing_items: string[];
-    soft_flags: string[];
-  }>;
-  eliminated_matches: Array<{
-    lender_name: string;
-    program_name: string;
-    program_slug: string;
-    loan_category: string | null;
-    hard_fails: string[];
-  }>;
-  missing_items: string[];
+  success: boolean;
+  error?: string;
+  next_question?: string;
+  strong_matches?: MatchBucket[] | null;
+  conditional_matches?: MatchBucket[] | null;
+  eliminated_paths?: MatchBucket[] | null;
+  summary?: {
+    total_guidelines_checked?: number;
+    strong_count?: number;
+    conditional_count?: number;
+    eliminated_count?: number;
+  };
 };
 
-type NextQuestionResponse = {
-  nextQuestion: string | null;
-  nextField: string | null;
+const initialForm: QualificationInput = {
+  borrower_status: "",
+  occupancy_type: "",
+  transaction_type: "",
+  income_type: "",
+  property_type: "",
+  credit_score: "",
+  ltv: "",
+  dti: "",
+  loan_amount: "",
+  units: "",
+  first_time_homebuyer: "",
 };
 
-type QualificationState = {
-  borrowerStatus: string;
-  occupancyType: string;
-  transactionType: string;
-  incomeType: string;
-  propertyType: string;
-  creditScore: string;
-  ltv: string;
-  dti: string;
-  loanAmount: string;
-  units: string;
-  firstTimeHomebuyer: string;
-};
+function safeArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
 
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "#f4f6fb",
-    fontFamily: "Arial, Helvetica, sans-serif",
-    color: "#263366",
-  },
-  wrap: {
-    maxWidth: 1320,
-    margin: "0 auto",
-    padding: "28px 18px 40px",
-  },
-  hero: {
-    borderRadius: 24,
-    background: "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
-    color: "#fff",
-    padding: "26px 28px",
-    marginBottom: 22,
-  },
-  eyebrow: {
-    fontSize: 13,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    opacity: 0.9,
-    marginBottom: 10,
-  },
-  heroTitle: {
-    margin: 0,
-    fontSize: 48,
-    lineHeight: 1.05,
-    fontWeight: 700,
-  },
-  heroText: {
-    marginTop: 12,
-    marginBottom: 0,
-    fontSize: 18,
-    lineHeight: 1.6,
-    maxWidth: 940,
-  },
-  mainGrid: {
-    display: "grid",
-    gridTemplateColumns: "1.05fr 0.95fr",
-    gap: 20,
-  },
-  card: {
-    background: "#fff",
-    borderRadius: 24,
-    padding: 20,
-    boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
-  },
-  sectionTitle: {
-    marginTop: 0,
-    marginBottom: 12,
-    fontSize: 32,
-    fontWeight: 400,
-  },
-  sectionText: {
-    marginTop: 0,
-    color: "#51688f",
-    lineHeight: 1.7,
-    fontSize: 15,
-  },
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14,
-  },
-  label: {
-    display: "block",
-    marginBottom: 8,
-    fontSize: 14,
-    fontWeight: 700,
-  },
-  input: {
-    width: "100%",
-    border: "1px solid #c8d5eb",
-    borderRadius: 14,
-    padding: "14px 16px",
-    fontSize: 15,
-    background: "#fff",
-  },
-  textarea: {
-    width: "100%",
-    border: "1px solid #c8d5eb",
-    borderRadius: 14,
-    padding: "14px 16px",
-    fontSize: 15,
-    resize: "vertical",
-    minHeight: 110,
-  },
-  buttonRow: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-    marginTop: 18,
-  },
-  primaryButton: {
-    background: "#263366",
-    color: "#fff",
-    border: "none",
-    borderRadius: 14,
-    padding: "14px 18px",
-    fontWeight: 700,
-    fontSize: 15,
-    cursor: "pointer",
-  },
-  secondaryButton: {
-    background: "#0096C7",
-    color: "#fff",
-    border: "none",
-    borderRadius: 14,
-    padding: "14px 18px",
-    fontWeight: 700,
-    fontSize: 15,
-    cursor: "pointer",
-  },
-  mutedButton: {
-    background: "#eef4ff",
-    color: "#263366",
-    border: "1px solid #c8d5eb",
-    borderRadius: 14,
-    padding: "14px 18px",
-    fontWeight: 700,
-    fontSize: 15,
-    cursor: "pointer",
-  },
-  infoBox: {
-    background: "#f8fbff",
-    border: "1px solid #d9e6f7",
-    borderRadius: 16,
-    padding: 14,
-    color: "#51688f",
-    lineHeight: 1.7,
-    marginBottom: 16,
-  },
-  errorBox: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#991b1b",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-  },
-  successBox: {
-    background: "#ecfdf3",
-    border: "1px solid #86efac",
-    color: "#166534",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-  },
-  resultCard: {
-    border: "1px solid #d7e2f2",
-    borderRadius: 18,
-    padding: 16,
-    marginTop: 12,
-  },
-  resultTitle: {
-    margin: 0,
-    fontSize: 20,
-    fontWeight: 700,
-  },
-  resultSub: {
-    marginTop: 8,
-    marginBottom: 0,
-    color: "#4b628c",
-    lineHeight: 1.7,
-  },
-  badgeRow: {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    marginTop: 10,
-  },
-  badge: {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 700,
-    background: "#eef4ff",
-    color: "#1e3a8a",
-  },
-  chatWrap: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-  },
-  bubbleUser: {
-    alignSelf: "flex-end",
-    background: "#263366",
-    color: "#fff",
-    borderRadius: 16,
-    padding: 14,
-    maxWidth: "90%",
-    lineHeight: 1.7,
-  },
-  bubbleAssistant: {
-    alignSelf: "stretch",
-    background: "#f8fbff",
-    color: "#263366",
-    border: "1px solid #d9e6f7",
-    borderRadius: 16,
-    padding: 14,
-    lineHeight: 1.8,
-  },
-};
+function labelize(value: string | null | undefined) {
+  if (!value) return "—";
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function buildChatSummary(data: MatchResponse): string {
+  const strong = safeArray(data.strong_matches);
+  const conditional = safeArray(data.conditional_matches);
+  const eliminated = safeArray(data.eliminated_paths);
+
+  if (!data.success) {
+    return data.error || "Match request failed.";
+  }
+
+  if (strong.length > 0) {
+    const top = strong[0];
+    return `I found ${strong.length} strong match(es). The top current direction is ${top.program_name || "a program"} with ${top.lender_name || "a lender"}. ${data.next_question || ""}`.trim();
+  }
+
+  if (conditional.length > 0) {
+    return `I found ${conditional.length} conditional path(s). We are close, but I still need more qualification detail before presenting a stronger direction. ${data.next_question || ""}`.trim();
+  }
+
+  if (eliminated.length > 0) {
+    return `The currently loaded guidelines appear to eliminate the visible paths for this exact combination so far. ${data.next_question || "Please adjust or confirm the qualification data so I can reassess."}`.trim();
+  }
+
+  return data.next_question || "No visible paths were identified yet. Please confirm the next qualification detail.";
+}
 
 export default function FinleyPage() {
-  const [mode, setMode] = useState<"borrower" | "professional">("professional");
+  const [form, setForm] = useState<QualificationInput>(initialForm);
   const [loading, setLoading] = useState(false);
-  const [matchLoading, setMatchLoading] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
-  const [nextQuestion, setNextQuestion] = useState<string | null>(null);
+  const [nextQuestion, setNextQuestion] = useState(
+    "Run the qualification match first. Finley will then identify the next best question and explain which lender/program paths remain viable."
+  );
   const [chatInput, setChatInput] = useState("");
-  const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<
+    { role: "assistant" | "user"; content: string }[]
+  >([]);
+  const [strongMatches, setStrongMatches] = useState<MatchBucket[]>([]);
+  const [conditionalMatches, setConditionalMatches] = useState<MatchBucket[]>([]);
+  const [eliminatedPaths, setEliminatedPaths] = useState<MatchBucket[]>([]);
 
-  const [form, setForm] = useState<QualificationState>({
-    borrowerStatus: "",
-    occupancyType: "",
-    transactionType: "",
-    incomeType: "",
-    propertyType: "",
-    creditScore: "",
-    ltv: "",
-    dti: "",
-    loanAmount: "",
-    units: "",
-    firstTimeHomebuyer: "",
-  });
+  const hasResults =
+    strongMatches.length > 0 ||
+    conditionalMatches.length > 0 ||
+    eliminatedPaths.length > 0;
 
   const summaryText = useMemo(() => {
-    return [
-      `Borrower Status: ${form.borrowerStatus || "Unknown"}`,
-      `Occupancy Type: ${form.occupancyType || "Unknown"}`,
-      `Transaction Type: ${form.transactionType || "Unknown"}`,
-      `Income Type: ${form.incomeType || "Unknown"}`,
-      `Property Type: ${form.propertyType || "Unknown"}`,
-      `Credit Score: ${form.creditScore || "Unknown"}`,
-      `LTV: ${form.ltv || "Unknown"}`,
-      `DTI: ${form.dti || "Unknown"}`,
-      `Loan Amount: ${form.loanAmount || "Unknown"}`,
-      `Units: ${form.units || "Unknown"}`,
-      `First-Time Homebuyer: ${form.firstTimeHomebuyer || "Unknown"}`,
-    ].join("\n");
-  }, [form]);
+    return {
+      strong: strongMatches.length,
+      conditional: conditionalMatches.length,
+      eliminated: eliminatedPaths.length,
+    };
+  }, [strongMatches, conditionalMatches, eliminatedPaths]);
 
-  function setField<K extends keyof QualificationState>(
+  function updateField<K extends keyof QualificationInput>(
     key: K,
-    value: QualificationState[K]
+    value: QualificationInput[K]
   ) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function runMatching() {
+  async function runQualificationMatch() {
     setLoading(true);
-    setMatchLoading(true);
-    setErrorMessage("");
+    setError("");
     setSuccessMessage("");
 
     try {
-      const matchRes = await fetch("/api/match", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          borrowerStatus: form.borrowerStatus || undefined,
-          occupancyType: form.occupancyType || undefined,
-          transactionType: form.transactionType || undefined,
-          incomeType: form.incomeType || undefined,
-          propertyType: form.propertyType || undefined,
-          creditScore: form.creditScore ? Number(form.creditScore) : null,
-          ltv: form.ltv ? Number(form.ltv) : null,
-          dti: form.dti ? Number(form.dti) : null,
-          loanAmount: form.loanAmount ? Number(form.loanAmount) : null,
-          units: form.units ? Number(form.units) : null,
-          firstTimeHomebuyer:
-            form.firstTimeHomebuyer === "yes"
-              ? true
-              : form.firstTimeHomebuyer === "no"
-              ? false
-              : null,
-        }),
-      });
-
-      const matchJson = (await matchRes.json()) as MatchResponse & {
-        error?: string;
+      const payload = {
+        borrower_status: form.borrower_status,
+        occupancy_type: form.occupancy_type,
+        transaction_type: form.transaction_type,
+        income_type: form.income_type,
+        property_type: form.property_type,
+        credit_score: form.credit_score,
+        ltv: form.ltv,
+        dti: form.dti,
+        loan_amount: form.loan_amount,
+        units: form.units,
+        first_time_homebuyer:
+          form.first_time_homebuyer === ""
+            ? ""
+            : form.first_time_homebuyer === "yes",
       };
 
-      if (!matchRes.ok) {
-        throw new Error(matchJson.error || "Matching failed.");
-      }
-
-      setMatchResult(matchJson);
-
-      const questionRes = await fetch("/api/qualify/next-question", {
+      const res = await fetch("/api/match", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          missingItems: matchJson.missing_items || [],
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
-      const questionJson = (await questionRes.json()) as NextQuestionResponse & {
-        error?: string;
-      };
+      const data: MatchResponse = await res.json();
 
-      if (!questionRes.ok) {
-        throw new Error(questionJson.error || "Failed to determine next question.");
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Match request failed.");
       }
 
-      setNextQuestion(questionJson.nextQuestion || null);
+      const normalizedStrong = safeArray(data.strong_matches);
+      const normalizedConditional = safeArray(data.conditional_matches);
+      const normalizedEliminated = safeArray(data.eliminated_paths);
 
-      const initialReplyRes = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mode,
-          match: matchJson,
-          nextQuestion: questionJson.nextQuestion,
-          messages: [
-            {
-              role: "user",
-              content: `Initial qualification summary:\n${summaryText}`,
-            },
-          ],
-        }),
-      });
-
-      const initialReplyJson = (await initialReplyRes.json()) as {
-        reply?: string;
-        error?: string;
-      };
-
-      if (!initialReplyRes.ok) {
-        throw new Error(initialReplyJson.error || "Failed to generate Finley response.");
-      }
-
-      setConversation([
-        {
-          role: "assistant",
-          content: initialReplyJson.reply || "No response returned.",
-        },
-      ]);
-
+      setStrongMatches(normalizedStrong);
+      setConditionalMatches(normalizedConditional);
+      setEliminatedPaths(normalizedEliminated);
+      setNextQuestion(
+        data.next_question ||
+          "Please continue by providing the next missing qualification detail so I can narrow lender and program fit more precisely."
+      );
       setSuccessMessage("Match analysis completed successfully.");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Match analysis failed.");
-    } finally {
-      setLoading(false);
-      setMatchLoading(false);
-    }
-  }
 
-  async function sendChatMessage() {
-    if (!chatInput.trim() || !matchResult) return;
-
-    setChatLoading(true);
-    setErrorMessage("");
-
-    const nextConversation: ChatMessage[] = [
-      ...conversation,
-      { role: "user", content: chatInput.trim() },
-    ];
-    setConversation(nextConversation);
-    setChatInput("");
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mode,
-          match: matchResult,
-          nextQuestion,
-          messages: nextConversation,
-        }),
-      });
-
-      const json = (await res.json()) as {
-        reply?: string;
-        error?: string;
-      };
-
-      if (!res.ok) {
-        throw new Error(json.error || "Chat response failed.");
-      }
-
-      setConversation((prev) => [
+      setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: json.reply || "No response returned.",
+          content: buildChatSummary({
+            ...data,
+            strong_matches: normalizedStrong,
+            conditional_matches: normalizedConditional,
+            eliminated_paths: normalizedEliminated,
+          }),
         },
       ]);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Chat failed.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unexpected error running match.";
+      setError(message);
+      setStrongMatches([]);
+      setConditionalMatches([]);
+      setEliminatedPaths([]);
     } finally {
-      setChatLoading(false);
+      setLoading(false);
     }
   }
 
-  return (
-    <main style={styles.page}>
-      <div style={styles.wrap}>
-        <div style={styles.hero}>
-          <div style={styles.eyebrow}>Beyond Intelligence™</div>
-          <h1 style={styles.heroTitle}>Finley Beyond</h1>
-          <p style={styles.heroText}>
-            AI-powered mortgage qualification and program matching supervised by an
-            Independent Certified Mortgage Advisor.
-          </p>
+  function sendToFinley() {
+    const trimmed = chatInput.trim();
+    if (!trimmed) return;
+
+    setChatMessages((prev) => [
+      ...prev,
+      { role: "user", content: trimmed },
+      { role: "assistant", content: nextQuestion },
+    ]);
+    setChatInput("");
+  }
+
+  function renderBucketCard(item: MatchBucket, type: "strong" | "conditional" | "eliminated", index: number) {
+    const notes = safeArray(item.notes);
+    const missingItems = safeArray(item.missing_items);
+    const blockers = safeArray(item.blockers);
+
+    return (
+      <div
+        key={`${type}-${item.guideline_id || item.program_slug || index}`}
+        style={{
+          border: "1px solid #d9e1ec",
+          borderRadius: 18,
+          padding: 18,
+          marginBottom: 16,
+          background: "#ffffff",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ margin: "0 0 8px 0", color: "#263366" }}>
+              {item.program_name || "Unknown Program"}
+            </h3>
+            <div style={{ color: "#4b5d7a", marginBottom: 10 }}>
+              {item.lender_name || "Unknown Lender"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: "8px 12px",
+              borderRadius: 999,
+              background:
+                type === "strong"
+                  ? "#e8f7ee"
+                  : type === "conditional"
+                  ? "#fff6e5"
+                  : "#fdecec",
+              color:
+                type === "strong"
+                  ? "#157347"
+                  : type === "conditional"
+                  ? "#946200"
+                  : "#b42318",
+              fontWeight: 700,
+              height: "fit-content",
+            }}
+          >
+            Score: {item.score ?? 0}
+          </div>
         </div>
 
-        {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
-        {successMessage ? <div style={styles.successBox}>{successMessage}</div> : null}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <div>
+            <strong>Program Slug:</strong> {item.program_slug || "—"}
+          </div>
+          <div>
+            <strong>Loan Category:</strong> {labelize(item.loan_category)}
+          </div>
+          <div>
+            <strong>Guideline ID:</strong> {item.guideline_id || "—"}
+          </div>
+        </div>
 
-        <div style={styles.mainGrid}>
-          <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Qualification Intake</h2>
-            <p style={styles.sectionText}>
-              Use this screen to gather decisive qualification facts, eliminate ineligible
-              paths, and surface lender/program combinations still in play.
+        {notes.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <strong>Notes</strong>
+            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+              {notes.map((note, i) => (
+                <li key={`note-${i}`}>{note}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {missingItems.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <strong>Missing Items</strong>
+            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+              {missingItems.map((itemText, i) => (
+                <li key={`missing-${i}`}>{itemText}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {blockers.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <strong>Blockers</strong>
+            <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+              {blockers.map((blocker, i) => (
+                <li key={`blocker-${i}`}>{blocker}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#f3f6fb",
+        padding: "28px 20px 60px",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        color: "#263366",
+      }}
+    >
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <section
+          style={{
+            background: "linear-gradient(90deg, #263366 0%, #0096C7 100%)",
+            borderRadius: 28,
+            padding: "28px 28px 30px",
+            color: "#ffffff",
+            marginBottom: 22,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 700, opacity: 0.9, marginBottom: 8 }}>
+            BEYOND INTELLIGENCE™
+          </div>
+          <h1 style={{ fontSize: 56, lineHeight: 1, margin: "0 0 12px 0" }}>Finley Beyond</h1>
+          <div style={{ fontSize: 20, lineHeight: 1.45 }}>
+            AI-powered mortgage qualification and program matching supervised by an Independent Certified Mortgage Advisor.
+          </div>
+        </section>
+
+        {successMessage && (
+          <div
+            style={{
+              background: "#e8f7ee",
+              border: "1px solid #86d19c",
+              color: "#157347",
+              borderRadius: 18,
+              padding: "16px 18px",
+              marginBottom: 18,
+            }}
+          >
+            {successMessage}
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              background: "#fdecec",
+              border: "1px solid #f5a4a4",
+              color: "#b42318",
+              borderRadius: 18,
+              padding: "16px 18px",
+              marginBottom: 18,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.15fr 0.85fr",
+            gap: 20,
+            alignItems: "start",
+          }}
+        >
+          <section
+            style={{
+              background: "#ffffff",
+              borderRadius: 28,
+              padding: 24,
+              boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+            }}
+          >
+            <h2 style={{ fontSize: 32, margin: "0 0 14px 0" }}>Qualification Intake</h2>
+            <p style={{ color: "#4b5d7a", lineHeight: 1.6 }}>
+              Use this screen to gather decisive qualification facts, eliminate ineligible paths, and surface lender/program combinations still in play.
             </p>
 
-            <div style={styles.infoBox}>
-              Finley Beyond should think like a real mortgage professional: collect missing
-              qualification facts, eliminate impossible paths, and narrow the best program
-              options instead of stopping at incomplete intake.
+            <div
+              style={{
+                marginTop: 14,
+                background: "#f8fbff",
+                border: "1px solid #cfe0f6",
+                borderRadius: 18,
+                padding: 18,
+                color: "#4b5d7a",
+                lineHeight: 1.65,
+              }}
+            >
+              Finley Beyond should think like a real mortgage professional: collect missing qualification facts, eliminate impossible paths, and narrow the best program options instead of stopping at incomplete intake.
             </div>
 
-            <div style={styles.buttonRow}>
+            <div style={{ display: "flex", gap: 12, marginTop: 18, marginBottom: 18 }}>
               <button
                 type="button"
-                onClick={() => setMode("professional")}
-                style={mode === "professional" ? styles.primaryButton : styles.mutedButton}
+                style={{
+                  background: "#263366",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: 16,
+                  padding: "14px 18px",
+                  fontWeight: 700,
+                }}
               >
                 Professional Mode
               </button>
-
               <button
                 type="button"
-                onClick={() => setMode("borrower")}
-                style={mode === "borrower" ? styles.secondaryButton : styles.mutedButton}
+                style={{
+                  background: "#eef4fb",
+                  color: "#263366",
+                  border: "1px solid #c7d7eb",
+                  borderRadius: 16,
+                  padding: "14px 18px",
+                  fontWeight: 700,
+                }}
               >
                 Borrower Mode
               </button>
             </div>
 
-            <div style={{ height: 16 }} />
-
-            <div style={styles.formGrid}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 14,
+              }}
+            >
               <div>
-                <label style={styles.label}>Borrower Status</label>
-                <select
-                  style={styles.input}
-                  value={form.borrowerStatus}
-                  onChange={(e) => setField("borrowerStatus", e.target.value)}
-                >
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Borrower Status</label>
+                <select value={form.borrower_status} onChange={(e) => updateField("borrower_status", e.target.value as BorrowerStatus)} style={inputStyle}>
                   <option value="">Select status</option>
                   <option value="citizen">U.S. Citizen</option>
                   <option value="permanent_resident">Permanent Resident</option>
                   <option value="non_permanent_resident">Non-Permanent Resident</option>
-                  <option value="itin">ITIN Borrower</option>
+                  <option value="itin_borrower">ITIN Borrower</option>
                   <option value="daca">DACA</option>
                   <option value="foreign_national">Foreign National</option>
                 </select>
               </div>
 
               <div>
-                <label style={styles.label}>Occupancy Type</label>
-                <select
-                  style={styles.input}
-                  value={form.occupancyType}
-                  onChange={(e) => setField("occupancyType", e.target.value)}
-                >
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Occupancy Type</label>
+                <select value={form.occupancy_type} onChange={(e) => updateField("occupancy_type", e.target.value as OccupancyType)} style={inputStyle}>
                   <option value="">Select occupancy</option>
-                  <option value="primary">Primary Residence</option>
+                  <option value="primary_residence">Primary Residence</option>
                   <option value="second_home">Second Home</option>
-                  <option value="investment">Investment Property</option>
+                  <option value="investment_property">Investment Property</option>
                 </select>
               </div>
 
               <div>
-                <label style={styles.label}>Transaction Type</label>
-                <select
-                  style={styles.input}
-                  value={form.transactionType}
-                  onChange={(e) => setField("transactionType", e.target.value)}
-                >
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Transaction Type</label>
+                <select value={form.transaction_type} onChange={(e) => updateField("transaction_type", e.target.value as TransactionType)} style={inputStyle}>
                   <option value="">Select transaction type</option>
                   <option value="purchase">Purchase</option>
-                  <option value="rate_term">Rate / Term Refinance</option>
-                  <option value="cash_out">Cash-Out Refinance</option>
+                  <option value="rate_term_refinance">Rate-Term Refinance</option>
+                  <option value="cash_out_refinance">Cash-Out Refinance</option>
+                  <option value="second_lien">Second Lien</option>
                 </select>
               </div>
 
               <div>
-                <label style={styles.label}>Income Type</label>
-                <select
-                  style={styles.input}
-                  value={form.incomeType}
-                  onChange={(e) => setField("incomeType", e.target.value)}
-                >
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Income Type</label>
+                <select value={form.income_type} onChange={(e) => updateField("income_type", e.target.value as IncomeType)} style={inputStyle}>
                   <option value="">Select income type</option>
-                  <option value="w2">W-2</option>
-                  <option value="self_employed_tax_returns">Self-Employed / Tax Returns</option>
+                  <option value="full_doc">Full Doc</option>
+                  <option value="express_doc">Express Doc</option>
                   <option value="bank_statements">Bank Statements</option>
                   <option value="1099">1099</option>
-                  <option value="p_and_l">Profit and Loss</option>
+                  <option value="pnl">P&amp;L</option>
                   <option value="asset_utilization">Asset Utilization</option>
                   <option value="dscr">DSCR</option>
+                  <option value="no_ratio">No Ratio</option>
+                  <option value="wvoe">WVOE</option>
                 </select>
               </div>
 
               <div>
-                <label style={styles.label}>Property Type</label>
-                <select
-                  style={styles.input}
-                  value={form.propertyType}
-                  onChange={(e) => setField("propertyType", e.target.value)}
-                >
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Property Type</label>
+                <select value={form.property_type} onChange={(e) => updateField("property_type", e.target.value as PropertyType)} style={inputStyle}>
                   <option value="">Select property type</option>
                   <option value="single_family">Single Family</option>
                   <option value="condo">Condo</option>
-                  <option value="multi_family">Multi-Family</option>
+                  <option value="townhouse">Townhouse</option>
+                  <option value="2_unit">2 Unit</option>
+                  <option value="3_unit">3 Unit</option>
+                  <option value="4_unit">4 Unit</option>
                   <option value="mixed_use">Mixed Use</option>
-                  <option value="manufactured">Manufactured</option>
+                  <option value="5_to_8_units">5 to 8 Units</option>
                 </select>
               </div>
 
               <div>
-                <label style={styles.label}>Credit Score</label>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={form.creditScore}
-                  onChange={(e) => setField("creditScore", e.target.value)}
-                />
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Credit Score</label>
+                <input value={form.credit_score} onChange={(e) => updateField("credit_score", e.target.value)} style={inputStyle} />
               </div>
 
               <div>
-                <label style={styles.label}>LTV %</label>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={form.ltv}
-                  onChange={(e) => setField("ltv", e.target.value)}
-                />
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>LTV %</label>
+                <input value={form.ltv} onChange={(e) => updateField("ltv", e.target.value)} style={inputStyle} />
               </div>
 
               <div>
-                <label style={styles.label}>DTI %</label>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={form.dti}
-                  onChange={(e) => setField("dti", e.target.value)}
-                />
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>DTI %</label>
+                <input value={form.dti} onChange={(e) => updateField("dti", e.target.value)} style={inputStyle} />
               </div>
 
               <div>
-                <label style={styles.label}>Loan Amount</label>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={form.loanAmount}
-                  onChange={(e) => setField("loanAmount", e.target.value)}
-                />
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Loan Amount</label>
+                <input value={form.loan_amount} onChange={(e) => updateField("loan_amount", e.target.value)} style={inputStyle} />
               </div>
 
               <div>
-                <label style={styles.label}>Units</label>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={form.units}
-                  onChange={(e) => setField("units", e.target.value)}
-                />
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Units</label>
+                <input value={form.units} onChange={(e) => updateField("units", e.target.value)} style={inputStyle} />
               </div>
 
               <div>
-                <label style={styles.label}>First-Time Homebuyer</label>
-                <select
-                  style={styles.input}
-                  value={form.firstTimeHomebuyer}
-                  onChange={(e) => setField("firstTimeHomebuyer", e.target.value)}
-                >
-                  <option value="">Unknown</option>
+                <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>First-Time Homebuyer</label>
+                <select value={form.first_time_homebuyer} onChange={(e) => updateField("first_time_homebuyer", e.target.value as "" | "yes" | "no")} style={inputStyle}>
+                  <option value="">Select</option>
                   <option value="yes">Yes</option>
                   <option value="no">No</option>
                 </select>
               </div>
             </div>
 
-            <div style={styles.buttonRow}>
+            <div style={{ marginTop: 22 }}>
               <button
                 type="button"
-                onClick={runMatching}
-                style={styles.primaryButton}
+                onClick={runQualificationMatch}
                 disabled={loading}
+                style={{
+                  background: "#263366",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: 16,
+                  padding: "16px 22px",
+                  fontWeight: 700,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.7 : 1,
+                }}
               >
-                {matchLoading ? "Analyzing..." : "Run Qualification Match"}
+                {loading ? "Running..." : "Run Qualification Match"}
               </button>
             </div>
           </section>
 
-          <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Finley Conversation</h2>
+          <section
+            style={{
+              background: "#ffffff",
+              borderRadius: 28,
+              padding: 24,
+              boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+            }}
+          >
+            <h2 style={{ fontSize: 32, margin: "0 0 14px 0" }}>Finley Conversation</h2>
 
-            {!matchResult ? (
-              <div style={styles.infoBox}>
-                Run the qualification match first. Finley will then identify the next best
-                question and explain which lender/program paths remain viable.
-              </div>
-            ) : (
-              <>
-                {nextQuestion ? (
-                  <div style={styles.infoBox}>
-                    <strong>Next Best Question:</strong>
-                    <div style={{ marginTop: 8 }}>{nextQuestion}</div>
-                  </div>
-                ) : null}
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #cfe0f6",
+                borderRadius: 18,
+                padding: 18,
+                color: "#4b5d7a",
+                lineHeight: 1.6,
+                marginBottom: 18,
+              }}
+            >
+              {nextQuestion}
+            </div>
 
-                <div style={styles.chatWrap}>
-                  {conversation.map((message, index) => (
-                    <div
-                      key={`${message.role}-${index}`}
-                      style={
-                        message.role === "user"
-                          ? styles.bubbleUser
-                          : styles.bubbleAssistant
-                      }
-                    >
-                      {message.content}
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ height: 16 }} />
-
-                <textarea
-                  style={styles.textarea}
-                  placeholder="Continue the qualification conversation here..."
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                />
-
-                <div style={styles.buttonRow}>
-                  <button
-                    type="button"
-                    onClick={sendChatMessage}
-                    style={styles.secondaryButton}
-                    disabled={chatLoading}
+            {chatMessages.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
+                {chatMessages.map((msg, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      alignSelf: msg.role === "user" ? "flex-end" : "stretch",
+                      background: msg.role === "user" ? "#263366" : "#f8fbff",
+                      color: msg.role === "user" ? "#ffffff" : "#263366",
+                      border: msg.role === "user" ? "none" : "1px solid #cfe0f6",
+                      borderRadius: 18,
+                      padding: "14px 16px",
+                      maxWidth: msg.role === "user" ? "85%" : "100%",
+                      lineHeight: 1.6,
+                    }}
                   >
-                    {chatLoading ? "Sending..." : "Send to Finley"}
-                  </button>
-                </div>
-              </>
+                    {msg.content}
+                  </div>
+                ))}
+              </div>
             )}
+
+            <textarea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Continue the qualification conversation here..."
+              style={{
+                width: "100%",
+                minHeight: 110,
+                resize: "vertical",
+                borderRadius: 16,
+                border: "1px solid #c7d7eb",
+                padding: 16,
+                fontSize: 16,
+                outline: "none",
+                marginBottom: 16,
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={sendToFinley}
+              style={{
+                background: "#0096C7",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 16,
+                padding: "14px 20px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Send to Finley
+            </button>
+
+            <div style={{ marginTop: 24, color: "#4b5d7a", lineHeight: 1.7 }}>
+              <div><strong>Strong Matches:</strong> {summaryText.strong}</div>
+              <div><strong>Conditional Matches:</strong> {summaryText.conditional}</div>
+              <div><strong>Eliminated Paths:</strong> {summaryText.eliminated}</div>
+              {!hasResults && <div style={{ marginTop: 8 }}>Run the qualification match first.</div>}
+            </div>
           </section>
         </div>
 
-        {matchResult ? (
-          <div style={{ marginTop: 20, display: "grid", gap: 20 }}>
-            <section style={styles.card}>
-              <h2 style={styles.sectionTitle}>Strong Matches</h2>
-              {matchResult.strong_matches.length === 0 ? (
-                <p style={styles.sectionText}>No strong matches yet.</p>
-              ) : (
-                matchResult.strong_matches.map((item, index) => (
-                  <div key={`${item.program_slug}-${index}`} style={styles.resultCard}>
-                    <h3 style={styles.resultTitle}>
-                      {item.lender_name} — {item.program_name}
-                    </h3>
-                    <div style={styles.badgeRow}>
-                      <span style={styles.badge}>
-                        {item.loan_category || "Uncategorized"}
-                      </span>
-                    </div>
-                    <p style={styles.resultSub}>
-                      {item.guideline_summary || "No summary yet."}
-                    </p>
-                    {item.overlay_notes ? (
-                      <p style={styles.resultSub}>
-                        <strong>Overlay Notes:</strong> {item.overlay_notes}
-                      </p>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </section>
+        <section
+          style={{
+            background: "#ffffff",
+            borderRadius: 28,
+            padding: 24,
+            boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+            marginTop: 22,
+          }}
+        >
+          <h2 style={{ fontSize: 30, margin: "0 0 16px 0" }}>Strong Matches</h2>
+          {strongMatches.length === 0 ? (
+            <div style={{ color: "#4b5d7a" }}>No strong matches yet.</div>
+          ) : (
+            strongMatches.map((item, index) => renderBucketCard(item, "strong", index))
+          )}
+        </section>
 
-            <section style={styles.card}>
-              <h2 style={styles.sectionTitle}>Conditional Matches</h2>
-              {matchResult.conditional_matches.length === 0 ? (
-                <p style={styles.sectionText}>No conditional matches.</p>
-              ) : (
-                matchResult.conditional_matches.map((item, index) => (
-                  <div key={`${item.program_slug}-${index}`} style={styles.resultCard}>
-                    <h3 style={styles.resultTitle}>
-                      {item.lender_name} — {item.program_name}
-                    </h3>
-                    <div style={styles.badgeRow}>
-                      <span style={styles.badge}>
-                        {item.loan_category || "Uncategorized"}
-                      </span>
-                    </div>
-                    <p style={styles.resultSub}>
-                      {item.guideline_summary || "No summary yet."}
-                    </p>
-                    {item.soft_flags?.length ? (
-                      <p style={styles.resultSub}>
-                        <strong>Needs Confirmation:</strong> {item.soft_flags.join(", ")}
-                      </p>
-                    ) : null}
-                    {item.missing_items?.length ? (
-                      <p style={styles.resultSub}>
-                        <strong>Missing Items:</strong> {item.missing_items.join(", ")}
-                      </p>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </section>
+        <section
+          style={{
+            background: "#ffffff",
+            borderRadius: 28,
+            padding: 24,
+            boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+            marginTop: 22,
+          }}
+        >
+          <h2 style={{ fontSize: 30, margin: "0 0 16px 0" }}>Conditional Matches</h2>
+          {conditionalMatches.length === 0 ? (
+            <div style={{ color: "#4b5d7a" }}>No conditional matches.</div>
+          ) : (
+            conditionalMatches.map((item, index) => renderBucketCard(item, "conditional", index))
+          )}
+        </section>
 
-            <section style={styles.card}>
-              <h2 style={styles.sectionTitle}>Eliminated Paths</h2>
-              {matchResult.eliminated_matches.length === 0 ? (
-                <p style={styles.sectionText}>No eliminated paths yet.</p>
-              ) : (
-                matchResult.eliminated_matches.map((item, index) => (
-                  <div key={`${item.program_slug}-${index}`} style={styles.resultCard}>
-                    <h3 style={styles.resultTitle}>
-                      {item.lender_name} — {item.program_name}
-                    </h3>
-                    <p style={styles.resultSub}>
-                      <strong>Reason:</strong> {item.hard_fails.join(" / ")}
-                    </p>
-                  </div>
-                ))
-              )}
-            </section>
-          </div>
-        ) : null}
+        <section
+          style={{
+            background: "#ffffff",
+            borderRadius: 28,
+            padding: 24,
+            boxShadow: "0 8px 30px rgba(38,51,102,0.06)",
+            marginTop: 22,
+          }}
+        >
+          <h2 style={{ fontSize: 30, margin: "0 0 16px 0" }}>Eliminated Paths</h2>
+          {eliminatedPaths.length === 0 ? (
+            <div style={{ color: "#4b5d7a" }}>No eliminated paths yet.</div>
+          ) : (
+            eliminatedPaths.map((item, index) => renderBucketCard(item, "eliminated", index))
+          )}
+        </section>
       </div>
     </main>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  borderRadius: 16,
+  border: "1px solid #c7d7eb",
+  padding: "14px 16px",
+  fontSize: 16,
+  outline: "none",
+  background: "#ffffff",
+  color: "#263366",
+};
