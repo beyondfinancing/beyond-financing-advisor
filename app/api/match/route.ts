@@ -60,18 +60,38 @@ type QualificationInput = {
   first_time_homebuyer: boolean | null;
 };
 
-type LenderInfo = {
+type RawProgramGuidelineRow = {
   id: string;
-  name: string;
-};
-
-type ProgramInfo = {
-  id: string;
-  name: string;
-  slug: string;
-  loan_category: string | null;
-  lender_id: string;
-  lenders: LenderInfo | null;
+  program_id: string;
+  borrower_statuses: unknown;
+  occupancy_types: unknown;
+  transaction_types: unknown;
+  income_types: unknown;
+  property_types: unknown;
+  min_credit_score: number | null;
+  max_ltv: number | null;
+  max_dti: number | null;
+  min_loan_amount: number | null;
+  max_loan_amount: number | null;
+  min_units: number | null;
+  max_units: number | null;
+  first_time_homebuyer_allowed: boolean | null;
+  reserves_required_months: number | null;
+  guideline_notes: string | null;
+  ask_before_match: unknown;
+  programs: {
+    id: string;
+    name: string;
+    slug: string;
+    loan_category: string | null;
+    lender_id: string;
+    lenders:
+      | {
+          id: string;
+          name: string;
+        }
+      | null;
+  } | null;
 };
 
 type ProgramGuidelineRow = {
@@ -93,7 +113,19 @@ type ProgramGuidelineRow = {
   reserves_required_months: number | null;
   guideline_notes: string | null;
   ask_before_match: string[];
-  programs: ProgramInfo | null;
+  programs: {
+    id: string;
+    name: string;
+    slug: string;
+    loan_category: string | null;
+    lender_id: string;
+    lenders:
+      | {
+          id: string;
+          name: string;
+        }
+      | null;
+  } | null;
 };
 
 type MatchBucket = {
@@ -107,33 +139,6 @@ type MatchBucket = {
   missing_items: string[];
   blockers: string[];
   score: number;
-};
-
-type DebugEvaluation = {
-  lender_name: string;
-  program_name: string;
-  program_slug: string;
-  status: "strong" | "conditional" | "eliminated";
-  blockers: string[];
-  missing_items: string[];
-  notes: string[];
-  score: number;
-  guideline_snapshot: {
-    borrower_statuses: string[];
-    occupancy_types: string[];
-    transaction_types: string[];
-    income_types: string[];
-    property_types: string[];
-    min_credit_score: number | null;
-    max_ltv: number | null;
-    max_dti: number | null;
-    min_loan_amount: number | null;
-    max_loan_amount: number | null;
-    min_units: number | null;
-    max_units: number | null;
-    first_time_homebuyer_allowed: boolean | null;
-    ask_before_match: string[];
-  };
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -159,90 +164,10 @@ function toNumber(value: unknown): number | null {
 function toBooleanOrNull(value: unknown): boolean | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "boolean") return value;
-
-  const normalized = String(value).trim().toLowerCase();
-  if (normalized === "yes" || normalized === "true") return true;
-  if (normalized === "no" || normalized === "false") return false;
-
+  const s = String(value).toLowerCase().trim();
+  if (s === "yes" || s === "true") return true;
+  if (s === "no" || s === "false") return false;
   return null;
-}
-
-function toStringArray(value: unknown): string[] {
-  if (value === null || value === undefined) return [];
-
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item).trim())
-      .filter((item) => item.length > 0);
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((item) => String(item).trim())
-          .filter((item) => item.length > 0);
-      }
-    } catch {
-      return [trimmed];
-    }
-
-    return [trimmed];
-  }
-
-  return [];
-}
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function asObjectArray(value: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
-}
-
-function pickProgram(programsValue: unknown): ProgramInfo | null {
-  let rawProgram: Record<string, unknown> | null = null;
-
-  if (Array.isArray(programsValue)) {
-    rawProgram = asObjectArray(programsValue)[0] || null;
-  } else {
-    rawProgram = asObject(programsValue);
-  }
-
-  if (!rawProgram) return null;
-
-  let rawLender: Record<string, unknown> | null = null;
-  const lendersValue = rawProgram.lenders;
-
-  if (Array.isArray(lendersValue)) {
-    rawLender = asObjectArray(lendersValue)[0] || null;
-  } else {
-    rawLender = asObject(lendersValue);
-  }
-
-  return {
-    id: String(rawProgram.id || ""),
-    name: String(rawProgram.name || ""),
-    slug: String(rawProgram.slug || ""),
-    loan_category:
-      rawProgram.loan_category === null || rawProgram.loan_category === undefined
-        ? null
-        : String(rawProgram.loan_category),
-    lender_id: String(rawProgram.lender_id || ""),
-    lenders: rawLender
-      ? {
-          id: String(rawLender.id || ""),
-          name: String(rawLender.name || ""),
-        }
-      : null,
-  };
 }
 
 function normalizeBody(body: any): QualificationInput {
@@ -261,46 +186,55 @@ function normalizeBody(body: any): QualificationInput {
   };
 }
 
-function normalizeGuidelineRow(raw: unknown): ProgramGuidelineRow | null {
-  const row = asObject(raw);
-  if (!row) return null;
-
-  return {
-    id: String(row.id || ""),
-    program_id: String(row.program_id || ""),
-    borrower_statuses: toStringArray(row.borrower_statuses),
-    occupancy_types: toStringArray(row.occupancy_types),
-    transaction_types: toStringArray(row.transaction_types),
-    income_types: toStringArray(row.income_types),
-    property_types: toStringArray(row.property_types),
-    min_credit_score: toNumber(row.min_credit_score),
-    max_ltv: toNumber(row.max_ltv),
-    max_dti: toNumber(row.max_dti),
-    min_loan_amount: toNumber(row.min_loan_amount),
-    max_loan_amount: toNumber(row.max_loan_amount),
-    min_units: toNumber(row.min_units),
-    max_units: toNumber(row.max_units),
-    first_time_homebuyer_allowed:
-      typeof row.first_time_homebuyer_allowed === "boolean"
-        ? row.first_time_homebuyer_allowed
-        : null,
-    reserves_required_months: toNumber(row.reserves_required_months),
-    guideline_notes:
-      row.guideline_notes === null || row.guideline_notes === undefined
-        ? null
-        : String(row.guideline_notes),
-    ask_before_match: toStringArray(row.ask_before_match),
-    programs: pickProgram(row.programs),
-  };
-}
-
 function isMissing(value: unknown): boolean {
   return value === null || value === undefined || value === "";
+}
+
+function normalizeArray(value: unknown): string[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? "").trim())
+      .filter((item) => item.length > 0);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => String(item ?? "").trim())
+          .filter((item) => item.length > 0);
+      }
+    } catch {
+      return [trimmed];
+    }
+
+    return [trimmed];
+  }
+
+  return [];
 }
 
 function includesOrEmpty(list: string[], value: string): boolean {
   if (!list || list.length === 0) return true;
   return list.includes(value);
+}
+
+function normalizeGuidelineRow(row: RawProgramGuidelineRow): ProgramGuidelineRow {
+  return {
+    ...row,
+    borrower_statuses: normalizeArray(row.borrower_statuses),
+    occupancy_types: normalizeArray(row.occupancy_types),
+    transaction_types: normalizeArray(row.transaction_types),
+    income_types: normalizeArray(row.income_types),
+    property_types: normalizeArray(row.property_types),
+    ask_before_match: normalizeArray(row.ask_before_match),
+  };
 }
 
 function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
@@ -323,11 +257,10 @@ function evaluateRow(
   input: QualificationInput
 ): { bucket: MatchBucket; status: "strong" | "conditional" | "eliminated" } {
   const bucket = buildBaseBucket(row);
-
   const requiredAskFields = row.ask_before_match || [];
 
   for (const field of requiredAskFields) {
-    const value = (input as Record<string, unknown>)[field];
+    const value = (input as any)[field];
     if (isMissing(value)) {
       bucket.missing_items.push(FIELD_LABELS[field] || field);
       bucket.score -= 8;
@@ -412,14 +345,16 @@ function evaluateRow(
     row.first_time_homebuyer_allowed === false &&
     input.first_time_homebuyer === true
   ) {
-    bucket.notes.push(
-      "This program is not oriented to first-time-homebuyer benefit layering."
-    );
+    bucket.notes.push("This program is not oriented to first-time-homebuyer benefit layering.");
     bucket.score -= 4;
   }
 
   if (row.guideline_notes) {
     bucket.notes.push(row.guideline_notes);
+  }
+
+  if (row.reserves_required_months !== null) {
+    bucket.notes.push(`Reserves requirement noted: ${row.reserves_required_months} month(s).`);
   }
 
   if (bucket.blockers.length > 0) {
@@ -447,7 +382,7 @@ function nextMissingQuestion(input: QualificationInput): string {
   }
 
   if (!input.income_type) {
-    return "How will the borrower qualify: full-doc, bank statements, 1099, P&L, asset utilization, DSCR, no-ratio, or another income path?";
+    return "How will the borrower qualify: full-doc, bank statements, 1099, P&L, asset utilization, DSCR, no-ratio, WVOE, or another income path?";
   }
 
   if (!input.property_type) {
@@ -485,7 +420,6 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const input = normalizeBody(body);
-
     const supabase = createClient();
 
     const { data, error } = await supabase
@@ -530,45 +464,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const rawRows = Array.isArray(data) ? data : [];
-    const rows = rawRows
-      .map((row) => normalizeGuidelineRow(row))
-      .filter((row): row is ProgramGuidelineRow => row !== null);
+    const rawRows: RawProgramGuidelineRow[] = Array.isArray(data)
+      ? (data as RawProgramGuidelineRow[])
+      : [];
+
+    const rows: ProgramGuidelineRow[] = rawRows.map(normalizeGuidelineRow);
 
     const strong_matches: MatchBucket[] = [];
     const conditional_matches: MatchBucket[] = [];
     const eliminated_paths: MatchBucket[] = [];
-    const debug_evaluations: DebugEvaluation[] = [];
 
     for (const row of rows) {
       const result = evaluateRow(row, input);
-
-      debug_evaluations.push({
-        lender_name: row.programs?.lenders?.name || "Unknown Lender",
-        program_name: row.programs?.name || "Unknown Program",
-        program_slug: row.programs?.slug || "",
-        status: result.status,
-        blockers: [...result.bucket.blockers],
-        missing_items: [...result.bucket.missing_items],
-        notes: [...result.bucket.notes],
-        score: result.bucket.score,
-        guideline_snapshot: {
-          borrower_statuses: row.borrower_statuses,
-          occupancy_types: row.occupancy_types,
-          transaction_types: row.transaction_types,
-          income_types: row.income_types,
-          property_types: row.property_types,
-          min_credit_score: row.min_credit_score,
-          max_ltv: row.max_ltv,
-          max_dti: row.max_dti,
-          min_loan_amount: row.min_loan_amount,
-          max_loan_amount: row.max_loan_amount,
-          min_units: row.min_units,
-          max_units: row.max_units,
-          first_time_homebuyer_allowed: row.first_time_homebuyer_allowed,
-          ask_before_match: row.ask_before_match,
-        },
-      });
 
       if (result.status === "strong") strong_matches.push(result.bucket);
       if (result.status === "conditional") conditional_matches.push(result.bucket);
@@ -592,11 +499,6 @@ export async function POST(req: Request) {
       strong_matches,
       conditional_matches,
       eliminated_paths,
-      debug: {
-        raw_guideline_count: rawRows.length,
-        normalized_guideline_count: rows.length,
-        first_10_evaluations: debug_evaluations.slice(0, 10),
-      },
     });
   } catch (error) {
     return NextResponse.json(
