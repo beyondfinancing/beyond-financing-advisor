@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
-
 type EligibilityType = "owner_occupied" | "non_owner_occupied";
 
 function normalizeStringArray(values: FormDataEntryValue[]): string[] {
