@@ -115,7 +115,7 @@ type ProfessionalSession = {
   nmls?: string;
 } | null;
 
-const PROFESSIONAL_LOGIN_PATH = "/team-login";
+const PROFESSIONAL_LOGIN_PATH = "/team";
 const BORROWER_MODE_PATH = "/borrower";
 const PROFESSIONAL_SESSION_KEY = "beyond_professional_session";
 
