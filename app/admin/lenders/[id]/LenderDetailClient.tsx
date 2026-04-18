@@ -4,7 +4,11 @@ import React, { useEffect, useState } from "react";
 
 type Props = {
   lenderId: string;
-  lenderName: string;
+  initialName: string;
+  initialChannels: string[];
+  initialLegacyStates: string[];
+  initialOwnerOccupiedStates: string[];
+  initialNonOwnerOccupiedStates: string[];
 };
 
 const US_STATES = [
@@ -15,35 +19,18 @@ const US_STATES = [
   "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
 ];
 
-export default function LenderDetailClient({ lenderId, lenderName }: Props) {
-  const [ownerStates, setOwnerStates] = useState<string[]>([]);
-  const [nonOwnerStates, setNonOwnerStates] = useState<string[]>([]);
+export default function LenderDetailClient({
+  lenderId,
+  initialName,
+  initialChannels,
+  initialLegacyStates,
+  initialOwnerOccupiedStates,
+  initialNonOwnerOccupiedStates,
+}: Props) {
+  const [ownerStates, setOwnerStates] = useState<string[]>(initialOwnerOccupiedStates || []);
+  const [nonOwnerStates, setNonOwnerStates] = useState<string[]>(initialNonOwnerOccupiedStates || []);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    loadStates();
-  }, []);
-
-  async function loadStates() {
-    const res = await fetch(`/api/admin/lenders/${lenderId}`);
-    const data = await res.json();
-
-    const owner: string[] = [];
-    const nonOwner: string[] = [];
-
-    (data?.stateEligibility || []).forEach((row: any) => {
-      if (row.eligibility_type === "owner_occupied") {
-        owner.push(row.state_code);
-      }
-      if (row.eligibility_type === "non_owner_occupied") {
-        nonOwner.push(row.state_code);
-      }
-    });
-
-    setOwnerStates(owner);
-    setNonOwnerStates(nonOwner);
-  }
 
   function getValues(e: React.ChangeEvent<HTMLSelectElement>) {
     return Array.from(e.target.selectedOptions).map(o => o.value);
@@ -58,8 +45,8 @@ export default function LenderDetailClient({ lenderId, lenderName }: Props) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ownerOccupiedStates: ownerStates,
-        nonOwnerOccupiedStates: nonOwnerStates
-      })
+        nonOwnerOccupiedStates: nonOwnerStates,
+      }),
     });
 
     if (res.ok) {
@@ -73,7 +60,7 @@ export default function LenderDetailClient({ lenderId, lenderName }: Props) {
 
   return (
     <div style={{ marginTop: 20 }}>
-      <h2>State Eligibility</h2>
+      <h2>{initialName}</h2>
 
       <div style={{ display: "grid", gap: 20 }}>
         {/* OWNER OCC */}
@@ -118,7 +105,7 @@ const multiStyle: React.CSSProperties = {
   borderRadius: 12,
   border: "1px solid #ccc",
   padding: 10,
-  marginTop: 6
+  marginTop: 6,
 };
 
 const btnStyle: React.CSSProperties = {
@@ -128,5 +115,5 @@ const btnStyle: React.CSSProperties = {
   color: "white",
   border: "none",
   borderRadius: 10,
-  cursor: "pointer"
+  cursor: "pointer",
 };
