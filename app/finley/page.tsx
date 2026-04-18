@@ -189,6 +189,16 @@ function buildChatSummary(data: MatchResponse): string {
   return data.next_question || "No visible paths were identified yet. Please confirm the next qualification detail.";
 }
 
+function getTopConditionalMissingItems(matches: MatchBucket[]): string[] {
+  const top = safeArray(matches)[0];
+  return safeArray(top?.missing_items);
+}
+
+function getTopEliminatedBlockers(matches: MatchBucket[]): string[] {
+  const top = safeArray(matches)[0];
+  return safeArray(top?.blockers);
+}
+
 export default function FinleyPage() {
   const router = useRouter();
 
@@ -247,6 +257,14 @@ export default function FinleyPage() {
 
     return Array.from(new Set(all));
   }, [strongMatches, conditionalMatches, eliminatedPaths]);
+
+  const topConditionalMissingItems = useMemo(() => {
+    return getTopConditionalMissingItems(conditionalMatches);
+  }, [conditionalMatches]);
+
+  const topEliminatedBlockers = useMemo(() => {
+    return getTopEliminatedBlockers(eliminatedPaths);
+  }, [eliminatedPaths]);
 
   function updateField<K extends keyof QualificationInput>(
     key: K,
@@ -928,7 +946,9 @@ export default function FinleyPage() {
               {nextQuestion}
             </div>
 
-            {openAiEnhancement && (
+            {(openAiEnhancement ||
+              topConditionalMissingItems.length > 0 ||
+              topEliminatedBlockers.length > 0) && (
               <div
                 style={{
                   background: "#f8fbff",
@@ -940,28 +960,51 @@ export default function FinleyPage() {
                   marginBottom: 18,
                 }}
               >
-                {openAiEnhancement.topRecommendation && (
+                {(openAiEnhancement?.topRecommendation || topRecommendation) && (
                   <div style={{ marginBottom: 12 }}>
-                    <strong>Finley Direction:</strong> {openAiEnhancement.topRecommendation}
+                    <strong>Finley Direction:</strong>{" "}
+                    {openAiEnhancement?.topRecommendation || topRecommendation}
                   </div>
                 )}
 
-                {safeArray(openAiEnhancement.whyItMatches).length > 0 && (
+                {safeArray(openAiEnhancement?.whyItMatches).length > 0 && (
                   <div style={{ marginBottom: 12 }}>
                     <strong>Why It Matches</strong>
                     <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-                      {safeArray(openAiEnhancement.whyItMatches).map((item, i) => (
+                      {safeArray(openAiEnhancement?.whyItMatches).map((item, i) => (
                         <li key={`ai-why-${i}`}>{item}</li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {safeArray(openAiEnhancement.cautionItems).length > 0 && (
-                  <div>
-                    <strong>Caution Items</strong>
+                {topConditionalMissingItems.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong>Missing Items from Rule Engine</strong>
                     <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-                      {safeArray(openAiEnhancement.cautionItems).map((item, i) => (
+                      {topConditionalMissingItems.map((item, i) => (
+                        <li key={`missing-${i}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {topEliminatedBlockers.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong>Primary Blockers from Rule Engine</strong>
+                    <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+                      {topEliminatedBlockers.map((item, i) => (
+                        <li key={`blocker-${i}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {safeArray(openAiEnhancement?.cautionItems).length > 0 && (
+                  <div>
+                    <strong>AI Commentary</strong>
+                    <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+                      {safeArray(openAiEnhancement?.cautionItems).map((item, i) => (
                         <li key={`ai-caution-${i}`}>{item}</li>
                       ))}
                     </ul>
