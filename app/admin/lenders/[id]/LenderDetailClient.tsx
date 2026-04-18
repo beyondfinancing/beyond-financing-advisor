@@ -1,359 +1,132 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type Props = {
   lenderId: string;
-  initialName: string;
-  initialChannels: string[];
-  initialLegacyStates: string[];
-  initialOwnerOccupiedStates: string[];
-  initialNonOwnerOccupiedStates: string[];
+  lenderName: string;
 };
 
 const US_STATES = [
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "IA",
-  "ID",
-  "IL",
-  "IN",
-  "KS",
-  "KY",
-  "LA",
-  "MA",
-  "MD",
-  "ME",
-  "MI",
-  "MN",
-  "MO",
-  "MS",
-  "MT",
-  "NC",
-  "ND",
-  "NE",
-  "NH",
-  "NJ",
-  "NM",
-  "NV",
-  "NY",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VA",
-  "VT",
-  "WA",
-  "WI",
-  "WV",
-  "WY",
-  "DC",
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+  "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+  "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+  "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
 ];
 
-const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
+export default function LenderDetailClient({ lenderId, lenderName }: Props) {
+  const [ownerStates, setOwnerStates] = useState<string[]>([]);
+  const [nonOwnerStates, setNonOwnerStates] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
 
-function inputStyle(): React.CSSProperties {
-  return {
-    width: "100%",
-    padding: "14px 16px",
-    borderRadius: 14,
-    border: "1px solid #C8D3E3",
-    fontSize: 16,
-    outline: "none",
-    boxSizing: "border-box",
-    minWidth: 0,
-    background: "#FFFFFF",
-    color: "#263366",
-  };
-}
+  useEffect(() => {
+    loadStates();
+  }, []);
 
-function multiSelectStyle(height = 140): React.CSSProperties {
-  return {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: "1px solid #C8D3E3",
-    fontSize: 16,
-    outline: "none",
-    boxSizing: "border-box",
-    minWidth: 0,
-    background: "#FFFFFF",
-    color: "#263366",
-    minHeight: height,
-  };
-}
+  async function loadStates() {
+    const res = await fetch(`/api/admin/lenders/${lenderId}`);
+    const data = await res.json();
 
-function primaryButtonStyle(disabled = false): React.CSSProperties {
-  return {
-    width: "100%",
-    background: "#0096C7",
-    color: "#FFFFFF",
-    border: "none",
-    borderRadius: 14,
-    padding: "16px 20px",
-    fontWeight: 800,
-    fontSize: 18,
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.65 : 1,
-  };
-}
+    const owner: string[] = [];
+    const nonOwner: string[] = [];
 
-function getSelectedValues(event: React.ChangeEvent<HTMLSelectElement>): string[] {
-  return Array.from(event.target.selectedOptions).map((option) => option.value);
-}
-
-export default function LenderDetailClient({
-  lenderId,
-  initialName,
-  initialChannels,
-  initialLegacyStates,
-  initialOwnerOccupiedStates,
-  initialNonOwnerOccupiedStates,
-}: Props) {
-  const [name, setName] = useState(initialName);
-  const [channels, setChannels] = useState<string[]>(initialChannels);
-  const [ownerOccupiedStates, setOwnerOccupiedStates] = useState<string[]>(
-    initialOwnerOccupiedStates
-  );
-  const [nonOwnerOccupiedStates, setNonOwnerOccupiedStates] = useState<string[]>(
-    initialNonOwnerOccupiedStates
-  );
-  const [saving, setSaving] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-
-  const legacyStatesText = useMemo(() => {
-    if (!initialLegacyStates?.length) return "—";
-    return initialLegacyStates.join(", ");
-  }, [initialLegacyStates]);
-
-  async function handleSave(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    setSaving(true);
-    setSuccessMessage("");
-    setErrorMessage("");
-
-    try {
-      const response = await fetch(`/api/admin/lenders/${lenderId}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          channels,
-          ownerOccupiedStates,
-          nonOwnerOccupiedStates,
-        }),
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to save lender changes.");
+    (data?.stateEligibility || []).forEach((row: any) => {
+      if (row.eligibility_type === "owner_occupied") {
+        owner.push(row.state_code);
       }
+      if (row.eligibility_type === "non_owner_occupied") {
+        nonOwner.push(row.state_code);
+      }
+    });
 
-      setSuccessMessage("Lender details updated successfully.");
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unexpected error saving lender."
-      );
-    } finally {
-      setSaving(false);
+    setOwnerStates(owner);
+    setNonOwnerStates(nonOwner);
+  }
+
+  function getValues(e: React.ChangeEvent<HTMLSelectElement>) {
+    return Array.from(e.target.selectedOptions).map(o => o.value);
+  }
+
+  async function save() {
+    setLoading(true);
+    setMessage("");
+
+    const res = await fetch(`/api/admin/lenders/${lenderId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerOccupiedStates: ownerStates,
+        nonOwnerOccupiedStates: nonOwnerStates
+      })
+    });
+
+    if (res.ok) {
+      setMessage("Saved successfully");
+    } else {
+      setMessage("Error saving");
     }
+
+    setLoading(false);
   }
 
   return (
-    <div>
-      <h2
-        style={{
-          margin: "0 0 18px",
-          fontSize: 18,
-        }}
-      >
-        Edit Lender
-      </h2>
+    <div style={{ marginTop: 20 }}>
+      <h2>State Eligibility</h2>
 
-      {successMessage ? (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: "14px 16px",
-            borderRadius: 14,
-            border: "1px solid #9BD3AE",
-            background: "#ECF9F0",
-            color: "#1F6B3B",
-            lineHeight: 1.6,
-          }}
-        >
-          {successMessage}
-        </div>
-      ) : null}
-
-      {errorMessage ? (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: "14px 16px",
-            borderRadius: 14,
-            border: "1px solid #F0B4AF",
-            background: "#FFF3F1",
-            color: "#A33A2B",
-            lineHeight: 1.6,
-          }}
-        >
-          {errorMessage}
-        </div>
-      ) : null}
-
-      <form onSubmit={handleSave}>
-        <div style={{ marginBottom: 16 }}>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Lender Name
-          </label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={inputStyle()}
-            placeholder="Lender name"
-          />
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Channels
-          </label>
+      <div style={{ display: "grid", gap: 20 }}>
+        {/* OWNER OCC */}
+        <div>
+          <strong>Owner-Occupied States</strong>
           <select
             multiple
-            value={channels}
-            onChange={(e) => setChannels(getSelectedValues(e))}
-            style={multiSelectStyle(130)}
+            value={ownerStates}
+            onChange={(e) => setOwnerStates(getValues(e))}
+            style={multiStyle}
           >
-            {CHANNEL_OPTIONS.map((channel) => (
-              <option key={channel} value={channel}>
-                {channel}
-              </option>
-            ))}
-          </select>
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 14,
-              color: "#66758F",
-              lineHeight: 1.5,
-            }}
-          >
-            Hold Ctrl on Windows or Command on Mac to select more than one.
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Owner-Occupied States
-          </label>
-          <select
-            multiple
-            value={ownerOccupiedStates}
-            onChange={(e) => setOwnerOccupiedStates(getSelectedValues(e))}
-            style={multiSelectStyle(190)}
-          >
-            {US_STATES.map((state) => (
-              <option key={`owner-${state}`} value={state}>
-                {state}
-              </option>
-            ))}
+            {US_STATES.map(s => <option key={s}>{s}</option>)}
           </select>
         </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Non-Owner-Occupied States
-          </label>
+        {/* NON OWNER */}
+        <div>
+          <strong>Non-Owner-Occupied States</strong>
           <select
             multiple
-            value={nonOwnerOccupiedStates}
-            onChange={(e) => setNonOwnerOccupiedStates(getSelectedValues(e))}
-            style={multiSelectStyle(190)}
+            value={nonOwnerStates}
+            onChange={(e) => setNonOwnerStates(getValues(e))}
+            style={multiStyle}
           >
-            {US_STATES.map((state) => (
-              <option key={`nonowner-${state}`} value={state}>
-                {state}
-              </option>
-            ))}
+            {US_STATES.map(s => <option key={s}>{s}</option>)}
           </select>
         </div>
-
-        <div
-          style={{
-            marginBottom: 18,
-            fontSize: 14,
-            color: "#66758F",
-            lineHeight: 1.6,
-          }}
-        >
-          This keeps lender eligibility structured for future matching logic.
-          The legacy states column remains visible below for reference during
-          transition.
-        </div>
-
-        <button type="submit" disabled={saving} style={primaryButtonStyle(saving)}>
-          {saving ? "Saving Changes..." : "Save Changes"}
-        </button>
-      </form>
-
-      <div
-        style={{
-          marginTop: 18,
-          padding: "14px 16px",
-          borderRadius: 14,
-          border: "1px solid #D9E1EC",
-          background: "#F8FAFD",
-          color: "#5A6A84",
-          lineHeight: 1.7,
-        }}
-      >
-        <strong>Legacy States Column:</strong> {legacyStatesText}
       </div>
+
+      <button onClick={save} style={btnStyle}>
+        {loading ? "Saving..." : "Save Changes"}
+      </button>
+
+      {message && <div style={{ marginTop: 10 }}>{message}</div>}
     </div>
   );
 }
+
+const multiStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 120,
+  borderRadius: 12,
+  border: "1px solid #ccc",
+  padding: 10,
+  marginTop: 6
+};
+
+const btnStyle: React.CSSProperties = {
+  marginTop: 20,
+  padding: "12px 20px",
+  background: "#263366",
+  color: "white",
+  border: "none",
+  borderRadius: 10,
+  cursor: "pointer"
+};
