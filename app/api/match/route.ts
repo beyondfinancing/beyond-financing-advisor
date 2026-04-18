@@ -229,7 +229,7 @@ function normalizeArray(value: unknown): string[] {
           .filter(Boolean);
       }
     } catch {
-      // ignore
+      // ignore JSON parse error
     }
 
     return trimmed
@@ -315,6 +315,10 @@ function parseJsonSafely<T>(value: string): T | null {
   } catch {
     return null;
   }
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
@@ -678,7 +682,13 @@ async function getOpenAiEnhancement(args: {
 }): Promise<OpenAiEnhancement> {
   if (!process.env.OPENAI_API_KEY) return null;
 
-  const { input, strongMatches, conditionalMatches, eliminatedPaths, defaultNextQuestion } = args;
+  const {
+    input,
+    strongMatches,
+    conditionalMatches,
+    eliminatedPaths,
+    defaultNextQuestion,
+  } = args;
 
   const compactStrong = strongMatches.slice(0, 5).map((item) => ({
     lender_name: item.lender_name,
@@ -891,6 +901,18 @@ export async function POST(req: Request) {
         ? `${conditional_matches[0].program_name} with ${conditional_matches[0].lender_name}`
         : "No strong program direction yet.");
 
+    const activeLendersChecked = uniqueStrings(
+      rows.map((row) => row.programs?.lenders?.name || "").filter(Boolean)
+    );
+
+    const matchedLendersInResults = uniqueStrings(
+      [
+        ...strong_matches.map((item) => item.lender_name),
+        ...conditional_matches.map((item) => item.lender_name),
+        ...eliminated_paths.map((item) => item.lender_name),
+      ].filter(Boolean)
+    );
+
     return NextResponse.json({
       success: true,
       intake: input,
@@ -899,6 +921,11 @@ export async function POST(req: Request) {
         strong_count: strong_matches.length,
         conditional_count: conditional_matches.length,
         eliminated_count: eliminated_paths.length,
+      },
+      lender_summary: {
+        active_lender_count: activeLendersChecked.length,
+        active_lenders_checked: activeLendersChecked,
+        matched_lenders_in_results: matchedLendersInResults,
       },
       next_question: openai?.nextBestQuestion || defaultNextQuestion,
       top_recommendation: topRecommendation,
