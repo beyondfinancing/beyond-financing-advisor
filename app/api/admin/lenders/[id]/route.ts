@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
-
-type EligibilityType = "owner_occupied" | "non_owner_occupied";
 
 type RouteContext = {
   params: Promise<{
@@ -9,128 +8,140 @@ type RouteContext = {
   }>;
 };
 
-function normalizeStates(value: unknown): string[] {
+type JsonPayload = {
+  name?: unknown;
+  channels?: unknown;
+  states?: unknown;
+  ownerOccupiedStates?: unknown;
+  nonOwnerOccupiedStates?: unknown;
+};
+
+function normalizeString(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeStateArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
+
   return Array.from(
     new Set(
       value
-        .map((item) => String(item || "").trim().toUpperCase())
+        .map((item) => String(item ?? "").trim().toUpperCase())
         .filter(Boolean)
     )
-  );
+  ).sort();
 }
 
-function normalizeChannels(value: unknown): string[] {
+function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
+
   return Array.from(
     new Set(
-      value.map((item) => String(item || "").trim()).filter(Boolean)
+      value
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
     )
-  );
+  ).sort();
 }
 
-export async function GET(_req: NextRequest, context: RouteContext) {
-  try {
-    const { id } = await context.params;
+async function ensureAdmin() {
+  const signedIn = await isAdminSignedIn();
 
-    if (!id) {
-      return NextResponse.json(
-        { error: "Missing lender id." },
-        { status: 400 }
-      );
-    }
-
-    const { data: lender, error: lenderError } = await supabaseAdmin
-      .from("lenders")
-      .select("*")
-      .eq("id", id)
-      .single();
-
-    if (lenderError) {
-      return NextResponse.json(
-        { error: lenderError.message || "Failed to load lender." },
-        { status: 500 }
-      );
-    }
-
-    const { data: eligibilityRows, error: eligibilityError } = await supabaseAdmin
-      .from("lender_state_eligibility")
-      .select("state, eligibility_type")
-      .eq("lender_id", id);
-
-    if (eligibilityError) {
-      return NextResponse.json(
-        { error: eligibilityError.message || "Failed to load state eligibility." },
-        { status: 500 }
-      );
-    }
-
-    const ownerOccupiedStates = (eligibilityRows || [])
-      .filter((row) => row.eligibility_type === "owner_occupied")
-      .map((row) => row.state)
-      .filter(Boolean)
-      .sort();
-
-    const nonOwnerOccupiedStates = (eligibilityRows || [])
-      .filter((row) => row.eligibility_type === "non_owner_occupied")
-      .map((row) => row.state)
-      .filter(Boolean)
-      .sort();
-
-    return NextResponse.json({
-      success: true,
-      lender,
-      ownerOccupiedStates,
-      nonOwnerOccupiedStates,
-    });
-  } catch (error) {
-    console.error("GET lender detail error:", error);
-    return NextResponse.json(
-      { error: "Unexpected server error." },
-      { status: 500 }
-    );
+  if (!signedIn) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  return null;
 }
 
-export async function POST(req: NextRequest, context: RouteContext) {
+export async function POST(req: Request, context: RouteContext) {
+  const authError = await ensureAdmin();
+  if (authError) return authError;
+
+  const { id } = await context.params;
+
+  const contentType = req.headers.get("content-type") || "";
+
   try {
-    const { id } = await context.params;
+    if (
+      contentType.includes("application/x-www-form-urlencoded") ||
+      contentType.includes("multipart/form-data")
+    ) {
+      const formData = await req.formData();
+      const methodOverride = normalizeString(formData.get("_method"));
 
-    if (!id) {
+      if (methodOverride.toUpperCase() === "DELETE") {
+        const { error: eligibilityDeleteError } = await supabaseAdmin
+          .from("lender_state_eligibility")
+          .delete()
+          .eq("lender_id", id);
+
+        if (eligibilityDeleteError) {
+          return NextResponse.json(
+            { error: eligibilityDeleteError.message },
+            { status: 500 }
+          );
+        }
+
+        const { error: lenderDeleteError } = await supabaseAdmin
+          .from("lenders")
+          .delete()
+          .eq("id", id);
+
+        if (lenderDeleteError) {
+          return NextResponse.json(
+            { error: lenderDeleteError.message },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.redirect(new URL("/admin/lenders", req.url), 303);
+      }
+
       return NextResponse.json(
-        { error: "Missing lender id." },
+        { error: "Unsupported form request." },
         { status: 400 }
       );
     }
 
-    const body = await req.json();
+    const body = (await req.json()) as JsonPayload;
 
-    const name = String(body?.name || "").trim();
-    const channels = normalizeChannels(body?.channels);
-    const ownerOccupiedStates = normalizeStates(body?.ownerOccupiedStates);
-    const nonOwnerOccupiedStates = normalizeStates(body?.nonOwnerOccupiedStates);
+    const name = normalizeString(body.name);
+    const channels = normalizeStringArray(body.channels);
+    const legacyStates = normalizeStateArray(body.states);
+    const ownerOccupiedStates = normalizeStateArray(body.ownerOccupiedStates);
+    const nonOwnerOccupiedStates = normalizeStateArray(body.nonOwnerOccupiedStates);
 
-    if (!name) {
-      return NextResponse.json(
-        { error: "Lender name is required." },
-        { status: 400 }
-      );
-    }
+    const mergedLegacyStates = Array.from(
+      new Set([...legacyStates, ...ownerOccupiedStates, ...nonOwnerOccupiedStates])
+    ).sort();
 
     const { error: lenderUpdateError } = await supabaseAdmin
       .from("lenders")
       .update({
         name,
         channel: channels,
+        states: mergedLegacyStates,
       })
       .eq("id", id);
 
     if (lenderUpdateError) {
       return NextResponse.json(
-        { error: lenderUpdateError.message || "Failed to update lender." },
+        { error: lenderUpdateError.message },
         { status: 500 }
       );
     }
+
+    const allStates = Array.from(
+      new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
+    ).sort();
+
+    const rows = allStates.map((stateCode) => ({
+      lender_id: id,
+      state_code: stateCode,
+      owner_occupied_allowed: ownerOccupiedStates.includes(stateCode),
+      non_owner_occupied_allowed: nonOwnerOccupiedStates.includes(stateCode),
+    }));
 
     const { error: deleteEligibilityError } = await supabaseAdmin
       .from("lender_state_eligibility")
@@ -139,44 +150,19 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     if (deleteEligibilityError) {
       return NextResponse.json(
-        {
-          error:
-            deleteEligibilityError.message ||
-            "Failed to clear prior lender state eligibility.",
-        },
+        { error: deleteEligibilityError.message },
         { status: 500 }
       );
     }
 
-    const eligibilityRows: {
-      lender_id: string;
-      state: string;
-      eligibility_type: EligibilityType;
-    }[] = [
-      ...ownerOccupiedStates.map((state) => ({
-        lender_id: id,
-        state,
-        eligibility_type: "owner_occupied" as EligibilityType,
-      })),
-      ...nonOwnerOccupiedStates.map((state) => ({
-        lender_id: id,
-        state,
-        eligibility_type: "non_owner_occupied" as EligibilityType,
-      })),
-    ];
-
-    if (eligibilityRows.length > 0) {
+    if (rows.length > 0) {
       const { error: insertEligibilityError } = await supabaseAdmin
         .from("lender_state_eligibility")
-        .insert(eligibilityRows);
+        .insert(rows);
 
       if (insertEligibilityError) {
         return NextResponse.json(
-          {
-            error:
-              insertEligibilityError.message ||
-              "Failed to save lender state eligibility.",
-          },
+          { error: insertEligibilityError.message },
           { status: 500 }
         );
       }
@@ -184,64 +170,23 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      message: "Lender updated successfully.",
+      lenderId: id,
+      saved: {
+        name,
+        channels,
+        states: mergedLegacyStates,
+        ownerOccupiedStates,
+        nonOwnerOccupiedStates,
+      },
     });
   } catch (error) {
-    console.error("POST lender detail error:", error);
     return NextResponse.json(
-      { error: "Unexpected server error." },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(_req: NextRequest, context: RouteContext) {
-  try {
-    const { id } = await context.params;
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Missing lender id." },
-        { status: 400 }
-      );
-    }
-
-    const { error: deleteEligibilityError } = await supabaseAdmin
-      .from("lender_state_eligibility")
-      .delete()
-      .eq("lender_id", id);
-
-    if (deleteEligibilityError) {
-      return NextResponse.json(
-        {
-          error:
-            deleteEligibilityError.message ||
-            "Failed deleting lender state eligibility.",
-        },
-        { status: 500 }
-      );
-    }
-
-    const { error: deleteLenderError } = await supabaseAdmin
-      .from("lenders")
-      .delete()
-      .eq("id", id);
-
-    if (deleteLenderError) {
-      return NextResponse.json(
-        { error: deleteLenderError.message || "Failed deleting lender." },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "Lender deleted successfully.",
-    });
-  } catch (error) {
-    console.error("DELETE lender detail error:", error);
-    return NextResponse.json(
-      { error: "Unexpected server error." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unexpected lender route error.",
+      },
       { status: 500 }
     );
   }
