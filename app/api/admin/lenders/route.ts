@@ -18,29 +18,21 @@ function normalizeStringArray(value: unknown): string[] {
 
 function normalizeStateArray(value: unknown): string[] {
   return Array.from(
-    new Set(
-      normalizeStringArray(value).map((state) => state.toUpperCase())
-    )
+    new Set(normalizeStringArray(value).map((state) => state.toUpperCase()))
   );
 }
 
-async function ensureAdminAccess(request: NextRequest) {
-  const cookieHeader = request.headers.get("cookie") ?? "";
-
-  if (!cookieHeader) {
-    return false;
-  }
-
+async function ensureAdminAccess() {
   try {
-    const result = await signInAdminSession(cookieHeader);
-    return !!result;
+    await signInAdminSession();
+    return true;
   } catch {
     return false;
   }
 }
 
-export async function GET(request: NextRequest) {
-  const isAdmin = await ensureAdminAccess(request);
+export async function GET() {
+  const isAdmin = await ensureAdminAccess();
 
   if (!isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -65,13 +57,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const isAdmin = await ensureAdminAccess(request);
+  const isAdmin = await ensureAdminAccess();
 
   if (!isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const contentType = request.headers.get("content-type") || "";
+
   if (!contentType.includes("application/json")) {
     return NextResponse.json(
       { error: "Content-Type must be application/json." },
