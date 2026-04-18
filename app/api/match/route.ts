@@ -178,27 +178,153 @@ function toBooleanOrNull(value: unknown): boolean | null {
   if (typeof value === "boolean") return value;
 
   const str = String(value).trim().toLowerCase();
-  if (str === "yes" || str === "true") return true;
-  if (str === "no" || str === "false") return false;
+  if (["yes", "true", "y", "1"].includes(str)) return true;
+  if (["no", "false", "n", "0"].includes(str)) return false;
 
+  return null;
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function mapBorrowerStatus(value: unknown): BorrowerStatus {
+  const v = normalizeText(value);
+
+  if (!v) return "";
+  if (["citizen", "us citizen", "u s citizen", "american citizen"].includes(v)) return "citizen";
+  if (["permanent resident", "green card", "green card holder"].includes(v))
+    return "permanent_resident";
+  if (
+    ["non permanent resident", "nonpermanent resident", "visa", "work visa", "temporary visa"].includes(v)
+  )
+    return "non_permanent_resident";
+  if (["itin", "itin borrower"].includes(v)) return "itin_borrower";
+  if (v === "daca") return "daca";
+  if (["foreign national", "foreign"].includes(v)) return "foreign_national";
+
+  return "";
+}
+
+function mapOccupancyType(value: unknown): OccupancyType {
+  const v = normalizeText(value);
+
+  if (!v) return "";
+  if (
+    ["primary", "primary residence", "owner occupied", "owner occupied primary"].includes(v)
+  )
+    return "primary_residence";
+  if (["second home", "vacation home"].includes(v)) return "second_home";
+  if (
+    ["investment", "investment property", "investor", "rental", "non owner occupied"].includes(v)
+  )
+    return "investment_property";
+
+  return "";
+}
+
+function mapTransactionType(value: unknown): TransactionType {
+  const v = normalizeText(value);
+
+  if (!v) return "";
+  if (v === "purchase") return "purchase";
+  if (
+    ["rate term refinance", "rate term refi", "rate and term refinance", "refinance"].includes(v)
+  )
+    return "rate_term_refinance";
+  if (["cash out refinance", "cash out refi", "cash out"].includes(v))
+    return "cash_out_refinance";
+  if (["second lien", "heloc", "home equity"].includes(v)) return "second_lien";
+
+  return "";
+}
+
+function mapIncomeType(value: unknown): IncomeType {
+  const v = normalizeText(value);
+
+  if (!v) return "";
+  if (["full doc", "full documentation", "w2", "w 2"].includes(v)) return "full_doc";
+  if (["express doc"].includes(v)) return "express_doc";
+  if (["bank statements", "bank statement", "12 month bank statements"].includes(v))
+    return "bank_statements";
+  if (v === "1099") return "1099";
+  if (["pnl", "p and l", "profit and loss"].includes(v)) return "pnl";
+  if (["asset utilization", "asset depletion"].includes(v)) return "asset_utilization";
+  if (v === "dscr") return "dscr";
+  if (["no ratio", "stated", "stated income"].includes(v)) return "no_ratio";
+  if (["wvoe", "written verification of employment"].includes(v)) return "wvoe";
+
+  return "";
+}
+
+function mapPropertyType(value: unknown): PropertyType {
+  const v = normalizeText(value);
+
+  if (!v) return "";
+  if (["single family", "single family residence", "sfr", "1 unit", "1 unit sfr"].includes(v))
+    return "single_family";
+  if (v === "condo") return "condo";
+  if (["townhouse", "townhome"].includes(v)) return "townhouse";
+  if (["2 unit", "duplex", "two unit"].includes(v)) return "2_unit";
+  if (["3 unit", "triplex", "three unit"].includes(v)) return "3_unit";
+  if (["4 unit", "four unit"].includes(v)) return "4_unit";
+  if (["mixed use", "mixed use property"].includes(v)) return "mixed_use";
+  if (["5 to 8 units", "5 8 units", "5 unit", "6 unit", "7 unit", "8 unit"].includes(v))
+    return "5_to_8_units";
+
+  return "";
+}
+
+function inferUnitsFromPropertyType(propertyType: PropertyType): number | null {
+  if (propertyType === "single_family" || propertyType === "condo" || propertyType === "townhouse")
+    return 1;
+  if (propertyType === "2_unit") return 2;
+  if (propertyType === "3_unit") return 3;
+  if (propertyType === "4_unit") return 4;
   return null;
 }
 
 function normalizeBody(body: unknown): QualificationInput {
   const obj = (body ?? {}) as Record<string, unknown>;
 
+  const borrower_status = mapBorrowerStatus(obj.borrower_status ?? obj.borrowerStatus ?? obj.status);
+  const occupancy_type = mapOccupancyType(
+    obj.occupancy_type ?? obj.occupancyType ?? obj.occupancy
+  );
+  const transaction_type = mapTransactionType(
+    obj.transaction_type ?? obj.transactionType ?? obj.transaction
+  );
+  const income_type = mapIncomeType(obj.income_type ?? obj.incomeType ?? obj.income);
+  const property_type = mapPropertyType(
+    obj.property_type ?? obj.propertyType ?? obj.property
+  );
+
+  const credit_score = toNumber(obj.credit_score ?? obj.creditScore ?? obj.credit);
+  const ltv = toNumber(obj.ltv ?? obj.loan_to_value ?? obj.loanToValue);
+  const dti = toNumber(obj.dti ?? obj.debt_to_income ?? obj.debtToIncome);
+  const loan_amount = toNumber(obj.loan_amount ?? obj.loanAmount);
+  const explicitUnits = toNumber(obj.units ?? obj.unit_count ?? obj.unitCount);
+  const first_time_homebuyer = toBooleanOrNull(
+    obj.first_time_homebuyer ?? obj.firstTimeHomebuyer ?? obj.fthb
+  );
+
   return {
-    borrower_status: String(obj.borrower_status ?? "") as BorrowerStatus,
-    occupancy_type: String(obj.occupancy_type ?? "") as OccupancyType,
-    transaction_type: String(obj.transaction_type ?? "") as TransactionType,
-    income_type: String(obj.income_type ?? "") as IncomeType,
-    property_type: String(obj.property_type ?? "") as PropertyType,
-    credit_score: toNumber(obj.credit_score),
-    ltv: toNumber(obj.ltv),
-    dti: toNumber(obj.dti),
-    loan_amount: toNumber(obj.loan_amount),
-    units: toNumber(obj.units),
-    first_time_homebuyer: toBooleanOrNull(obj.first_time_homebuyer),
+    borrower_status,
+    occupancy_type,
+    transaction_type,
+    income_type,
+    property_type,
+    credit_score,
+    ltv,
+    dti,
+    loan_amount,
+    units: explicitUnits ?? inferUnitsFromPropertyType(property_type),
+    first_time_homebuyer,
   };
 }
 
@@ -843,6 +969,7 @@ export async function POST(req: Request) {
         reserves_required_months,
         guideline_notes,
         ask_before_match,
+        is_active,
         programs (
           id,
           name,
