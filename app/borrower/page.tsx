@@ -480,6 +480,12 @@ function formatMoney(value: string) {
   }).format(n);
 }
 
+function formatNumberWithCommas(value: string) {
+  const cleaned = value.replace(/[^\d]/g, "");
+  if (!cleaned) return "";
+  return new Intl.NumberFormat("en-US").format(Number(cleaned));
+}
+
 function normalizeOccupancyForMatch(value: string, purpose: LoanPurpose) {
   const lower = value.trim().toLowerCase();
 
@@ -649,8 +655,8 @@ export default function BorrowerPage() {
   }, [loanOfficerQuery]);
 
   const estimatedLoanAmount = useMemo(() => {
-    const homePrice = Number(scenario.homePrice || 0);
-    const downPayment = Number(scenario.downPayment || 0);
+    const homePrice = Number(scenario.homePrice.replace(/,/g, "") || 0);
+    const downPayment = Number(scenario.downPayment.replace(/,/g, "") || 0);
     const value = Math.max(homePrice - downPayment, 0);
     return value > 0 ? value.toString() : "";
   }, [scenario.homePrice, scenario.downPayment]);
@@ -1884,8 +1890,11 @@ If appropriate, ask only one useful unanswered question.
                   placeholder={t.homePrice}
                   value={scenario.homePrice}
                   onChange={(e) =>
-                    setScenario((prev) => ({ ...prev, homePrice: e.target.value }))
-                  }
+                    setScenario((prev) => ({
+                      ...prev,
+                      homePrice: formatNumberWithCommas(e.target.value),
+                    }))
+                }
                   style={inputStyle()}
                 />
                 <input
