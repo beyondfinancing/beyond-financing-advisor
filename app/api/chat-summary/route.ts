@@ -72,6 +72,13 @@ function buildTranscriptHtml(messages: ChatMessage[]): string {
 }
 
 function parseJsonSafely<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
 function getTriggerLabel(trigger: SummaryTrigger): string {
   if (trigger === "apply") return "Apply Now";
   if (trigger === "schedule") return "Schedule";
