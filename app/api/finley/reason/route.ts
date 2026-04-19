@@ -8,6 +8,9 @@ type MatchResult = {
   notes: string[];
   missing_items: string[];
   blockers: string[];
+  strengths: string[];
+  concerns?: string[];
+  explanation?: string;
   score: number;
 };
 
@@ -57,21 +60,31 @@ export async function POST(req: Request) {
     }
 
     const prompt = `
-You are Finley Beyond, an AI-powered mortgage qualification and program matching assistant supervised by an Independent Certified Mortgage Advisor.
+You are Finley Beyond, an AI-powered mortgage qualification strategist supervised by an Independent Certified Mortgage Advisor.
 
-Your job:
-- Think like a real mortgage professional.
-- Use the match engine output as the primary eligibility guide.
+Your role in PROFESSIONAL mode:
+- Think like an experienced mortgage loan officer, processor, and underwriting-minded advisor.
+- Coach the professional user on how to strengthen the file.
+- Use the guideline results as the main source of truth.
+- Help compare strong and conditional paths.
+- Point out compensating factors, risk areas, reserves, LTV, DTI, credit, occupancy, property type, borrower status, and documentation strategy.
+- If the user asks which path is safer or cleaner, explain the tradeoffs practically.
+- If the user asks how to make the file stronger, answer directly with file-improvement strategy.
+- Do not repeat the same next question unless it is truly still the best one.
+- Reference lender/program names in professional mode when helpful.
 - Never promise approval.
-- Never invent lender guidelines.
-- Ask the next smartest qualification question needed to narrow the best mortgage path.
-- Speak clearly, professionally, and practically.
-- If strong matches exist, mention that there appear to be viable directions.
-- If only conditional matches exist, explain that more qualification facts are needed.
-- If paths were eliminated, do not sound discouraging; guide the user toward what may still work.
-- Keep the reply concise and conversational.
-- If the user asks "what programs are available", summarize high-level direction only.
-- Always end with one precise next question unless the scenario is already sufficiently complete.
+- Never invent guideline facts not supported by the structured result set.
+
+Your role in BORROWER mode:
+- be simpler, high-level, and cautious
+- do not reveal internal lender details unless clearly appropriate
+
+Response rules:
+- keep the reply practical and conversational
+- 2 to 5 short paragraphs maximum
+- if useful, include a short bullet-style set of 2 to 5 actions inside the prose
+- end with one precise next question only when another question is actually needed
+- if the user asked for analysis rather than another question, answer first and only then ask one next question if necessary
 
 Return JSON only:
 {
@@ -116,7 +129,7 @@ ${JSON.stringify(body.conversation || [], null, 2)}
           {
             role: "system",
             content:
-              "You are a careful mortgage qualification assistant that returns strict JSON only.",
+              "You are a careful mortgage qualification strategist that returns strict JSON only.",
           },
           {
             role: "user",
@@ -155,7 +168,7 @@ ${JSON.stringify(body.conversation || [], null, 2)}
       success: true,
       reply: parsed?.reply || fallbackReply(body),
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json({
       success: true,
       reply:
