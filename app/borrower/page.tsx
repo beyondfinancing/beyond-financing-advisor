@@ -608,6 +608,7 @@ export default function BorrowerPage() {
   const [officerStatus, setOfficerStatus] = useState("");
   const [summaryStatus, setSummaryStatus] = useState("");
   const [actionBusy, setActionBusy] = useState<SummaryTrigger | "">("");
+  const [actionBanner, setActionBanner] = useState("");
 
   const sentSummaryKeysRef = useRef<Set<string>>(new Set());
 
@@ -792,6 +793,7 @@ Rules for borrower-facing response:
     setOfficerStatus("");
     setSummaryStatus("");
     setActionBusy("");
+    setActionBanner("");
     setIntake({
       name: "",
       email: "",
@@ -1492,6 +1494,17 @@ If appropriate, ask only one useful unanswered question.
               whiteSpace: "pre-wrap",
             }}
           >
+        {(pageError || matchError) && (
+          <div
+            style={{
+              ...cardStyle(),
+              border: "1px solid #F5C2C7",
+              background: "#FFF5F5",
+              color: "#842029",
+              marginBottom: 20,
+              whiteSpace: "pre-wrap",
+            }}
+          >
             {pageError || matchError}
           </div>
         )}
@@ -1507,6 +1520,20 @@ If appropriate, ask only one useful unanswered question.
             }}
           >
             {summaryStatus}
+          </div>
+        )}
+
+        {actionBanner && (
+          <div
+            style={{
+              ...cardStyle(),
+              border: "1px solid #BADBCC",
+              background: "#F0FFF4",
+              color: "#0F5132",
+              marginBottom: 20,
+            }}
+          >
+            {actionBanner}
           </div>
         )}
 
@@ -1904,7 +1931,7 @@ If appropriate, ask only one useful unanswered question.
                   onChange={(e) =>
                     setScenario((prev) => ({
                       ...prev,
-                      downPayment: e.target.value,
+                      downPayment: formatNumberWithCommas(e.target.value),
                     }))
                   }
                   style={inputStyle()}
