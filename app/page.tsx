@@ -200,6 +200,8 @@ export default function Page() {
           font-size: 14px;
           line-height: 1.55;
           color: rgba(38, 51, 102, 0.78);
+          text-align: center;
+          font-weight: 600;
         }
 
         @media (max-width: 1080px) {
