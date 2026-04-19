@@ -2142,7 +2142,7 @@ If appropriate, ask only one useful unanswered question.
                     e.preventDefault();
 
                     const applyWindow = window.open(
-                      "about:blank",
+                      selectedOfficer.applyUrl,
                       "_blank",
                       "noopener,noreferrer"
                     );
