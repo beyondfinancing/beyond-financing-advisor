@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 type LanguageCode = "en" | "pt" | "es";
 type LoanPurpose = "Purchase" | "Refinance" | "Investment";
+type SummaryTrigger = "ai" | "apply" | "schedule" | "contact";
 
 type IntakeFormState = {
   name: string;
@@ -310,7 +311,8 @@ const COPY = {
     matchPending:
       "Execute a revisão preliminar para gerar a direção interna de matching.",
     officerConfirmed: "Loan officer confirmado.",
-    officerFallback: "Nenhuma correspondência encontrada. Roteamento padrão atribuído ao Finley Beyond.",
+    officerFallback:
+      "Nenhuma correspondência encontrada. Roteamento padrão atribuído ao Finley Beyond.",
     officerTypeHint:
       "Comece a digitar para ver loan officers correspondentes.",
     estimatedLoanAmount: "Valor Estimado do Empréstimo",
@@ -375,7 +377,8 @@ const COPY = {
     matchPending:
       "Ejecute la revisión preliminar para generar la dirección interna de matching.",
     officerConfirmed: "Loan officer confirmado.",
-    officerFallback: "No se encontró coincidencia. Se asignó el enrutamiento predeterminado a Finley Beyond.",
+    officerFallback:
+      "No se encontró coincidencia. Se asignó el enrutamiento predeterminado a Finley Beyond.",
     officerTypeHint:
       "Empiece a escribir para ver los loan officers coincidentes.",
     estimatedLoanAmount: "Monto Estimado del Préstamo",
@@ -553,6 +556,9 @@ export default function BorrowerPage() {
   const [pageError, setPageError] = useState("");
   const [matchError, setMatchError] = useState("");
   const [officerStatus, setOfficerStatus] = useState("");
+  const [summaryStatus, setSummaryStatus] = useState("");
+
+  const sentSummaryKeysRef = useRef<Set<string>>(new Set());
 
   const [intake, setIntake] = useState<IntakeFormState>({
     name: "",
@@ -703,6 +709,94 @@ Rules for borrower-facing response:
 - Ask the most useful unanswered qualification question, not a question that is already answered.
 `.trim();
 
+  const preferredLanguageLabel = useMemo(() => {
+    if (language === "pt") return "Português";
+    if (language === "es") return "Español";
+    return "English";
+  }, [language]);
+
+  const sendSummaryToLoanOfficer = async (
+    conversation: ChatMessage[],
+    trigger: SummaryTrigger = "ai",
+    options?: {
+      force?: boolean;
+      resolvedOfficer?: LoanOfficerRecord;
+    }
+  ) => {
+    const activeOfficer = options?.resolvedOfficer || selectedOfficer;
+
+    if (!intake.name.trim() || !intake.email.trim() || !intake.phone.trim()) {
+      return;
+    }
+
+    const signature = JSON.stringify({
+      trigger,
+      officerId: activeOfficer.id,
+      name: intake.name.trim(),
+      email: intake.email.trim(),
+      phone: intake.phone.trim(),
+      lastUserMessage:
+        conversation
+          .filter((item) => item.role === "user")
+          .slice(-1)[0]?.content || "",
+      messageCount: conversation.length,
+    });
+
+    const dedupeKey = `${trigger}:${signature}`;
+
+    if (!options?.force && sentSummaryKeysRef.current.has(dedupeKey)) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/route", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        keepalive: trigger !== "ai",
+        body: JSON.stringify({
+          trigger,
+          lead: {
+            fullName: intake.name.trim(),
+            email: intake.email.trim(),
+            phone: intake.phone.trim(),
+            preferredLanguage: preferredLanguageLabel,
+            loanOfficer: activeOfficer.id,
+            assignedEmail: activeOfficer.email,
+          },
+          messages: conversation,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        const errorText =
+          (result &&
+            typeof result === "object" &&
+            "error" in result &&
+            typeof result.error === "string" &&
+            result.error) ||
+          "Summary email request failed.";
+        throw new Error(errorText);
+      }
+
+      sentSummaryKeysRef.current.add(dedupeKey);
+
+      if (trigger === "ai") {
+        setSummaryStatus(`Internal summary sent to ${activeOfficer.email}.`);
+      }
+    } catch (error) {
+      console.error("Email summary failed:", error);
+      if (trigger === "ai") {
+        setSummaryStatus("");
+        setPageError((prev) =>
+          prev || "The conversation worked, but the internal summary email did not send."
+        );
+      }
+    }
+  };
+
   const handleConfirmOfficer = () => {
     const found = findOfficer(loanOfficerQuery);
 
@@ -732,11 +826,12 @@ Rules for borrower-facing response:
 
   const buildRouting = (
     conversation: ChatMessage[],
-    match: MatchResponse | null
+    match: MatchResponse | null,
+    officer?: LoanOfficerRecord
   ): RoutingPayload => ({
     language,
     loanOfficerQuery,
-    selectedOfficer,
+    selectedOfficer: officer || selectedOfficer,
     borrower: {
       name: intake.name,
       email: intake.email,
@@ -821,6 +916,7 @@ Rules for borrower-facing response:
     setReviewing(true);
     setPageError("");
     setOfficerStatus("");
+    setSummaryStatus("");
 
     const resolvedOfficer = findOfficer(loanOfficerQuery) || selectedOfficer || DEFAULT_OFFICER;
     setSelectedOfficer(resolvedOfficer);
@@ -842,7 +938,7 @@ Rules for borrower-facing response:
     try {
       const match = await runMatch();
       const starterConversation: ChatMessage[] = [starterMessage];
-      const currentRouting = buildRouting(starterConversation, match);
+      const currentRouting = buildRouting(starterConversation, match, resolvedOfficer);
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -903,10 +999,14 @@ If a next question is needed, ask one useful unanswered question only.
       setMessages(newConversation);
       setRouting(
         data.routing || {
-          ...buildRouting(newConversation, match),
+          ...buildRouting(newConversation, match, resolvedOfficer),
           selectedOfficer: resolvedOfficer,
         }
       );
+
+      await sendSummaryToLoanOfficer(newConversation, "ai", {
+        resolvedOfficer,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : t.reviewError;
       setPageError(message);
@@ -1073,6 +1173,21 @@ If appropriate, ask only one useful unanswered question.
     }
   };
 
+  const handleTriggeredSummaryClick = (trigger: SummaryTrigger) => {
+    const conversationToSend = messages.length
+      ? messages
+      : [
+          {
+            role: "assistant" as const,
+            content: "Borrower visited the workspace and selected a next action.",
+          },
+        ];
+
+    void sendSummaryToLoanOfficer(conversationToSend, trigger, {
+      force: true,
+    });
+  };
+
   const officerPhoneHref = selectedOfficer.mobile
     ? `tel:${selectedOfficer.mobile}`
     : undefined;
@@ -1192,6 +1307,20 @@ If appropriate, ask only one useful unanswered question.
             }}
           >
             {pageError || matchError}
+          </div>
+        )}
+
+        {summaryStatus && (
+          <div
+            style={{
+              ...cardStyle(),
+              border: "1px solid #BADBCC",
+              background: "#F0FFF4",
+              color: "#0F5132",
+              marginBottom: 20,
+            }}
+          >
+            {summaryStatus}
           </div>
         )}
 
@@ -1832,6 +1961,7 @@ If appropriate, ask only one useful unanswered question.
                   href={selectedOfficer.applyUrl}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={() => handleTriggeredSummaryClick("apply")}
                   style={{
                     ...buttonPrimaryStyle(false),
                     textAlign: "center",
@@ -1845,6 +1975,7 @@ If appropriate, ask only one useful unanswered question.
                   href={selectedOfficer.scheduleUrl}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={() => handleTriggeredSummaryClick("schedule")}
                   style={{
                     ...buttonSecondaryStyle(true),
                     textAlign: "center",
@@ -1856,6 +1987,7 @@ If appropriate, ask only one useful unanswered question.
 
                 <a
                   href={officerMailtoHref}
+                  onClick={() => handleTriggeredSummaryClick("contact")}
                   style={{
                     ...buttonSecondaryStyle(false),
                     textAlign: "center",
@@ -1868,6 +2000,7 @@ If appropriate, ask only one useful unanswered question.
                 {officerPhoneHref && (
                   <a
                     href={officerPhoneHref}
+                    onClick={() => handleTriggeredSummaryClick("contact")}
                     style={{
                       ...buttonSecondaryStyle(false),
                       textAlign: "center",
