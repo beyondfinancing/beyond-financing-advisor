@@ -1310,13 +1310,13 @@ If appropriate, ask only one useful unanswered question.
   
   const handleTriggeredSummaryAction = async (
     trigger: SummaryTrigger,
-    options?: {
-      channel?: "email" | "call";
-    }
+    options?: { channel?: "email" | "phone" }
   ) => {
     setActionBusy(trigger);
     setPageError("");
     setSummaryStatus("");
+
+    const actionMessage = buildActionTranscriptMessage(trigger, options?.channel);
 
     const baseConversation = messages.length
       ? messages
@@ -1327,8 +1327,22 @@ If appropriate, ask only one useful unanswered question.
           },
         ];
 
-    const actionMessage = buildActionTranscriptMessage(trigger, options?.channel);
-    const conversationToSend = [...baseConversation, actionMessage];
+    const alreadyLoggedSameAction =
+      baseConversation[baseConversation.length - 1]?.role === "user" &&
+      baseConversation[baseConversation.length - 1]?.content === actionMessage.content;
+
+    const conversationToSend = alreadyLoggedSameAction
+      ? baseConversation
+      : [...baseConversation, actionMessage];
+
+    if (!alreadyLoggedSameAction) {
+      setMessages(conversationToSend);
+      setRouting((prev) =>
+        prev
+          ? { ...prev, conversation: conversationToSend }
+          : buildRouting(conversationToSend, matchResult)
+      );
+    }
 
     const result = await sendSummaryToLoanOfficer(conversationToSend, trigger, {
       force: true,
@@ -1340,7 +1354,6 @@ If appropriate, ask only one useful unanswered question.
 
     return result.success;
   };
-
   const finalizeTriggeredAction = (shouldReset = false) => {
     setActionBusy("");
     if (shouldReset) {
