@@ -72,11 +72,12 @@ function buildTranscriptHtml(messages: ChatMessage[]): string {
 }
 
 function parseJsonSafely<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
+function getTriggerLabel(trigger: SummaryTrigger): string {
+  if (trigger === "apply") return "Apply Now";
+  if (trigger === "schedule") return "Schedule";
+  if (trigger === "contact") return "Contact";
+  if (trigger === "professional") return "Professional Session";
+  return "AI Conversation";
 }
 
 function buildFallbackSummary(
@@ -197,7 +198,7 @@ function buildHtml(args: {
         <p><strong>Professional Name:</strong> ${escapeHtml(lead.professionalName || "Not provided")}</p>
         <p><strong>Professional Role:</strong> ${escapeHtml(lead.professionalRole || "Not provided")}</p>
         <p><strong>Recipient Email:</strong> ${escapeHtml(selectedEmail)}</p>
-        <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
+        <p><strong>Action Selected:</strong> ${escapeHtml(getTriggerLabel(trigger))}</p>
       </div>
 
       <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
@@ -422,8 +423,8 @@ const summary: SummaryPayload = providedSummary
         reply_to: email || selectedEmail,
         subject:
           mode === "professional"
-            ? `Finley Professional Session Record${fullName ? `: ${fullName}` : ""}`
-            : `Conversation Summary: ${fullName || "Borrower Session"}`,
+            ? `Finley Professional Session — ${getTriggerLabel(trigger)}${fullName ? ` — ${fullName}` : ""}`
+            : `${getTriggerLabel(trigger)} — ${fullName || "Borrower Session"}`,
         html,
       }),
     });
