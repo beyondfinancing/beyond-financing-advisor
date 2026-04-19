@@ -656,8 +656,8 @@ export default function BorrowerPage() {
   }, [loanOfficerQuery]);
 
   const estimatedLoanAmount = useMemo(() => {
-    const homePrice = Number(scenario.homePrice.replace(/,/g, "") || 0);
-    const downPayment = Number(scenario.downPayment.replace(/,/g, "") || 0);
+const homePrice = Number(scenario.homePrice.replace(/,/g, "") || 0);
+const downPayment = Number(scenario.downPayment.replace(/,/g, "") || 0);
     const value = Math.max(homePrice - downPayment, 0);
     return value > 0 ? value.toString() : "";
   }, [scenario.homePrice, scenario.downPayment]);
