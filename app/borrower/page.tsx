@@ -480,7 +480,18 @@ function formatMoney(value: string) {
   }).format(n);
 }
 
-function formatNumberWithCommas(value: string) {
+function formatPhoneNumber(value: string) {
+  const cleaned = value.replace(/[^\d]/g, "").slice(0, 10);
+
+  const parts = [];
+  if (cleaned.length > 0) parts.push(cleaned.slice(0, 3));
+  if (cleaned.length >= 4) parts.push(cleaned.slice(3, 6));
+  if (cleaned.length >= 7) parts.push(cleaned.slice(6, 10));
+
+  return parts.join(".");
+}
+
+function formatPlainNumber(value: string) {
   const cleaned = value.replace(/[^\d]/g, "");
   if (!cleaned) return "";
   return new Intl.NumberFormat("en-US").format(Number(cleaned));
@@ -1619,9 +1630,12 @@ If appropriate, ask only one useful unanswered question.
                   disabled={!accepted}
                   placeholder={t.phone}
                   value={intake.phone}
-                  onChange={(e) =>
-                    setIntake((prev) => ({ ...prev, phone: e.target.value }))
-                  }
+                 onChange={(e) =>
+  setIntake((prev) => ({
+    ...prev,
+    phone: formatPhoneNumber(e.target.value),
+  }))
+}
                   style={inputStyle()}
                 />
                 <input
@@ -1641,8 +1655,11 @@ If appropriate, ask only one useful unanswered question.
                   placeholder={t.income}
                   value={intake.income}
                   onChange={(e) =>
-                    setIntake((prev) => ({ ...prev, income: e.target.value }))
-                  }
+  setIntake((prev) => ({
+    ...prev,
+    income: formatPlainNumber(e.target.value),
+  }))
+}
                   style={inputStyle()}
                 />
                 <input
@@ -1650,8 +1667,11 @@ If appropriate, ask only one useful unanswered question.
                   placeholder={t.debt}
                   value={intake.debt}
                   onChange={(e) =>
-                    setIntake((prev) => ({ ...prev, debt: e.target.value }))
-                  }
+  setIntake((prev) => ({
+    ...prev,
+    debt: formatPlainNumber(e.target.value),
+  }))
+}
                   style={inputStyle()}
                 />
                 <input
