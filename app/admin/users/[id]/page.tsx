@@ -10,6 +10,7 @@ type UserRow = {
   email: string | null;
   nmls: string | null;
   role: string | null;
+  company_name: string | null;
   created_at: string | null;
 };
 
@@ -39,6 +40,18 @@ function inputStyle(): CSSProperties {
 
 function primaryButtonStyle(): CSSProperties {
   return {
+    background: "#263366",
+    color: "#FFFFFF",
+    border: "none",
+    borderRadius: 12,
+    padding: "14px 18px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+function secondaryButtonStyle(): CSSProperties {
+  return {
     background: "#0096C7",
     color: "#FFFFFF",
     border: "none",
@@ -51,7 +64,7 @@ function primaryButtonStyle(): CSSProperties {
 
 function dangerButtonStyle(): CSSProperties {
   return {
-    background: "#C0392B",
+    background: "#D9412E",
     color: "#FFFFFF",
     border: "none",
     borderRadius: 12,
@@ -61,57 +74,113 @@ function dangerButtonStyle(): CSSProperties {
   };
 }
 
+function alertStyle(success = true): CSSProperties {
+  return {
+    border: success ? "1px solid #BADBCC" : "1px solid #F3C5BC",
+    background: success ? "#F0FFF4" : "#FFF4F2",
+    color: success ? "#0F5132" : "#8A3B2F",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  };
+}
+
 export default async function AdminUserDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   if (!(await isAdminSignedIn())) {
     redirect("/admin/login");
   }
 
   const { id } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : {};
 
-  const { data: user } = await supabaseAdmin
+  const successMessage = Array.isArray(resolvedSearchParams.success)
+    ? resolvedSearchParams.success[0]
+    : resolvedSearchParams.success;
+
+  const errorMessage = Array.isArray(resolvedSearchParams.error)
+    ? resolvedSearchParams.error[0]
+    : resolvedSearchParams.error;
+
+  async function updateUser(formData: FormData) {
+    "use server";
+
+    const userId = String(formData.get("id") || "").trim();
+    const name = String(formData.get("name") || "").trim();
+    const email = String(formData.get("email") || "").trim().toLowerCase();
+    const nmls = String(formData.get("nmls") || "").trim();
+    const role = String(formData.get("role") || "").trim();
+    const companyName = String(formData.get("company_name") || "").trim();
+
+    if (!userId || !name || !email || !nmls || !role || !companyName) {
+      redirect(
+        `/admin/users/${encodeURIComponent(
+          userId || id
+        )}?error=Please complete all user fields, including Company Name.`
+      );
+    }
+
+    const { error } = await supabaseAdmin
+      .from("users")
+      .update({
+        name,
+        email,
+        nmls,
+        role,
+        company_name: companyName,
+      })
+      .eq("id", userId);
+
+    if (error) {
+      redirect(
+        `/admin/users/${encodeURIComponent(userId)}?error=${encodeURIComponent(
+          error.message
+        )}`
+      );
+    }
+
+    redirect(
+      `/admin/users/${encodeURIComponent(
+        userId
+      )}?success=User updated successfully.`
+    );
+  }
+
+  async function deleteUser(formData: FormData) {
+    "use server";
+
+    const userId = String(formData.get("id") || "").trim();
+
+    if (!userId) {
+      redirect("/admin/users?error=User ID was missing.");
+    }
+
+    const { error } = await supabaseAdmin.from("users").delete().eq("id", userId);
+
+    if (error) {
+      redirect(
+        `/admin/users/${encodeURIComponent(userId)}?error=${encodeURIComponent(
+          error.message
+        )}`
+      );
+    }
+
+    redirect("/admin/users?success=User deleted successfully.");
+  }
+
+  const { data: user, error } = await supabaseAdmin
     .from("users")
     .select("*")
     .eq("id", id)
     .single<UserRow>();
 
-  if (!user) {
+  if (error || !user) {
     notFound();
-  }
-
-  async function updateUser(formData: FormData) {
-    "use server";
-
-    const name = String(formData.get("name") || "").trim();
-    const email = String(formData.get("email") || "").trim().toLowerCase();
-    const nmls = String(formData.get("nmls") || "").trim();
-    const role = String(formData.get("role") || "").trim();
-
-    const { error } = await supabaseAdmin
-      .from("users")
-      .update({ name, email, nmls, role })
-      .eq("id", id);
-
-    if (error) {
-      redirect(`/admin/users/${id}?error=${encodeURIComponent(error.message)}`);
-    }
-
-    redirect(`/admin/users/${id}?success=User updated successfully.`);
-  }
-
-  async function deleteUser() {
-    "use server";
-
-    const { error } = await supabaseAdmin.from("users").delete().eq("id", id);
-
-    if (error) {
-      redirect(`/admin/users/${id}?error=${encodeURIComponent(error.message)}`);
-    }
-
-    redirect("/admin/users?success=User deleted successfully.");
   }
 
   return (
@@ -123,7 +192,7 @@ export default async function AdminUserDetailPage({
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
+      <div style={{ maxWidth: 920, margin: "0 auto", padding: 24 }}>
         <div
           style={{
             display: "flex",
@@ -151,15 +220,22 @@ export default async function AdminUserDetailPage({
 
             <h1
               style={{
-                margin: "0 0 10px",
-                fontSize: "clamp(32px, 5vw, 52px)",
-                lineHeight: 1.1,
+                margin: "0 0 12px",
+                fontSize: "clamp(34px, 6vw, 58px)",
+                lineHeight: 1.08,
               }}
             >
               {user.name || "Unnamed User"}
             </h1>
 
-            <p style={{ margin: 0, color: "#5A6A84", fontSize: 18 }}>
+            <p
+              style={{
+                margin: 0,
+                color: "#5A6A84",
+                fontSize: 18,
+                lineHeight: 1.6,
+              }}
+            >
               Edit this user record or remove it from the system.
             </p>
           </div>
@@ -168,9 +244,9 @@ export default async function AdminUserDetailPage({
             <Link
               href="/admin/users"
               style={{
-                textDecoration: "none",
                 color: "#263366",
                 fontWeight: 700,
+                textDecoration: "none",
               }}
             >
               ← Back to Users
@@ -178,8 +254,18 @@ export default async function AdminUserDetailPage({
           </div>
         </div>
 
+        {successMessage ? (
+          <div style={alertStyle(true)}>{successMessage}</div>
+        ) : null}
+
+        {errorMessage ? (
+          <div style={alertStyle(false)}>{errorMessage}</div>
+        ) : null}
+
         <section style={cardStyle()}>
-          <form action={updateUser} style={{ display: "grid", gap: 16 }}>
+          <form action={updateUser} style={{ display: "grid", gap: 18 }}>
+            <input type="hidden" name="id" value={user.id} />
+
             <div>
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Full Name</div>
               <input
@@ -211,8 +297,24 @@ export default async function AdminUserDetailPage({
             </div>
 
             <div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                Company Name
+              </div>
+              <input
+                name="company_name"
+                defaultValue={user.company_name || ""}
+                style={inputStyle()}
+                placeholder="Example: Beyond Financing, Inc."
+              />
+            </div>
+
+            <div>
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Role</div>
-              <select name="role" defaultValue={user.role || ""} style={inputStyle()}>
+              <select
+                name="role"
+                defaultValue={user.role || "Loan Officer"}
+                style={inputStyle()}
+              >
                 <option>Loan Officer</option>
                 <option>Loan Officer Assistant</option>
                 <option>Processor</option>
@@ -224,33 +326,47 @@ export default async function AdminUserDetailPage({
             <div
               style={{
                 display: "flex",
-                gap: 12,
+                gap: 14,
                 flexWrap: "wrap",
-                marginTop: 6,
+                alignItems: "center",
               }}
             >
-              <button type="submit" style={primaryButtonStyle()}>
+              <button type="submit" style={secondaryButtonStyle()}>
                 Save Changes
               </button>
             </div>
           </form>
 
-          <form action={deleteUser} style={{ marginTop: 18 }}>
-            <button type="submit" style={dangerButtonStyle()}>
-              Delete User
-            </button>
-          </form>
+          <div
+            style={{
+              marginTop: 20,
+              paddingTop: 20,
+              borderTop: "1px solid #D9E1EC",
+            }}
+          >
+            <form action={deleteUser}>
+              <input type="hidden" name="id" value={user.id} />
+              <button type="submit" style={dangerButtonStyle()}>
+                Delete User
+              </button>
+            </form>
+          </div>
 
           <div
             style={{
               marginTop: 20,
-              paddingTop: 18,
-              borderTop: "1px solid #E0E7F0",
+              paddingTop: 20,
+              borderTop: "1px solid #D9E1EC",
               color: "#6A7890",
+              lineHeight: 1.8,
             }}
           >
-            Created:{" "}
-            {user.created_at ? new Date(user.created_at).toLocaleString() : "-"}
+            <div>
+              Created:{" "}
+              {user.created_at
+                ? new Date(user.created_at).toLocaleString()
+                : "-"}
+            </div>
           </div>
         </section>
       </div>
