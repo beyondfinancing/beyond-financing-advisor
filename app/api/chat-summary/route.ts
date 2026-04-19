@@ -129,20 +129,49 @@ function buildFallbackSummary(
     ],
     recommendedNextStep:
       trigger === "apply"
-        ? "User clicked or was directed toward the application flow."
+        ? "Borrower selected Apply Now. Review the file promptly, confirm application completion, validate the strongest program direction, and move the borrower into document collection and licensing-compliant follow-up."
         : trigger === "schedule"
-        ? "User clicked or was directed toward consultation scheduling."
+        ? "Borrower selected Schedule. Prepare for the consultation by reviewing the conversation, likely direction, missing items, and the most important qualification questions to address during the meeting."
         : trigger === "contact"
-        ? "User clicked or was directed toward the contact flow."
+        ? "Borrower selected direct contact. Respond promptly, confirm the borrower’s main objective, and move the conversation toward the strongest next step based on the scenario."
         : trigger === "professional"
-        ? "Professional should retain this record and continue file refinement based on the strongest remaining match direction."
-        : "Loan officer should review the conversation and follow up promptly.",
-    loanOfficerActionPlan: [
-      "Review the transcript.",
-      "Review strongest and conditional program directions.",
-      "Confirm the missing qualification details and compensating factors.",
-      "Document the next move for the file.",
-    ],
+        ? "Professional should retain this record, continue refining the file, confirm missing documentation, and validate final fit directly against the applicable lender or investor guide."
+        : "Loan officer should review the conversation, confirm the scenario structure, and follow up with the borrower promptly.",
+    loanOfficerActionPlan:
+      trigger === "apply"
+        ? [
+            "Review the transcript and summary immediately.",
+            "Confirm whether the borrower completed the application successfully.",
+            "Validate the strongest program direction and identify required supporting documents.",
+            "Reach out promptly to move the file into active application and processing workflow.",
+          ]
+        : trigger === "schedule"
+        ? [
+            "Review the transcript and summary before the appointment.",
+            "Prepare the most important qualification and documentation questions.",
+            "Use the consultation to confirm structure, timeline, and program direction.",
+            "Document the post-call next step and follow-up commitment.",
+          ]
+        : trigger === "contact"
+        ? [
+            "Review the transcript and summary promptly.",
+            "Respond to the borrower directly by email or phone.",
+            "Clarify the borrower’s immediate objective and missing qualification details.",
+            "Move the borrower toward the strongest next action based on the scenario.",
+          ]
+        : trigger === "professional"
+        ? [
+            "Review the transcript and internal summary.",
+            "Confirm the strongest remaining program direction.",
+            "Validate missing items, compensating factors, and reserves requirements.",
+            "Document the next internal action and confirm fit against the applicable guide.",
+          ]
+        : [
+            "Review the transcript.",
+            "Review strongest and conditional program directions.",
+            "Confirm the missing qualification details and compensating factors.",
+            "Document the next move for the file.",
+          ],
   };
 }
 
