@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 
 type LanguageCode = "en" | "pt" | "es";
+type LoanPurpose = "Purchase" | "Refinance" | "Investment";
 
 type IntakeFormState = {
   name: string;
@@ -11,11 +13,17 @@ type IntakeFormState = {
   credit: string;
   income: string;
   debt: string;
+  currentState: string;
+  targetState: string;
+  realtorStatus: "yes" | "no" | "not-sure";
+  realtorName: string;
+  realtorPhone: string;
 };
 
 type ScenarioFormState = {
   homePrice: string;
   downPayment: string;
+  occupancy: string;
 };
 
 type ChatMessage = {
@@ -29,11 +37,115 @@ type LoanOfficerRecord = {
   nmls: string;
   email: string;
   assistantEmail: string;
-  mobile: string;
-  assistantMobile: string;
+  mobile?: string;
+  assistantMobile?: string;
   applyUrl: string;
   scheduleUrl: string;
-  summaryKey: "finley" | "sandro" | "warren";
+};
+
+type MatchBucket = {
+  lender_name: string;
+  lender_id: string;
+  program_name: string;
+  program_slug: string;
+  loan_category: string | null;
+  guideline_id: string;
+  notes: string[];
+  missing_items: string[];
+  blockers: string[];
+  strengths: string[];
+  concerns: string[];
+  explanation: string;
+  score: number;
+};
+
+type MatchResponse = {
+  success: boolean;
+  intake?: {
+    borrower_status?: string;
+    occupancy_type?: string;
+    transaction_type?: string;
+    income_type?: string;
+    property_type?: string;
+    credit_score?: number | null;
+    ltv?: number | null;
+    dti?: number | null;
+    loan_amount?: number | null;
+    units?: number | null;
+    first_time_homebuyer?: boolean | null;
+  };
+  summary?: {
+    total_guidelines_checked?: number;
+    strong_count?: number;
+    conditional_count?: number;
+    eliminated_count?: number;
+  };
+  lender_summary?: {
+    active_lender_count?: number;
+    active_lenders_checked?: string[];
+    matched_lenders_in_results?: string[];
+  };
+  next_question?: string;
+  top_recommendation?: string;
+  openai_enhancement?: {
+    topRecommendation?: string;
+    whyItMatches?: string[];
+    cautionItems?: string[];
+    nextBestQuestion?: string;
+  } | null;
+  strong_matches?: MatchBucket[];
+  conditional_matches?: MatchBucket[];
+  eliminated_paths?: MatchBucket[];
+  error?: string;
+};
+
+type RoutingPayload = {
+  language?: LanguageCode;
+  loanOfficerQuery?: string;
+  selectedOfficer?: LoanOfficerRecord;
+  borrower?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    credit?: string;
+    income?: string;
+    debt?: string;
+    currentState?: string;
+    targetState?: string;
+    realtorName?: string;
+    realtorPhone?: string;
+  };
+  scenario?: {
+    transactionType?: string;
+    homePrice?: string;
+    downPayment?: string;
+    estimatedLoanAmount?: string;
+    estimatedLtv?: string;
+    occupancy?: string;
+    timeline?: string;
+    fundsSource?: string;
+    communicationPreference?: string;
+  };
+  internalMatch?: {
+    topRecommendation?: string;
+    nextQuestion?: string;
+    strongCount?: number;
+    conditionalCount?: number;
+    eliminatedCount?: number;
+    totalGuidelinesChecked?: number;
+    activeLendersChecked?: string[];
+    topStrongMatches?: Array<{
+      lender_name: string;
+      program_name: string;
+      loan_category: string | null;
+      score: number;
+      explanation: string;
+      notes: string[];
+      strengths: string[];
+      concerns: string[];
+    }>;
+  };
+  conversation?: ChatMessage[];
 };
 
 const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
@@ -49,7 +161,6 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantMobile: "8576150836",
     applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://calendly.com/sandropansini",
-    summaryKey: "sandro",
   },
   {
     id: "warren-wendt",
@@ -61,7 +172,6 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantMobile: "8576150836",
     applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://www.beyondfinancing.com",
-    summaryKey: "warren",
   },
   {
     id: "finley-beyond",
@@ -73,311 +183,1670 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantMobile: "8576150836",
     applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://www.beyondfinancing.com",
-    summaryKey: "finley",
   },
 ];
 
-const DEFAULT_LOAN_OFFICER =
+const DEFAULT_OFFICER =
   LOAN_OFFICERS.find((officer) => officer.id === "finley-beyond") ||
   LOAN_OFFICERS[0];
 
 const COPY = {
   en: {
-    heroTitle: "Finley Beyond Powered by Beyond Intelligence™",
-    heroText:
-      "AI-Powered Mortgage Decision System supervised by a Certified Mortgage Advisor.",
-    languageLabel: "Language",
+    title: "Borrower / Client Workspace",
+    subtitle:
+      "Start your guided mortgage conversation with Finley Beyond.",
     disclaimerTitle: "Required Disclaimer",
-    disclaimerText:
-      "This system provides preliminary guidance only. It does not constitute a loan approval, underwriting decision, commitment to lend, legal advice, tax advice, or final program eligibility determination. All scenarios must be independently reviewed and confirmed by a licensed loan officer using current investor guidelines, overlays, and program requirements.",
-    acceptText:
-      "I acknowledge and accept this disclaimer before using the system.",
-    intakeTitle: "Borrower Intake",
-    intakeLocked:
-      "The intake section is locked until the disclaimer is accepted.",
+    disclaimer:
+      "This system provides preliminary guidance only. It is not a loan approval, underwriting decision, commitment to lend, legal advice, tax advice, or final program determination. All scenarios remain subject to licensed loan officer review, documentation, verification, underwriting, title, appraisal, and current investor or agency guidelines.",
+    accept: "I acknowledge and accept this disclaimer.",
+    backHome: "Back to Beyond Intelligence",
+    language: "Language",
     borrowerName: "Borrower Name",
     email: "Email",
-    phone: "Phone",
+    phone: "Phone Number",
     credit: "Estimated Credit Score",
     income: "Gross Monthly Income",
     debt: "Monthly Debt",
-    loanOfficer: "Loan Officer Name or NMLS #",
+    currentState: "State You Live In Now",
+    targetState: "State You Are Looking to Move Into",
+    realtorQuestion: "Are you working with a Realtor?",
+    realtorName: "Realtor Name",
+    realtorPhone: "Realtor Phone Number",
     loanOfficerPlaceholder: "Type loan officer name or NMLS #",
-    confirmLoanOfficer: "Confirm Loan Officer",
-    unknownLoanOfficer: "I Do Not Know My Loan Officer",
-    assignedRouting: "Assigned Routing",
-    internalRoutingPrefix: "Internal summary will route to",
-    runPreliminaryReview: "Run Preliminary Review",
+    confirmOfficer: "Confirm Loan Officer",
+    unknownOfficer: "I Do Not Know My Loan Officer",
+    assigned: "Assigned Routing",
+    review: "Run Preliminary Review",
     reviewing: "Reviewing...",
-    targetScenarioTitle: "Property Target Scenario",
-    targetScenarioText:
-      "Now enter the target home price and the estimated down payment so Finley Beyond can continue the scenario with the numbers you are actually considering.",
+    scenarioTitle: "Property Scenario",
     homePrice: "Estimated Home Price",
     downPayment: "Estimated Down Payment",
-    estimatedLoanAmount: "Estimated Loan Amount",
+    occupancy: "Occupancy",
     continueScenario: "Continue with This Scenario",
     updatingScenario: "Updating Scenario...",
-    financialSnapshot: "Financial Snapshot",
-    estimatedLtv: "Estimated LTV",
-    conversationTitle: "Conversation with Finley",
-    placeholderConversation:
-      "Complete the intake and run the preliminary review to begin the Finley Beyond conversation.",
-    continueChatting: "Continue chatting with Finley Beyond",
-    chatPlaceholder:
-      "Ask a question or answer Finley’s next qualification question.",
-    sendMessage: "Send Message",
+    conversation: "Conversation with Finley Beyond",
+    send: "Send Message",
     sending: "Sending...",
     applyNow: "Apply Now",
-    scheduleLoanOfficer: "Schedule with Loan Officer",
-    emailLoanOfficer: "Email Loan Officer",
-    actionTitle: "Next Actions",
-    loanOfficerNotFound:
-      "Loan Officer not found. Please select one of the suggested names or use the default option.",
-    summaryFailed:
-      "Conversation continued, but internal summary email could not be sent.",
+    schedule: "Schedule with Loan Officer",
+    emailOfficer: "Email Loan Officer",
+    callOfficer: "Call Loan Officer",
+    nextActions: "Next Actions",
+    internalReviewTitle: "Internal Scenario Direction",
+    internalReviewText:
+      "This section reflects Finley Beyond’s internal matching direction and is used to guide the conversation and routing.",
+    likelyDirection: "Likely Direction",
+    lenderCoverage: "Lender Coverage",
+    nextQuestion: "Next Best Question",
+    chatPlaceholder:
+      "Ask a question or answer Finley Beyond’s next mortgage question.",
+    reviewError: "There was a problem running the preliminary review.",
+    matchError: "There was a problem evaluating the scenario.",
+    matchPending:
+      "Run the preliminary review to generate internal match direction.",
+    officerConfirmed: "Loan officer confirmed.",
+    officerFallback: "No match found. Default routing assigned to Finley Beyond.",
+    officerTypeHint:
+      "Start typing to see matching loan officers.",
+    estimatedLoanAmount: "Estimated Loan Amount",
+    estimatedLtv: "Estimated LTV",
+    purpose: "Purpose",
+    notProvided: "Not provided",
+    yes: "Yes",
+    no: "No",
+    notSure: "Not Sure",
   },
   pt: {
-    heroTitle: "Finley Beyond com tecnologia Beyond Intelligence™",
-    heroText:
-      "Sistema de orientação hipotecária com IA supervisionado por um Certified Mortgage Advisor.",
-    languageLabel: "Idioma",
+    title: "Área do Cliente / Borrower",
+    subtitle:
+      "Inicie sua conversa guiada sobre mortgage com Finley Beyond.",
     disclaimerTitle: "Aviso Obrigatório",
-    disclaimerText:
-      "Este sistema fornece apenas orientação preliminar. Não constitui aprovação de empréstimo, decisão de underwriting, compromisso de conceder crédito, aconselhamento jurídico, aconselhamento fiscal ou determinação final de elegibilidade de programa. Todos os cenários devem ser analisados e confirmados de forma independente por um loan officer licenciado, com base nas diretrizes atuais dos investidores, overlays e requisitos do programa.",
-    acceptText:
-      "Reconheço e aceito este aviso antes de usar o sistema.",
-    intakeTitle: "Informações do Cliente",
-    intakeLocked:
-      "A seção de informações permanece bloqueada até que o aviso seja aceito.",
+    disclaimer:
+      "Este sistema fornece apenas orientação preliminar. Não representa aprovação de empréstimo, decisão de underwriting, compromisso de concessão de crédito, aconselhamento jurídico, aconselhamento fiscal ou determinação final de programa. Todos os cenários permanecem sujeitos à revisão de um loan officer licenciado, documentação, verificação, underwriting, title, appraisal e diretrizes atuais de investidores ou agências.",
+    accept: "Reconheço e aceito este aviso.",
+    backHome: "Voltar para Beyond Intelligence",
+    language: "Idioma",
     borrowerName: "Nome do Cliente",
     email: "Email",
     phone: "Telefone",
     credit: "Pontuação de Crédito Estimada",
     income: "Renda Bruta Mensal",
     debt: "Dívida Mensal",
-    loanOfficer: "Nome do Loan Officer ou NMLS #",
+    currentState: "Estado Onde Mora Atualmente",
+    targetState: "Estado Para Onde Deseja se Mudar",
+    realtorQuestion: "Você está trabalhando com um Realtor?",
+    realtorName: "Nome do Realtor",
+    realtorPhone: "Telefone do Realtor",
     loanOfficerPlaceholder: "Digite o nome do loan officer ou o NMLS #",
-    confirmLoanOfficer: "Confirmar Loan Officer",
-    unknownLoanOfficer: "Não Sei Meu Loan Officer",
-    assignedRouting: "Roteamento Definido",
-    internalRoutingPrefix: "O resumo interno será enviado para",
-    runPreliminaryReview: "Executar Revisão Preliminar",
+    confirmOfficer: "Confirmar Loan Officer",
+    unknownOfficer: "Não Sei Meu Loan Officer",
+    assigned: "Roteamento Definido",
+    review: "Executar Revisão Preliminar",
     reviewing: "Analisando...",
-    targetScenarioTitle: "Cenário do Imóvel Desejado",
-    targetScenarioText:
-      "Agora informe o valor estimado do imóvel e a entrada estimada para que Finley Beyond continue o cenário com os números que você realmente está considerando.",
+    scenarioTitle: "Cenário do Imóvel",
     homePrice: "Valor Estimado do Imóvel",
     downPayment: "Entrada Estimada",
-    estimatedLoanAmount: "Valor Estimado do Empréstimo",
+    occupancy: "Ocupação",
     continueScenario: "Continuar com Este Cenário",
     updatingScenario: "Atualizando Cenário...",
-    financialSnapshot: "Resumo Financeiro",
-    estimatedLtv: "LTV Estimado",
-    conversationTitle: "Conversa com Finley",
-    placeholderConversation:
-      "Complete as informações e execute a revisão preliminar para iniciar a conversa com Finley Beyond.",
-    continueChatting: "Continue conversando com Finley Beyond",
-    chatPlaceholder:
-      "Faça uma pergunta ou responda à próxima pergunta de qualificação do Finley.",
-    sendMessage: "Enviar Mensagem",
+    conversation: "Conversa com Finley Beyond",
+    send: "Enviar Mensagem",
     sending: "Enviando...",
     applyNow: "Aplicar Agora",
-    scheduleLoanOfficer: "Agendar com o Loan Officer",
-    emailLoanOfficer: "Enviar Email ao Loan Officer",
-    actionTitle: "Próximos Passos",
-    loanOfficerNotFound:
-      "Loan Officer não encontrado. Selecione um dos nomes sugeridos ou use a opção padrão.",
-    summaryFailed:
-      "A conversa continuou, mas o resumo interno não pôde ser enviado.",
+    schedule: "Agendar com o Loan Officer",
+    emailOfficer: "Enviar Email ao Loan Officer",
+    callOfficer: "Ligar para o Loan Officer",
+    nextActions: "Próximos Passos",
+    internalReviewTitle: "Direção Interna do Cenário",
+    internalReviewText:
+      "Esta seção reflete a direção interna de matching do Finley Beyond e é usada para orientar a conversa e o roteamento.",
+    likelyDirection: "Direção Mais Provável",
+    lenderCoverage: "Cobertura de Lenders",
+    nextQuestion: "Próxima Melhor Pergunta",
+    chatPlaceholder:
+      "Faça uma pergunta ou responda à próxima pergunta do Finley Beyond.",
+    reviewError: "Houve um problema ao executar a revisão preliminar.",
+    matchError: "Houve um problema ao avaliar o cenário.",
+    matchPending:
+      "Execute a revisão preliminar para gerar a direção interna de matching.",
+    officerConfirmed: "Loan officer confirmado.",
+    officerFallback: "Nenhuma correspondência encontrada. Roteamento padrão atribuído ao Finley Beyond.",
+    officerTypeHint:
+      "Comece a digitar para ver loan officers correspondentes.",
+    estimatedLoanAmount: "Valor Estimado do Empréstimo",
+    estimatedLtv: "LTV Estimado",
+    purpose: "Objetivo",
+    notProvided: "Não informado",
+    yes: "Sim",
+    no: "Não",
+    notSure: "Não Tenho Certeza",
   },
   es: {
-    heroTitle: "Finley Beyond impulsado por Beyond Intelligence™",
-    heroText:
-      "Sistema de orientación hipotecaria con IA supervisado por un Certified Mortgage Advisor.",
-    languageLabel: "Idioma",
+    title: "Espacio del Cliente / Borrower",
+    subtitle:
+      "Comience su conversación guiada sobre hipoteca con Finley Beyond.",
     disclaimerTitle: "Aviso Requerido",
-    disclaimerText:
-      "Este sistema proporciona únicamente orientación preliminar. No constituye aprobación de préstamo, decisión de underwriting, compromiso de prestar, asesoría legal, asesoría fiscal ni determinación final de elegibilidad de programa. Todos los escenarios deben ser revisados y confirmados de manera independiente por un loan officer con licencia utilizando las guías actuales de inversionistas, overlays y requisitos del programa.",
-    acceptText:
-      "Reconozco y acepto este aviso antes de usar el sistema.",
-    intakeTitle: "Información del Cliente",
-    intakeLocked:
-      "La sección de información permanece bloqueada hasta que se acepte el aviso.",
+    disclaimer:
+      "Este sistema proporciona únicamente orientación preliminar. No representa aprobación de préstamo, decisión de underwriting, compromiso de prestar, asesoría legal, asesoría fiscal ni determinación final de programa. Todos los escenarios permanecen sujetos a revisión por un loan officer con licencia, documentación, verificación, underwriting, title, appraisal y guías actuales de inversionistas o agencias.",
+    accept: "Reconozco y acepto este aviso.",
+    backHome: "Volver a Beyond Intelligence",
+    language: "Idioma",
     borrowerName: "Nombre del Cliente",
     email: "Correo Electrónico",
     phone: "Teléfono",
     credit: "Puntaje de Crédito Estimado",
     income: "Ingreso Bruto Mensual",
     debt: "Deuda Mensual",
-    loanOfficer: "Nombre del Loan Officer o NMLS #",
+    currentState: "Estado Donde Vive Actualmente",
+    targetState: "Estado al Que Desea Mudarse",
+    realtorQuestion: "¿Está trabajando con un Realtor?",
+    realtorName: "Nombre del Realtor",
+    realtorPhone: "Teléfono del Realtor",
     loanOfficerPlaceholder: "Escriba el nombre del loan officer o el NMLS #",
-    confirmLoanOfficer: "Confirmar Loan Officer",
-    unknownLoanOfficer: "No Conozco Mi Loan Officer",
-    assignedRouting: "Asignación Definida",
-    internalRoutingPrefix: "El resumen interno se enviará a",
-    runPreliminaryReview: "Ejecutar Revisión Preliminar",
+    confirmOfficer: "Confirmar Loan Officer",
+    unknownOfficer: "No Conozco Mi Loan Officer",
+    assigned: "Asignación Definida",
+    review: "Ejecutar Revisión Preliminar",
     reviewing: "Revisando...",
-    targetScenarioTitle: "Escenario del Inmueble Deseado",
-    targetScenarioText:
-      "Ahora ingrese el precio estimado de la vivienda y el pago inicial estimado para que Finley Beyond continúe el escenario con las cifras que realmente está considerando.",
+    scenarioTitle: "Escenario de la Propiedad",
     homePrice: "Precio Estimado de la Vivienda",
     downPayment: "Pago Inicial Estimado",
-    estimatedLoanAmount: "Monto Estimado del Préstamo",
+    occupancy: "Ocupación",
     continueScenario: "Continuar con Este Escenario",
     updatingScenario: "Actualizando Escenario...",
-    financialSnapshot: "Resumen Financiero",
-    estimatedLtv: "LTV Estimado",
-    conversationTitle: "Conversación con Finley",
-    placeholderConversation:
-      "Complete la información y ejecute la revisión preliminar para comenzar la conversación con Finley Beyond.",
-    continueChatting: "Continúe conversando con Finley Beyond",
-    chatPlaceholder:
-      "Haga una pregunta o responda la siguiente pregunta de calificación de Finley.",
-    sendMessage: "Enviar Mensaje",
+    conversation: "Conversación con Finley Beyond",
+    send: "Enviar Mensaje",
     sending: "Enviando...",
     applyNow: "Aplicar Ahora",
-    scheduleLoanOfficer: "Agendar con el Loan Officer",
-    emailLoanOfficer: "Enviar Correo al Loan Officer",
-    actionTitle: "Próximos Pasos",
-    loanOfficerNotFound:
-      "Loan Officer no encontrado. Seleccione uno de los nombres sugeridos o use la opción predeterminada.",
-    summaryFailed:
-      "La conversación continuó, pero no se pudo enviar el resumen interno.",
+    schedule: "Agendar con el Loan Officer",
+    emailOfficer: "Enviar Correo al Loan Officer",
+    callOfficer: "Llamar al Loan Officer",
+    nextActions: "Próximos Pasos",
+    internalReviewTitle: "Dirección Interna del Escenario",
+    internalReviewText:
+      "Esta sección refleja la dirección interna de matching de Finley Beyond y se utiliza para orientar la conversación y el enrutamiento.",
+    likelyDirection: "Dirección Más Probable",
+    lenderCoverage: "Cobertura de Lenders",
+    nextQuestion: "Siguiente Mejor Pregunta",
+    chatPlaceholder:
+      "Haga una pregunta o responda la siguiente pregunta de Finley Beyond.",
+    reviewError: "Hubo un problema al ejecutar la revisión preliminar.",
+    matchError: "Hubo un problema al evaluar el escenario.",
+    matchPending:
+      "Ejecute la revisión preliminar para generar la dirección interna de matching.",
+    officerConfirmed: "Loan officer confirmado.",
+    officerFallback: "No se encontró coincidencia. Se asignó el enrutamiento predeterminado a Finley Beyond.",
+    officerTypeHint:
+      "Empiece a escribir para ver los loan officers coincidentes.",
+    estimatedLoanAmount: "Monto Estimado del Préstamo",
+    estimatedLtv: "LTV Estimado",
+    purpose: "Propósito",
+    notProvided: "No proporcionado",
+    yes: "Sí",
+    no: "No",
+    notSure: "No Estoy Seguro",
   },
 } as const;
 
-function formatCurrency(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "$0";
+function cardStyle(opacity = 1): React.CSSProperties {
+  return {
+    background: "#fff",
+    border: "1px solid #D9E1EC",
+    borderRadius: 22,
+    padding: 20,
+    boxShadow: "0 10px 28px rgba(38,51,102,0.06)",
+    opacity,
+  };
+}
+
+function inputStyle(): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "14px 16px",
+    borderRadius: 12,
+    border: "1px solid #C8D3E3",
+    fontSize: 16,
+    outline: "none",
+    minWidth: 0,
+    boxSizing: "border-box",
+    background: "#fff",
+  };
+}
+
+function buttonPrimaryStyle(disabled = false): React.CSSProperties {
+  return {
+    background: "#263366",
+    color: "#fff",
+    border: "none",
+    borderRadius: 12,
+    padding: "14px 18px",
+    fontWeight: 700,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.55 : 1,
+  };
+}
+
+function buttonSecondaryStyle(active = false): React.CSSProperties {
+  return {
+    background: active ? "#0096C7" : "#fff",
+    color: active ? "#fff" : "#263366",
+    border: "1px solid #263366",
+    borderRadius: 12,
+    padding: "12px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+function formatMoney(value: string) {
+  const n = Number(value || 0);
+  if (!n) return "$0";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(n);
 }
 
-function extractAiText(data: unknown): string {
-  if (typeof data === "string") return data;
+function normalizeOccupancyForMatch(value: string, purpose: LoanPurpose) {
+  const lower = value.trim().toLowerCase();
 
-  if (typeof data === "object" && data !== null) {
-    const obj = data as {
-      choices?: Array<{ message?: { content?: string } }>;
-      reply?: string;
-      message?: string;
-      response?: string;
-      content?: string;
-      text?: string;
-      error?: string;
-    };
+  if (lower.includes("primary")) return "primary";
+  if (lower.includes("second")) return "second home";
+  if (lower.includes("investment")) return "investment";
 
-    return (
-      obj.choices?.[0]?.message?.content ||
-      obj.reply ||
-      obj.message ||
-      obj.response ||
-      obj.content ||
-      obj.text ||
-      obj.error ||
-      JSON.stringify(obj, null, 2)
-    );
-  }
-
+  if (purpose === "Investment") return "investment";
   return "";
 }
 
-function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
-  const trimmed = query.trim().toLowerCase();
-  if (!trimmed) return null;
+function normalizeTransactionForMatch(purpose: LoanPurpose) {
+  if (purpose === "Purchase" || purpose === "Investment") return "purchase";
+  if (purpose === "Refinance") return "rate term refinance";
+  return "";
+}
 
-  const exact = LOAN_OFFICERS.find(
-    (officer) =>
-      officer.name.toLowerCase() === trimmed ||
-      officer.nmls.toLowerCase() === trimmed
-  );
+function guessIncomeType(income: string, purpose: LoanPurpose) {
+  const lower = income.trim().toLowerCase();
+
+  if (purpose === "Investment") return "dscr";
+  if (lower.includes("bank")) return "bank statements";
+  if (lower.includes("1099")) return "1099";
+  if (lower.includes("p&l") || lower.includes("pnl") || lower.includes("profit")) {
+    return "pnl";
+  }
+  return "full doc";
+}
+
+function guessBorrowerStatus() {
+  return "citizen";
+}
+
+function extractReply(data: unknown, fallback: string) {
+  if (typeof data === "string" && data.trim()) return data;
+
+  if (typeof data === "object" && data !== null) {
+    const obj = data as Record<string, unknown>;
+
+    if (typeof obj.reply === "string" && obj.reply.trim()) return obj.reply;
+    if (typeof obj.message === "string" && obj.message.trim()) return obj.message;
+    if (typeof obj.response === "string" && obj.response.trim()) return obj.response;
+    if (typeof obj.content === "string" && obj.content.trim()) return obj.content;
+
+    const choices = obj.choices;
+    if (Array.isArray(choices) && choices.length > 0) {
+      const first = choices[0] as Record<string, unknown>;
+      const message = first.message as Record<string, unknown> | undefined;
+      if (message && typeof message.content === "string" && message.content.trim()) {
+        return message.content;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function sanitizeNumericInput(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
+function normalizeOfficerText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function findOfficer(query: string): LoanOfficerRecord | null {
+  const cleaned = normalizeOfficerText(query.trim());
+  if (!cleaned) return null;
+
+  const exact =
+    LOAN_OFFICERS.find(
+      (officer) =>
+        normalizeOfficerText(officer.name) === cleaned ||
+        normalizeOfficerText(officer.nmls) === cleaned
+    ) || null;
 
   if (exact) return exact;
 
-  const partial = LOAN_OFFICERS.find(
-    (officer) =>
-      officer.name.toLowerCase().includes(trimmed) ||
-      officer.nmls.toLowerCase().includes(trimmed)
-  );
+  const partial =
+    LOAN_OFFICERS.find(
+      (officer) =>
+        normalizeOfficerText(officer.name).includes(cleaned) ||
+        cleaned.includes(normalizeOfficerText(officer.name)) ||
+        normalizeOfficerText(officer.nmls).includes(cleaned) ||
+        cleaned.includes(normalizeOfficerText(officer.nmls))
+    ) || null;
 
-  return partial || null;
+  return partial;
 }
 
-export default function Page() {
+export default function BorrowerPage() {
   const [language, setLanguage] = useState<LanguageCode>("en");
-  const [accepted, setAccepted] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [scenarioUnlocked, setScenarioUnlocked] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [chatError, setChatError] = useState("");
-  const [chatInput, setChatInput] = useState("");
-  const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const t = COPY[language];
 
+  const [accepted, setAccepted] = useState(false);
+  const [loanPurpose, setLoanPurpose] = useState<LoanPurpose>("Purchase");
   const [loanOfficerQuery, setLoanOfficerQuery] = useState("");
   const [selectedOfficer, setSelectedOfficer] =
-    useState<LoanOfficerRecord | null>(null);
+    useState<LoanOfficerRecord>(DEFAULT_OFFICER);
+  const [reviewing, setReviewing] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [matchLoading, setMatchLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [matchError, setMatchError] = useState("");
+  const [officerStatus, setOfficerStatus] = useState("");
 
-  const [intakeForm, setIntakeForm] = useState<IntakeFormState>({
+  const [intake, setIntake] = useState<IntakeFormState>({
     name: "",
     email: "",
     phone: "",
     credit: "",
     income: "",
     debt: "",
+    currentState: "",
+    targetState: "",
+    realtorStatus: "not-sure",
+    realtorName: "",
+    realtorPhone: "",
   });
 
-  const [scenarioForm, setScenarioForm] = useState<ScenarioFormState>({
+  const [scenario, setScenario] = useState<ScenarioFormState>({
     homePrice: "",
     downPayment: "",
+    occupancy: "",
   });
 
-  const t = COPY[language];
+  const [chatInput, setChatInput] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [routing, setRouting] = useState<RoutingPayload | undefined>(undefined);
+  const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
 
   const officerSuggestions = useMemo(() => {
-    const query = loanOfficerQuery.trim().toLowerCase();
-    if (!query || selectedOfficer) return [];
+    const trimmed = loanOfficerQuery.trim();
+    if (!trimmed) return [];
 
-    return LOAN_OFFICERS.filter(
-      (officer) =>
-        officer.name.toLowerCase().includes(query) ||
-        officer.nmls.toLowerCase().includes(query)
-    ).slice(0, 5);
-  }, [loanOfficerQuery, selectedOfficer]);
+    const cleaned = normalizeOfficerText(trimmed);
+    if (!cleaned) return [];
 
-  const setIntakeField = (key: keyof IntakeFormState, value: string) => {
-    setIntakeForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const setScenarioField = (key: keyof ScenarioFormState, value: string) => {
-    setScenarioForm((prev) => ({ ...prev, [key]: value }));
-  };
+    return LOAN_OFFICERS.filter((officer) => {
+      const officerName = normalizeOfficerText(officer.name);
+      const officerNmls = normalizeOfficerText(officer.nmls);
+      return officerName.includes(cleaned) || officerNmls.includes(cleaned);
+    }).slice(0, 5);
+  }, [loanOfficerQuery]);
 
   const estimatedLoanAmount = useMemo(() => {
-    const homePrice = Number(scenarioForm.homePrice) || 0;
-    const downPayment = Number(scenarioForm.downPayment) || 0;
-    return Math.max(homePrice - downPayment, 0);
-  }, [scenarioForm]);
+    const homePrice = Number(scenario.homePrice || 0);
+    const downPayment = Number(scenario.downPayment || 0);
+    const value = Math.max(homePrice - downPayment, 0);
+    return value > 0 ? value.toString() : "";
+  }, [scenario.homePrice, scenario.downPayment]);
 
   const estimatedLtv = useMemo(() => {
-    const homePrice = Number(scenarioForm.homePrice) || 0;
-    if (homePrice <= 0) return 0;
-    return estimatedLoanAmount / homePrice;
-  }, [scenarioForm, estimatedLoanAmount]);
+    const homePrice = Number(scenario.homePrice || 0);
+    const downPayment = Number(scenario.downPayment || 0);
+    if (!homePrice) return "";
+    const ltv = ((homePrice - downPayment) / homePrice) * 100;
+    return `${Math.max(0, Math.round(ltv))}%`;
+  }, [scenario.homePrice, scenario.downPayment]);
 
-  const activeOfficer = selectedOfficer || DEFAULT_LOAN_OFFICER;
+  const matchRequestBody = useMemo(() => {
+    return {
+      borrower_status: guessBorrowerStatus(),
+      occupancy: normalizeOccupancyForMatch(scenario.occupancy, loanPurpose),
+      transaction: normalizeTransactionForMatch(loanPurpose),
+      income: guessIncomeType(intake.income, loanPurpose),
+      property: "single family",
+      credit: Number(intake.credit || 0) || null,
+      ltv: estimatedLtv ? Number(estimatedLtv.replace("%", "")) : null,
+      dti: Number(intake.debt || 0) || null,
+      loan_amount: estimatedLoanAmount ? Number(estimatedLoanAmount) : null,
+      first_time_homebuyer: loanPurpose === "Purchase" ? true : false,
+    };
+  }, [
+    estimatedLoanAmount,
+    estimatedLtv,
+    intake.credit,
+    intake.debt,
+    intake.income,
+    loanPurpose,
+    scenario.occupancy,
+  ]);
 
-  const getPreferredLanguageLabel = () => {
-    if (language === "pt") return "Português";
-    if (language === "es") return "Español";
-    return "English";
+  const handleConfirmOfficer = () => {
+    const found = findOfficer(loanOfficerQuery);
+
+    if (found) {
+      setSelectedOfficer(found);
+      setLoanOfficerQuery(`${found.name} — NMLS ${found.nmls}`);
+      setOfficerStatus(t.officerConfirmed);
+      return;
+    }
+
+    setSelectedOfficer(DEFAULT_OFFICER);
+    setLoanOfficerQuery(`${DEFAULT_OFFICER.name} — NMLS ${DEFAULT_OFFICER.nmls}`);
+    setOfficerStatus(t.officerFallback);
   };
 
-  const buildBorrowerContext = () => {
-    return `
-Borrower profile for context:
-- Preferred language: ${language}
-- Name: ${intakeForm.name
+  const handleChooseSuggestion = (officer: LoanOfficerRecord) => {
+    setSelectedOfficer(officer);
+    setLoanOfficerQuery(`${officer.name} — NMLS ${officer.nmls}`);
+    setOfficerStatus(t.officerConfirmed);
+  };
+
+  const handleUseUnknownOfficer = () => {
+    setSelectedOfficer(DEFAULT_OFFICER);
+    setLoanOfficerQuery(`${DEFAULT_OFFICER.name} — NMLS ${DEFAULT_OFFICER.nmls}`);
+    setOfficerStatus("");
+  };
+
+  const buildRouting = (
+    conversation: ChatMessage[],
+    match: MatchResponse | null
+  ): RoutingPayload => ({
+    language,
+    loanOfficerQuery,
+    selectedOfficer,
+    borrower: {
+      name: intake.name,
+      email: intake.email,
+      phone: intake.phone,
+      credit: intake.credit,
+      income: intake.income,
+      debt: intake.debt,
+      currentState: intake.currentState,
+      targetState: intake.targetState,
+      realtorName: intake.realtorStatus === "yes" ? intake.realtorName : "",
+      realtorPhone: intake.realtorStatus === "yes" ? intake.realtorPhone : "",
+    },
+    scenario: {
+      transactionType: loanPurpose,
+      homePrice: scenario.homePrice,
+      downPayment: scenario.downPayment,
+      estimatedLoanAmount,
+      estimatedLtv,
+      occupancy: scenario.occupancy,
+    },
+    internalMatch: match
+      ? {
+          topRecommendation:
+            match.openai_enhancement?.topRecommendation ||
+            match.top_recommendation ||
+            "",
+          nextQuestion:
+            match.openai_enhancement?.nextBestQuestion ||
+            match.next_question ||
+            "",
+          strongCount: match.summary?.strong_count || 0,
+          conditionalCount: match.summary?.conditional_count || 0,
+          eliminatedCount: match.summary?.eliminated_count || 0,
+          totalGuidelinesChecked: match.summary?.total_guidelines_checked || 0,
+          activeLendersChecked: match.lender_summary?.active_lenders_checked || [],
+          topStrongMatches: (match.strong_matches || []).slice(0, 3).map((item) => ({
+            lender_name: item.lender_name,
+            program_name: item.program_name,
+            loan_category: item.loan_category,
+            score: item.score,
+            explanation: item.explanation,
+            notes: item.notes,
+            strengths: item.strengths,
+            concerns: item.concerns,
+          })),
+        }
+      : undefined,
+    conversation,
+  });
+
+  const runMatch = async (): Promise<MatchResponse | null> => {
+    setMatchLoading(true);
+    setMatchError("");
+
+    try {
+      const response = await fetch("/api/match", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(matchRequestBody),
+      });
+
+      const data = (await response.json()) as MatchResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || t.matchError);
+      }
+
+      setMatchResult(data);
+      return data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t.matchError;
+      setMatchError(message);
+      return null;
+    } finally {
+      setMatchLoading(false);
+    }
+  };
+
+  const runPreliminaryReview = async () => {
+    setReviewing(true);
+    setPageError("");
+    setOfficerStatus("");
+
+    const resolvedOfficer = findOfficer(loanOfficerQuery) || selectedOfficer || DEFAULT_OFFICER;
+    setSelectedOfficer(resolvedOfficer);
+
+    if (!loanOfficerQuery.trim()) {
+      setLoanOfficerQuery(`${resolvedOfficer.name} — NMLS ${resolvedOfficer.nmls}`);
+    }
+
+    const starterMessage: ChatMessage = {
+      role: "user",
+      content:
+        language === "pt"
+          ? "Estou pronto para começar a revisão preliminar."
+          : language === "es"
+          ? "Estoy listo para comenzar la revisión preliminar."
+          : "I am ready to begin the preliminary review.",
+    };
+
+    try {
+      const match = await runMatch();
+      const starterConversation: ChatMessage[] = [starterMessage];
+      const currentRouting = buildRouting(starterConversation, match);
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: "initial_review",
+          routing: {
+            ...currentRouting,
+            selectedOfficer: resolvedOfficer,
+            conversation: starterConversation,
+          },
+          messages: [
+            {
+              role: "user",
+              content: `
+Borrower intake has been collected.
+
+Internal match direction:
+- Top recommendation: ${
+                match?.openai_enhancement?.topRecommendation ||
+                match?.top_recommendation ||
+                "No strong direction yet"
+              }
+- Strong match count: ${match?.summary?.strong_count || 0}
+- Conditional match count: ${match?.summary?.conditional_count || 0}
+- Next best question: ${
+                match?.openai_enhancement?.nextBestQuestion ||
+                match?.next_question ||
+                "Continue qualification"
+              }
+
+Rules:
+- Keep the conversation borrower-safe.
+- Do not promise approval.
+- Do not reveal raw internal lender/program names unless compliance-safe.
+- Acknowledge the borrower information already entered.
+- When referencing human review, reference the selected loan officer, not Sandro unless Sandro is actually the selected loan officer.
+- Encourage Apply Now.
+- Use visual spacing between short paragraphs.
+- Ask the next best qualification question.
+              `.trim(),
+            },
+            starterMessage,
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      const newConversation: ChatMessage[] = [
+        starterMessage,
+        {
+          role: "assistant",
+          content: extractReply(data, "Review started."),
+        },
+      ];
+
+      setMessages(newConversation);
+      setRouting(
+        data.routing || {
+          ...buildRouting(newConversation, match),
+          selectedOfficer: resolvedOfficer,
+        }
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t.reviewError;
+      setPageError(message);
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  const continueScenario = async () => {
+    setReviewing(true);
+    setPageError("");
+
+    const userMessage: ChatMessage = {
+      role: "user",
+      content:
+        language === "pt"
+          ? `Meu objetivo é um cenário de ${loanPurpose.toLowerCase()} com imóvel estimado em ${scenario.homePrice || "0"} e entrada estimada de ${scenario.downPayment || "0"}.`
+          : language === "es"
+          ? `Mi objetivo es un escenario de ${loanPurpose.toLowerCase()} con propiedad estimada en ${scenario.homePrice || "0"} y pago inicial estimado de ${scenario.downPayment || "0"}.`
+          : `My goal is a ${loanPurpose.toLowerCase()} scenario with an estimated property price of ${scenario.homePrice || "0"} and an estimated down payment of ${scenario.downPayment || "0"}.`,
+    };
+
+    try {
+      const match = await runMatch();
+      const nextConversation: ChatMessage[] = [...messages, userMessage];
+      const currentRouting = buildRouting(nextConversation, match);
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: "scenario_review",
+          routing: currentRouting,
+          messages: [
+            {
+              role: "user",
+              content: `
+Updated scenario details are available.
+
+Internal match direction:
+- Top recommendation: ${
+                match?.openai_enhancement?.topRecommendation ||
+                match?.top_recommendation ||
+                "No strong direction yet"
+              }
+- Strong match count: ${match?.summary?.strong_count || 0}
+- Conditional match count: ${match?.summary?.conditional_count || 0}
+- Next best question: ${
+                match?.openai_enhancement?.nextBestQuestion ||
+                match?.next_question ||
+                "Continue qualification"
+              }
+
+Rules:
+- Keep the response borrower-safe.
+- Do not promise approval.
+- Do not disclose raw internal match logic unless appropriate.
+- Briefly acknowledge the scenario.
+- When referencing human review, reference the selected loan officer.
+- Encourage Apply Now.
+- Use visual spacing between short paragraphs.
+- Ask the next best qualification question.
+              `.trim(),
+            },
+            ...nextConversation,
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      const updatedConversation: ChatMessage[] = [
+        ...nextConversation,
+        {
+          role: "assistant",
+          content: extractReply(data, "Scenario updated."),
+        },
+      ];
+
+      setMessages(updatedConversation);
+      setRouting(data.routing || buildRouting(updatedConversation, match));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t.reviewError;
+      setPageError(message);
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!chatInput.trim()) return;
+
+    setSending(true);
+    setPageError("");
+
+    const userMessage: ChatMessage = {
+      role: "user",
+      content: chatInput.trim(),
+    };
+
+    try {
+      const nextConversation: ChatMessage[] = [...messages, userMessage];
+      const currentRouting = buildRouting(nextConversation, matchResult);
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: "follow_up",
+          routing: currentRouting,
+          messages: [
+            {
+              role: "user",
+              content: `
+Continue the borrower-facing conversation.
+
+Internal match direction:
+- Top recommendation: ${
+                matchResult?.openai_enhancement?.topRecommendation ||
+                matchResult?.top_recommendation ||
+                "No strong direction yet"
+              }
+- Next best question: ${
+                matchResult?.openai_enhancement?.nextBestQuestion ||
+                matchResult?.next_question ||
+                "Continue qualification"
+              }
+
+Rules:
+- Keep the response borrower-safe.
+- Do not promise approval.
+- Do not disclose raw internal lender/program detail unless appropriate.
+- Encourage Apply Now when useful.
+- When referencing human review, reference the selected loan officer.
+- Use visual spacing between short paragraphs.
+- If appropriate, ask the next best qualification question.
+              `.trim(),
+            },
+            ...nextConversation,
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      const updatedConversation: ChatMessage[] = [
+        ...nextConversation,
+        {
+          role: "assistant",
+          content: extractReply(data, "Message received."),
+        },
+      ];
+
+      setMessages(updatedConversation);
+      setRouting(data.routing || buildRouting(updatedConversation, matchResult));
+      setChatInput("");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "There was a problem sending the message.";
+      setPageError(message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const officerPhoneHref = selectedOfficer.mobile
+    ? `tel:${selectedOfficer.mobile}`
+    : undefined;
+
+  const officerMailtoHref = `mailto:${selectedOfficer.email}?subject=${encodeURIComponent(
+    intake.name
+      ? `Borrower inquiry from ${intake.name}`
+      : "Borrower inquiry from Beyond Intelligence"
+  )}&body=${encodeURIComponent(
+    language === "pt"
+      ? `Olá ${selectedOfficer.name}, gostaria de falar sobre meu cenário de financiamento.`
+      : language === "es"
+      ? `Hola ${selectedOfficer.name}, me gustaría hablar sobre mi escenario de financiamiento.`
+      : `Hello ${selectedOfficer.name}, I would like to discuss my financing scenario.`
+  )}`;
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#F1F3F8",
+        color: "#263366",
+        fontFamily: "Arial, Helvetica, sans-serif",
+      }}
+    >
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 16,
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: 22,
+          }}
+        >
+          <div style={{ flex: "1 1 420px", minWidth: 0 }}>
+            <div
+              style={{
+                display: "inline-block",
+                padding: "6px 12px",
+                borderRadius: 999,
+                background: "#E8EEF8",
+                color: "#263366",
+                fontSize: 12,
+                fontWeight: 700,
+                marginBottom: 10,
+              }}
+            >
+              BEYOND INTELLIGENCE™
+            </div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "clamp(34px, 6vw, 54px)",
+                lineHeight: 1.15,
+              }}
+            >
+              {t.title}
+            </h1>
+            <p
+              style={{
+                margin: "12px 0 0",
+                color: "#5A6A84",
+                lineHeight: 1.7,
+                fontSize: "clamp(16px, 2.5vw, 18px)",
+              }}
+            >
+              {t.subtitle}
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+              alignItems: "center",
+              justifyContent: "flex-start",
+              flex: "1 1 320px",
+              minWidth: 0,
+            }}
+          >
+            <label style={{ fontWeight: 700 }}>{t.language}</label>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as LanguageCode)}
+              style={{ ...inputStyle(), width: 160, padding: "10px 12px" }}
+            >
+              <option value="en">English</option>
+              <option value="pt">Português</option>
+              <option value="es">Español</option>
+            </select>
+
+            <Link
+              href="/"
+              style={{
+                textDecoration: "none",
+                color: "#263366",
+                fontWeight: 700,
+              }}
+            >
+              {t.backHome}
+            </Link>
+          </div>
+        </div>
+
+        {(pageError || matchError) && (
+          <div
+            style={{
+              ...cardStyle(),
+              border: "1px solid #F5C2C7",
+              background: "#FFF5F5",
+              color: "#842029",
+              marginBottom: 20,
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {pageError || matchError}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 20,
+          }}
+        >
+          <div style={{ display: "grid", gap: 20 }}>
+            <section style={cardStyle()}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.disclaimerTitle}</h2>
+              <p style={{ lineHeight: 1.8, color: "#4B5C78", marginBottom: 0 }}>
+                {t.disclaimer}
+              </p>
+
+              <label
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "flex-start",
+                  marginTop: 18,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={accepted}
+                  onChange={(e) => setAccepted(e.target.checked)}
+                />
+                <span>{t.accept}</span>
+              </label>
+            </section>
+
+            <section style={cardStyle(accepted ? 1 : 0.55)}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                {(["Purchase", "Refinance", "Investment"] as LoanPurpose[]).map(
+                  (purpose) => (
+                    <button
+                      key={purpose}
+                      type="button"
+                      disabled={!accepted}
+                      onClick={() => setLoanPurpose(purpose)}
+                      style={buttonSecondaryStyle(loanPurpose === purpose)}
+                    >
+                      {purpose}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 14,
+                  marginTop: 18,
+                }}
+              >
+                <input
+                  disabled={!accepted}
+                  placeholder={t.borrowerName}
+                  value={intake.name}
+                  onChange={(e) =>
+                    setIntake((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.email}
+                  value={intake.email}
+                  onChange={(e) =>
+                    setIntake((prev) => ({ ...prev, email: e.target.value }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.phone}
+                  value={intake.phone}
+                  onChange={(e) =>
+                    setIntake((prev) => ({ ...prev, phone: e.target.value }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.credit}
+                  value={intake.credit}
+                  onChange={(e) =>
+                    setIntake((prev) => ({
+                      ...prev,
+                      credit: sanitizeNumericInput(e.target.value),
+                    }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.income}
+                  value={intake.income}
+                  onChange={(e) =>
+                    setIntake((prev) => ({ ...prev, income: e.target.value }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.debt}
+                  value={intake.debt}
+                  onChange={(e) =>
+                    setIntake((prev) => ({ ...prev, debt: e.target.value }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.currentState}
+                  value={intake.currentState}
+                  onChange={(e) =>
+                    setIntake((prev) => ({
+                      ...prev,
+                      currentState: e.target.value,
+                    }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.targetState}
+                  value={intake.targetState}
+                  onChange={(e) =>
+                    setIntake((prev) => ({
+                      ...prev,
+                      targetState: e.target.value,
+                    }))
+                  }
+                  style={inputStyle()}
+                />
+              </div>
+
+              <div style={{ marginTop: 18 }}>
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>
+                  {t.realtorQuestion}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  <button
+                    type="button"
+                    disabled={!accepted}
+                    onClick={() =>
+                      setIntake((prev) => ({ ...prev, realtorStatus: "yes" }))
+                    }
+                    style={buttonSecondaryStyle(intake.realtorStatus === "yes")}
+                  >
+                    {t.yes}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!accepted}
+                    onClick={() =>
+                      setIntake((prev) => ({ ...prev, realtorStatus: "no" }))
+                    }
+                    style={buttonSecondaryStyle(intake.realtorStatus === "no")}
+                  >
+                    {t.no}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!accepted}
+                    onClick={() =>
+                      setIntake((prev) => ({ ...prev, realtorStatus: "not-sure" }))
+                    }
+                    style={buttonSecondaryStyle(
+                      intake.realtorStatus === "not-sure"
+                    )}
+                  >
+                    {t.notSure}
+                  </button>
+                </div>
+
+                {intake.realtorStatus === "yes" && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 14,
+                      marginTop: 14,
+                    }}
+                  >
+                    <input
+                      disabled={!accepted}
+                      placeholder={t.realtorName}
+                      value={intake.realtorName}
+                      onChange={(e) =>
+                        setIntake((prev) => ({
+                          ...prev,
+                          realtorName: e.target.value,
+                        }))
+                      }
+                      style={inputStyle()}
+                    />
+                    <input
+                      disabled={!accepted}
+                      placeholder={t.realtorPhone}
+                      value={intake.realtorPhone}
+                      onChange={(e) =>
+                        setIntake((prev) => ({
+                          ...prev,
+                          realtorPhone: e.target.value,
+                        }))
+                      }
+                      style={inputStyle()}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 18, position: "relative" }}>
+                <input
+                  disabled={!accepted}
+                  placeholder={t.loanOfficerPlaceholder}
+                  value={loanOfficerQuery}
+                  onChange={(e) => {
+                    setLoanOfficerQuery(e.target.value);
+                    setOfficerStatus("");
+                  }}
+                  style={inputStyle()}
+                />
+
+                {accepted && loanOfficerQuery.trim() && officerSuggestions.length > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      left: 0,
+                      right: 0,
+                      background: "#fff",
+                      border: "1px solid #D9E1EC",
+                      borderRadius: 14,
+                      boxShadow: "0 12px 24px rgba(38,51,102,0.10)",
+                      zIndex: 10,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {officerSuggestions.map((officer) => (
+                      <button
+                        key={officer.id}
+                        type="button"
+                        onClick={() => handleChooseSuggestion(officer)}
+                        style={{
+                          width: "100%",
+                          padding: "12px 14px",
+                          textAlign: "left",
+                          border: "none",
+                          background: "#fff",
+                          color: "#263366",
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {officer.name} — NMLS {officer.nmls}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: 13, color: "#6B7B94" }}>
+                {t.officerTypeHint}
+              </div>
+
+              {officerStatus && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: "#F8FAFC",
+                    border: "1px solid #D9E1EC",
+                    color: "#4B5C78",
+                    fontSize: 14,
+                  }}
+                >
+                  {officerStatus}
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  marginTop: 14,
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={!accepted}
+                  onClick={handleConfirmOfficer}
+                  style={buttonSecondaryStyle(true)}
+                >
+                  {t.confirmOfficer}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!accepted}
+                  onClick={handleUseUnknownOfficer}
+                  style={buttonSecondaryStyle(false)}
+                >
+                  {t.unknownOfficer}
+                </button>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  border: "1px solid #D9E1EC",
+                  borderRadius: 16,
+                  background: "#F8FAFC",
+                  padding: 16,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: 0.5,
+                    color: "#6B7B94",
+                    marginBottom: 8,
+                  }}
+                >
+                  {t.assigned}
+                </div>
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: "clamp(18px, 3vw, 24px)",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {selectedOfficer.name} — NMLS {selectedOfficer.nmls}
+                </div>
+                <div style={{ color: "#5A6A84", marginTop: 6, lineHeight: 1.7 }}>
+                  Internal summary will route to {selectedOfficer.email} and{" "}
+                  {selectedOfficer.assistantEmail}.
+                </div>
+              </div>
+
+              <div style={{ marginTop: 18 }}>
+                <button
+                  type="button"
+                  disabled={!accepted || reviewing}
+                  onClick={runPreliminaryReview}
+                  style={buttonPrimaryStyle(!accepted || reviewing)}
+                >
+                  {reviewing ? t.reviewing : t.review}
+                </button>
+              </div>
+            </section>
+
+            <section style={cardStyle(accepted ? 1 : 0.55)}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.scenarioTitle}</h2>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <input
+                  disabled={!accepted}
+                  placeholder={t.homePrice}
+                  value={scenario.homePrice}
+                  onChange={(e) =>
+                    setScenario((prev) => ({ ...prev, homePrice: e.target.value }))
+                  }
+                  style={inputStyle()}
+                />
+                <input
+                  disabled={!accepted}
+                  placeholder={t.downPayment}
+                  value={scenario.downPayment}
+                  onChange={(e) =>
+                    setScenario((prev) => ({
+                      ...prev,
+                      downPayment: e.target.value,
+                    }))
+                  }
+                  style={inputStyle()}
+                />
+                <select
+                  disabled={!accepted}
+                  value={scenario.occupancy}
+                  onChange={(e) =>
+                    setScenario((prev) => ({ ...prev, occupancy: e.target.value }))
+                  }
+                  style={inputStyle()}
+                >
+                  <option value="">{t.occupancy}</option>
+                  <option value="Primary residence">Primary residence</option>
+                  <option value="Second home">Second home</option>
+                  <option value="Investment property">Investment property</option>
+                </select>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: 18,
+                  borderRadius: 16,
+                  background: "#F8FAFC",
+                  border: "1px solid #D9E1EC",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: 0.45,
+                    color: "#6B7B94",
+                    marginBottom: 8,
+                  }}
+                >
+                  {t.estimatedLoanAmount.toUpperCase()}
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 800 }}>
+                  {formatMoney(estimatedLoanAmount)}
+                </div>
+                <div style={{ marginTop: 8, color: "#5A6A84" }}>
+                  {t.estimatedLtv}: {estimatedLtv || t.notProvided}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 18 }}>
+                <button
+                  type="button"
+                  disabled={!accepted || reviewing}
+                  onClick={continueScenario}
+                  style={buttonPrimaryStyle(!accepted || reviewing)}
+                >
+                  {reviewing ? t.updatingScenario : t.continueScenario}
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <div style={{ display: "grid", gap: 20 }}>
+            <section style={cardStyle()}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.internalReviewTitle}</h2>
+              <p style={{ marginTop: 0, color: "#5A6A84", lineHeight: 1.7 }}>
+                {t.internalReviewText}
+              </p>
+
+              {!matchResult ? (
+                <div style={{ color: "#70819A", lineHeight: 1.7 }}>
+                  {matchLoading ? "Evaluating scenario..." : t.matchPending}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 14 }}>
+                  <div
+                    style={{
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "#F8FAFC",
+                      border: "1px solid #D9E1EC",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: 0.45,
+                        color: "#6B7B94",
+                        marginBottom: 8,
+                      }}
+                    >
+                      {t.likelyDirection}
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 800 }}>
+                      {matchResult.openai_enhancement?.topRecommendation ||
+                        matchResult.top_recommendation ||
+                        "No strong direction yet"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "#F8FAFC",
+                      border: "1px solid #D9E1EC",
+                      color: "#4B5C78",
+                      lineHeight: 1.8,
+                    }}
+                  >
+                    <div>
+                      <strong>Strong:</strong> {matchResult.summary?.strong_count || 0}
+                    </div>
+                    <div>
+                      <strong>Conditional:</strong>{" "}
+                      {matchResult.summary?.conditional_count || 0}
+                    </div>
+                    <div>
+                      <strong>Eliminated:</strong>{" "}
+                      {matchResult.summary?.eliminated_count || 0}
+                    </div>
+                    <div>
+                      <strong>{t.lenderCoverage}:</strong>{" "}
+                      {(matchResult.lender_summary?.active_lenders_checked || []).join(", ") ||
+                        t.notProvided}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "#F8FAFC",
+                      border: "1px solid #D9E1EC",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: 0.45,
+                        color: "#6B7B94",
+                        marginBottom: 8,
+                      }}
+                    >
+                      {t.nextQuestion}
+                    </div>
+                    <div style={{ lineHeight: 1.7, color: "#263366" }}>
+                      {matchResult.openai_enhancement?.nextBestQuestion ||
+                        matchResult.next_question ||
+                        t.notProvided}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section style={cardStyle()}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.conversation}</h2>
+
+              <div
+                style={{
+                  minHeight: 320,
+                  maxHeight: 560,
+                  overflowY: "auto",
+                  padding: 14,
+                  borderRadius: 16,
+                  background: "#F8FAFC",
+                  border: "1px solid #D9E1EC",
+                }}
+              >
+                {messages.length === 0 ? (
+                  <div style={{ color: "#70819A", lineHeight: 1.7 }}>
+                    {t.chatPlaceholder}
+                  </div>
+                ) : (
+                  messages.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}`}
+                      style={{
+                        marginBottom: 14,
+                        padding: 14,
+                        borderRadius: 14,
+                        background:
+                          message.role === "assistant" ? "#FFFFFF" : "#DBEAFE",
+                        border: "1px solid #D9E1EC",
+                        lineHeight: 1.8,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 800,
+                          marginBottom: 8,
+                          color: "#263366",
+                        }}
+                      >
+                        {message.role === "assistant"
+                          ? "Finley Beyond"
+                          : intake.name || "Borrower"}
+                      </div>
+                      <div>{message.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!sending && accepted && chatInput.trim()) {
+                        void sendMessage();
+                      }
+                    }
+                  }}
+                  placeholder={t.chatPlaceholder}
+                  rows={5}
+                  style={{
+                    ...inputStyle(),
+                    resize: "vertical",
+                    minHeight: 120,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={sendMessage}
+                  disabled={sending || !accepted}
+                  style={buttonPrimaryStyle(sending || !accepted)}
+                >
+                  {sending ? t.sending : t.send}
+                </button>
+              </div>
+            </section>
+
+            <section style={cardStyle()}>
+              <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.nextActions}</h2>
+
+              <div style={{ display: "grid", gap: 12 }}>
+                <a
+                  href={selectedOfficer.applyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    ...buttonPrimaryStyle(false),
+                    textAlign: "center",
+                    textDecoration: "none",
+                  }}
+                >
+                  {t.applyNow}
+                </a>
+
+                <a
+                  href={selectedOfficer.scheduleUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    ...buttonSecondaryStyle(true),
+                    textAlign: "center",
+                    textDecoration: "none",
+                  }}
+                >
+                  {t.schedule}
+                </a>
+
+                <a
+                  href={officerMailtoHref}
+                  style={{
+                    ...buttonSecondaryStyle(false),
+                    textAlign: "center",
+                    textDecoration: "none",
+                  }}
+                >
+                  {t.emailOfficer}
+                </a>
+
+                {officerPhoneHref && (
+                  <a
+                    href={officerPhoneHref}
+                    style={{
+                      ...buttonSecondaryStyle(false),
+                      textAlign: "center",
+                      textDecoration: "none",
+                    }}
+                  >
+                    {t.callOfficer}
+                  </a>
+                )}
+              </div>
+
+              {routing?.scenario && (
+                <div
+                  style={{
+                    marginTop: 18,
+                    paddingTop: 18,
+                    borderTop: "1px solid #E0E7F0",
+                    color: "#4B5C78",
+                    lineHeight: 1.8,
+                  }}
+                >
+                  <div>
+                    <strong>{t.purpose}:</strong> {loanPurpose}
+                  </div>
+                  <div>
+                    <strong>Current State:</strong>{" "}
+                    {intake.currentState || t.notProvided}
+                  </div>
+                  <div>
+                    <strong>Target State:</strong>{" "}
+                    {intake.targetState || t.notProvided}
+                  </div>
+                  <div>
+                    <strong>Occupancy:</strong>{" "}
+                    {routing.scenario.occupancy || t.notProvided}
+                  </div>
+                  <div>
+                    <strong>{t.estimatedLoanAmount}:</strong>{" "}
+                    {formatMoney(routing.scenario.estimatedLoanAmount || "0")}
+                  </div>
+                  <div>
+                    <strong>{t.estimatedLtv}:</strong>{" "}
+                    {routing.scenario.estimatedLtv || t.notProvided}
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
