@@ -1273,13 +1273,52 @@ If appropriate, ask only one useful unanswered question.
       setSending(false);
     }
   };
+  const buildActionTranscriptMessage = (
+    trigger: SummaryTrigger,
+    channel?: "email" | "call"
+  ): ChatMessage => {
+    const content =
+      language === "pt"
+        ? trigger === "apply"
+          ? "Selecionei Aplicar Agora."
+          : trigger === "schedule"
+          ? "Selecionei Agendar com o Loan Officer."
+          : channel === "call"
+          ? "Selecionei Ligar para o Loan Officer."
+          : "Selecionei Enviar Email ao Loan Officer."
+        : language === "es"
+        ? trigger === "apply"
+          ? "Seleccioné Aplicar Ahora."
+          : trigger === "schedule"
+          ? "Seleccioné Agendar con el Loan Officer."
+          : channel === "call"
+          ? "Seleccioné Llamar al Loan Officer."
+          : "Seleccioné Enviar Correo al Loan Officer."
+        : trigger === "apply"
+        ? "I selected Apply Now."
+        : trigger === "schedule"
+        ? "I selected Schedule with Loan Officer."
+        : channel === "call"
+        ? "I selected Call Loan Officer."
+        : "I selected Email Loan Officer.";
 
-  const handleTriggeredSummaryAction = async (trigger: SummaryTrigger) => {
+    return {
+      role: "user",
+      content,
+    };
+  };
+  
+  const handleTriggeredSummaryAction = async (
+    trigger: SummaryTrigger,
+    options?: {
+      channel?: "email" | "call";
+    }
+  ) => {
     setActionBusy(trigger);
     setPageError("");
     setSummaryStatus("");
 
-    const conversationToSend = messages.length
+    const baseConversation = messages.length
       ? messages
       : [
           {
@@ -1287,6 +1326,9 @@ If appropriate, ask only one useful unanswered question.
             content: "Borrower visited the workspace and selected a next action.",
           },
         ];
+
+    const actionMessage = buildActionTranscriptMessage(trigger, options?.channel);
+    const conversationToSend = [...baseConversation, actionMessage];
 
     const result = await sendSummaryToLoanOfficer(conversationToSend, trigger, {
       force: true,
@@ -2161,7 +2203,9 @@ If appropriate, ask only one useful unanswered question.
                     const targetHref = officerMailtoHref;
 
                     window.location.href = targetHref;
-                    void handleTriggeredSummaryAction("contact").finally(() => {
+                            void handleTriggeredSummaryAction("contact", {
+                        channel: "call",
+                      }).finally(() => {                      
                       finalizeTriggeredAction(true);
                     });
                   }}
