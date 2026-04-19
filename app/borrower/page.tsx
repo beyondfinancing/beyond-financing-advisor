@@ -1577,308 +1577,61 @@ If appropriate, ask only one useful unanswered question.
               </label>
             </section>
 
-            <section style={cardStyle(accepted ? 1 : 0.55)}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                {(["Purchase", "Refinance", "Investment"] as LoanPurpose[]).map(
-                  (purpose) => (
-                    <button
-                      key={purpose}
-                      type="button"
-                      disabled={!accepted}
-                      onClick={() => setLoanPurpose(purpose)}
-                      style={buttonSecondaryStyle(loanPurpose === purpose)}
-                    >
-                      {purpose}
-                    </button>
-                  )
-                )}
-              </div>
+<section style={cardStyle(accepted ? 1 : 0.55)}>
+  <h2 style={{ marginTop: 0, fontSize: 18 }}>{t.scenarioTitle}</h2>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 14,
-                  marginTop: 18,
-                }}
-              >
-                <input
-                  disabled={!accepted}
-                  placeholder={t.borrowerName}
-                  value={intake.name}
-                  onChange={(e) =>
-                    setIntake((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.email}
-                  value={intake.email}
-                  onChange={(e) =>
-                    setIntake((prev) => ({ ...prev, email: e.target.value }))
-                  }
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.phone}
-                  value={intake.phone}
-                 onChange={(e) =>
-  setIntake((prev) => ({
-    ...prev,
-    phone: formatPhoneNumber(e.target.value),
-  }))
-}
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.credit}
-                  value={intake.credit}
-                  onChange={(e) =>
-                    setIntake((prev) => ({
-                      ...prev,
-                      credit: sanitizeNumericInput(e.target.value),
-                    }))
-                  }
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.income}
-                  value={intake.income}
-                  onChange={(e) =>
-  setIntake((prev) => ({
-    ...prev,
-    income: formatPlainNumber(e.target.value),
-  }))
-}
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.debt}
-                  value={intake.debt}
-                  onChange={(e) =>
-  setIntake((prev) => ({
-    ...prev,
-    debt: formatPlainNumber(e.target.value),
-  }))
-}
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.currentState}
-                  value={intake.currentState}
-                  onChange={(e) =>
-                    setIntake((prev) => ({
-                      ...prev,
-                      currentState: e.target.value,
-                    }))
-                  }
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.targetState}
-                  value={intake.targetState}
-                  onChange={(e) =>
-                    setIntake((prev) => ({
-                      ...prev,
-                      targetState: e.target.value,
-                    }))
-                  }
-                  style={inputStyle()}
-                />
-              </div>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+      gap: 14,
+    }}
+  >
+    <input
+      disabled={!accepted}
+      placeholder={t.homePrice}
+      value={scenario.homePrice}
+      onChange={(e) =>
+        setScenario((prev) => ({
+          ...prev,
+          homePrice: formatPlainNumber(e.target.value),
+        }))
+      }
+      style={inputStyle()}
+    />
+    <input
+      disabled={!accepted}
+      placeholder={t.downPayment}
+      value={scenario.downPayment}
+      onChange={(e) =>
+        setScenario((prev) => ({
+          ...prev,
+          downPayment: formatPlainNumber(e.target.value),
+        }))
+      }
+      style={inputStyle()}
+    />
+    <select
+      disabled={!accepted}
+      value={scenario.occupancy}
+      onChange={(e) =>
+        setScenario((prev) => ({ ...prev, occupancy: e.target.value }))
+      }
+      style={inputStyle()}
+    >
+      <option value="">{t.occupancy}</option>
+      <option value="Primary residence">Primary residence</option>
+      <option value="Second home">Second home</option>
+      <option value="Investment property">Investment property</option>
+    </select>
+  </div>
 
-              <div style={{ marginTop: 18 }}>
-                <div style={{ fontWeight: 700, marginBottom: 10 }}>
-                  {t.realtorQuestion}
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  <button
-                    type="button"
-                    disabled={!accepted}
-                    onClick={() =>
-                      setIntake((prev) => ({ ...prev, realtorStatus: "yes" }))
-                    }
-                    style={buttonSecondaryStyle(intake.realtorStatus === "yes")}
-                  >
-                    {t.yes}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!accepted}
-                    onClick={() =>
-                      setIntake((prev) => ({ ...prev, realtorStatus: "no" }))
-                    }
-                    style={buttonSecondaryStyle(intake.realtorStatus === "no")}
-                  >
-                    {t.no}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!accepted}
-                    onClick={() =>
-                      setIntake((prev) => ({ ...prev, realtorStatus: "not-sure" }))
-                    }
-                    style={buttonSecondaryStyle(
-                      intake.realtorStatus === "not-sure"
-                    )}
-                  >
-                    {t.notSure}
-                  </button>
-                </div>
-
-                {intake.realtorStatus === "yes" && (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                      gap: 14,
-                      marginTop: 14,
-                    }}
-                  >
-                    <input
-                      disabled={!accepted}
-                      placeholder={t.realtorName}
-                      value={intake.realtorName}
-                      onChange={(e) =>
-                        setIntake((prev) => ({
-                          ...prev,
-                          realtorName: e.target.value,
-                        }))
-                      }
-                      style={inputStyle()}
-                    />
-                    <input
-                      disabled={!accepted}
-                      placeholder={t.realtorPhone}
-                      value={intake.realtorPhone}
-                      onChange={(e) =>
-                        setIntake((prev) => ({
-                          ...prev,
-                          realtorPhone: e.target.value,
-                        }))
-                      }
-                      style={inputStyle()}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div style={{ marginTop: 18, position: "relative" }}>
-                <input
-                  disabled={!accepted}
-                  placeholder={t.loanOfficerPlaceholder}
-                  value={loanOfficerQuery}
-                  onChange={(e) => {
-                    setLoanOfficerQuery(e.target.value);
-                    setOfficerStatus("");
-                  }}
-                  style={inputStyle()}
-                />
-
-                {accepted && loanOfficerQuery.trim() && officerSuggestions.length > 0 && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "calc(100% + 6px)",
-                      left: 0,
-                      right: 0,
-                      background: "#fff",
-                      border: "1px solid #D9E1EC",
-                      borderRadius: 14,
-                      boxShadow: "0 12px 24px rgba(38,51,102,0.10)",
-                      zIndex: 10,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {officerSuggestions.map((officer) => (
-                      <button
-                        key={officer.id}
-                        type="button"
-                        onClick={() => handleChooseSuggestion(officer)}
-                        style={{
-                          width: "100%",
-                          padding: "12px 14px",
-                          textAlign: "left",
-                          border: "none",
-                          background: "#fff",
-                          color: "#263366",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {officer.name} — NMLS {officer.nmls}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ marginTop: 8, fontSize: 13, color: "#6B7B94" }}>
-                {t.officerTypeHint}
-              </div>
-
-              {officerStatus && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    background: "#F8FAFC",
-                    border: "1px solid #D9E1EC",
-                    color: "#4B5C78",
-                    fontSize: 14,
-                  }}
-                >
-                  {officerStatus}
-                </div>
-              )}
-
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 10,
-                  marginTop: 14,
-                }}
-              >
-                <button
-                  type="button"
-                  disabled={!accepted}
-                  onClick={handleConfirmOfficer}
-                  style={buttonSecondaryStyle(true)}
-                >
-                  {t.confirmOfficer}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!accepted}
-                  onClick={handleUseUnknownOfficer}
-                  style={buttonSecondaryStyle(false)}
-                >
-                  {t.unknownOfficer}
-                </button>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 18,
-                  border: "1px solid #D9E1EC",
-                  borderRadius: 16,
-                  background: "#F8FAFC",
+  <div
+    style={{
+      marginTop: 18,
+      padding: 18,
+      borderRadius: 16,
+      background: "#F8FAFC",
                   padding: 16,
                 }}
               >
@@ -1930,30 +1683,30 @@ If appropriate, ask only one useful unanswered question.
                   gap: 14,
                 }}
               >
-                <input
-                  disabled={!accepted}
-                  placeholder={t.homePrice}
-                  value={scenario.homePrice}
-                  onChange={(e) =>
-                    setScenario((prev) => ({
-                      ...prev,
-                      homePrice: formatNumberWithCommas(e.target.value),
-                    }))
-                }
-                  style={inputStyle()}
-                />
-                <input
-                  disabled={!accepted}
-                  placeholder={t.downPayment}
-                  value={scenario.downPayment}
-                  onChange={(e) =>
-                    setScenario((prev) => ({
-                      ...prev,
-                      downPayment: formatNumberWithCommas(e.target.value),
-                    }))
-                  }
-                  style={inputStyle()}
-                />
+<input
+  disabled={!accepted}
+  placeholder={t.homePrice}
+  value={scenario.homePrice}
+  onChange={(e) =>
+    setScenario((prev) => ({
+      ...prev,
+      homePrice: formatPlainNumber(e.target.value),
+    }))
+  }
+  style={inputStyle()}
+/>
+<input
+  disabled={!accepted}
+  placeholder={t.downPayment}
+  value={scenario.downPayment}
+  onChange={(e) =>
+    setScenario((prev) => ({
+      ...prev,
+      downPayment: formatPlainNumber(e.target.value),
+    }))
+  }
+  style={inputStyle()}
+/>
                 <select
                   disabled={!accepted}
                   value={scenario.occupancy}
