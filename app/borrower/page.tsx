@@ -663,8 +663,8 @@ const downPayment = Number(scenario.downPayment.replace(/,/g, "") || 0);
   }, [scenario.homePrice, scenario.downPayment]);
 
   const estimatedLtv = useMemo(() => {
-    const homePrice = Number(scenario.homePrice || 0);
-    const downPayment = Number(scenario.downPayment || 0);
+    const homePrice = Number(scenario.homePrice.replace(/,/g, "") || 0);
+    const downPayment = Number(scenario.downPayment.replace(/,/g, "") || 0);
     if (!homePrice) return "";
     const ltv = ((homePrice - downPayment) / homePrice) * 100;
     return `${Math.max(0, Math.round(ltv))}%`;
@@ -1362,10 +1362,20 @@ If appropriate, ask only one useful unanswered question.
 
     return result.success;
   };
-  const finalizeTriggeredAction = (shouldReset = false) => {
+  const finalizeTriggeredAction = (
+    shouldReset = false,
+    bannerMessage?: string
+  ) => {
     setActionBusy("");
+
+    if (bannerMessage) {
+      setActionBanner(bannerMessage);
+    }
+
     if (shouldReset) {
-      resetBorrowerWorkspace();
+      setTimeout(() => {
+        resetBorrowerWorkspace();
+      }, 1200);
     }
   };
 
@@ -1483,17 +1493,6 @@ If appropriate, ask only one useful unanswered question.
           </div>
         </div>
 
-        {(pageError || matchError) && (
-          <div
-            style={{
-              ...cardStyle(),
-              border: "1px solid #F5C2C7",
-              background: "#FFF5F5",
-              color: "#842029",
-              marginBottom: 20,
-              whiteSpace: "pre-wrap",
-            }}
-          >
         {(pageError || matchError) && (
           <div
             style={{
@@ -2195,7 +2194,10 @@ If appropriate, ask only one useful unanswered question.
                       );
                     }
 
-                    finalizeTriggeredAction(true);
+                    finalizeTriggeredAction(
+                      true,
+                      "Application page opened. Your information was routed successfully."
+                    );
                   }}
                   style={{
                     ...buttonPrimaryStyle(actionBusy === "apply"),
@@ -2232,8 +2234,10 @@ If appropriate, ask only one useful unanswered question.
                       );
                     }
 
-                    finalizeTriggeredAction(true);
-                  }}
+                    finalizeTriggeredAction(
+                      true,
+                      "Scheduling page opened. Your information was routed successfully."
+                    );
                   style={{
                     ...buttonSecondaryStyle(true),
                     textAlign: "center",
@@ -2255,8 +2259,10 @@ If appropriate, ask only one useful unanswered question.
                     void handleTriggeredSummaryAction("contact", {
                       channel: "email",
                     }).finally(() => {                      
-                      finalizeTriggeredAction(true);
-                    });
+                      finalizeTriggeredAction(
+                        true,
+                        "Email action launched. Your information was routed successfully."
+                      );
                   }}
                   style={{
                     ...buttonSecondaryStyle(false),
@@ -2281,8 +2287,10 @@ If appropriate, ask only one useful unanswered question.
                       void handleTriggeredSummaryAction("contact", {
                         channel: "phone",
                       }).finally(() => {
-                        finalizeTriggeredAction(true);
-                      });
+                        finalizeTriggeredAction(
+                          true,
+                          "Call action launched. Your information was routed successfully."
+                        );
                     }}
                     style={{
                       ...buttonSecondaryStyle(false),
