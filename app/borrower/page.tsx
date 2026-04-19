@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 type LanguageCode = "en" | "pt" | "es";
@@ -75,6 +75,8 @@ type MatchResponse = {
     loan_amount?: number | null;
     units?: number | null;
     first_time_homebuyer?: boolean | null;
+    subject_state?: string;
+    available_reserves_months?: number | null;
   };
   summary?: {
     total_guidelines_checked?: number;
@@ -127,6 +129,7 @@ type RoutingPayload = {
     timeline?: string;
     fundsSource?: string;
     communicationPreference?: string;
+    subjectState?: string;
   };
   internalMatch?: {
     topRecommendation?: string;
@@ -150,17 +153,14 @@ type RoutingPayload = {
   conversation?: ChatMessage[];
 };
 
-const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
+type SummaryResponse = {
+  success: boolean;
+  error?: string;
+  sentTo?: string;
+};
 
-/**
- * IMPORTANT:
- * This assumes your email summary route is located at app/api/route.ts
- * which means the URL is /api
- *
- * If later you move it to app/api/summary/route.ts,
- * then change this constant to "/api/summary"
- */
-const SUMMARY_API_PATH = "/api";
+const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
+const SUMMARY_API_PATH = "/api/chat-summary";
 
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
   {
@@ -270,9 +270,11 @@ const COPY = {
     yes: "Yes",
     no: "No",
     notSure: "Not Sure",
-    summarySent: "Internal summary sent successfully.",
+    summarySent: "Internal summary sent successfully to:",
     summaryFailed:
       "The conversation worked, but the internal summary email did not send.",
+    actionContinuing:
+      "The action is continuing, but the internal email summary did not send.",
   },
   pt: {
     title: "Área do Cliente / Borrower",
@@ -339,9 +341,11 @@ const COPY = {
     yes: "Sim",
     no: "Não",
     notSure: "Não Tenho Certeza",
-    summarySent: "Resumo interno enviado com sucesso.",
+    summarySent: "Resumo interno enviado com sucesso para:",
     summaryFailed:
       "A conversa funcionou, mas o email de resumo interno não foi enviado.",
+    actionContinuing:
+      "A ação continuará, mas o email de resumo interno não foi enviado.",
   },
   es: {
     title: "Espacio del Cliente / Borrower",
@@ -408,9 +412,11 @@ const COPY = {
     yes: "Sí",
     no: "No",
     notSure: "No Estoy Seguro",
-    summarySent: "Resumen interno enviado correctamente.",
+    summarySent: "Resumen interno enviado correctamente a:",
     summaryFailed:
       "La conversación funcionó, pero no se envió el correo interno de resumen.",
+    actionContinuing:
+      "La acción continuará, pero no se envió el correo interno de resumen.",
   },
 } as const;
 
@@ -477,11 +483,11 @@ function formatMoney(value: string) {
 function normalizeOccupancyForMatch(value: string, purpose: LoanPurpose) {
   const lower = value.trim().toLowerCase();
 
-  if (lower.includes("primary")) return "primary";
+  if (lower.includes("primary")) return "primary residence";
   if (lower.includes("second")) return "second home";
-  if (lower.includes("investment")) return "investment";
+  if (lower.includes("investment")) return "investment property";
 
-  if (purpose === "Investment") return "investment";
+  if (purpose === "Investment") return "investment property";
   return "";
 }
 
@@ -595,6 +601,7 @@ export default function BorrowerPage() {
   const [matchError, setMatchError] = useState("");
   const [officerStatus, setOfficerStatus] = useState("");
   const [summaryStatus, setSummaryStatus] = useState("");
+  const [actionBusy, setActionBusy] = useState<SummaryTrigger | "">("");
 
   const sentSummaryKeysRef = useRef<Set<string>>(new Set());
 
@@ -622,6 +629,10 @@ export default function BorrowerPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [routing, setRouting] = useState<RoutingPayload | undefined>(undefined);
   const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
+
+  useEffect(() => {
+    setSummaryStatus("");
+  }, [language]);
 
   const officerSuggestions = useMemo(() => {
     const trimmed = loanOfficerQuery.trim();
@@ -664,13 +675,16 @@ export default function BorrowerPage() {
       dti: Number(intake.debt || 0) || null,
       loan_amount: estimatedLoanAmount ? Number(estimatedLoanAmount) : null,
       first_time_homebuyer: loanPurpose === "Purchase" ? true : false,
+      subject_state: intake.targetState || intake.currentState || "",
     };
   }, [
     estimatedLoanAmount,
     estimatedLtv,
     intake.credit,
+    intake.currentState,
     intake.debt,
     intake.income,
+    intake.targetState,
     loanPurpose,
     scenario.occupancy,
   ]);
@@ -771,6 +785,7 @@ Rules for borrower-facing response:
     setMatchError("");
     setOfficerStatus("");
     setSummaryStatus("");
+    setActionBusy("");
     setIntake({
       name: "",
       email: "",
@@ -803,7 +818,7 @@ Rules for borrower-facing response:
       force?: boolean;
       resolvedOfficer?: LoanOfficerRecord;
     }
-  ) => {
+  ): Promise<SummaryResponse> => {
     const activeOfficer = options?.resolvedOfficer || selectedOfficer;
 
     if (!intake.name.trim() || !intake.email.trim() || !intake.phone.trim()) {
@@ -826,7 +841,7 @@ Rules for borrower-facing response:
     const dedupeKey = `${trigger}:${signature}`;
 
     if (!options?.force && sentSummaryKeysRef.current.has(dedupeKey)) {
-      return { success: true, deduped: true };
+      return { success: true };
     }
 
     try {
@@ -850,31 +865,27 @@ Rules for borrower-facing response:
         }),
       });
 
-      if (!response.ok) {
-        const result = await response.json().catch(() => null);
-        const errorText =
-          (result &&
-            typeof result === "object" &&
-            "error" in result &&
-            typeof result.error === "string" &&
-            result.error) ||
-          "Summary email request failed.";
-        throw new Error(errorText);
+      const data = (await response.json().catch(() => null)) as SummaryResponse | null;
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || "Summary email request failed.");
       }
 
       sentSummaryKeysRef.current.add(dedupeKey);
 
       if (trigger === "ai") {
-        setSummaryStatus(`${t.summarySent} ${activeOfficer.email}`);
+        setSummaryStatus(`${t.summarySent} ${data.sentTo || activeOfficer.email}`);
       }
 
-      return { success: true };
+      return { success: true, sentTo: data.sentTo || activeOfficer.email };
     } catch (error) {
       console.error("Email summary failed:", error);
+
       if (trigger === "ai") {
         setSummaryStatus("");
         setPageError((prev) => prev || t.summaryFailed);
       }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : "Summary email failed.",
@@ -936,6 +947,7 @@ Rules for borrower-facing response:
       estimatedLoanAmount,
       estimatedLtv,
       occupancy: scenario.occupancy,
+      subjectState: intake.targetState || intake.currentState || "",
     },
     internalMatch: match
       ? {
@@ -1259,6 +1271,10 @@ If appropriate, ask only one useful unanswered question.
   };
 
   const handleTriggeredSummaryAction = async (trigger: SummaryTrigger) => {
+    setActionBusy(trigger);
+    setPageError("");
+    setSummaryStatus("");
+
     const conversationToSend = messages.length
       ? messages
       : [
@@ -1273,17 +1289,11 @@ If appropriate, ask only one useful unanswered question.
     });
 
     if (!result.success) {
-      setPageError(
-        result.error || t.summaryFailed
-      );
-      return false;
+      setPageError(`${t.actionContinuing} ${result.error || ""}`.trim());
     }
 
-    if (trigger === "apply") {
-      resetBorrowerWorkspace();
-    }
-
-    return true;
+    setActionBusy("");
+    return result.success;
   };
 
   const officerPhoneHref = selectedOfficer.mobile
@@ -2065,18 +2075,18 @@ If appropriate, ask only one useful unanswered question.
                   rel="noreferrer"
                   onClick={async (e) => {
                     e.preventDefault();
-                    const ok = await handleTriggeredSummaryAction("apply");
-                    if (ok) {
-                      window.open(selectedOfficer.applyUrl, "_blank", "noopener,noreferrer");
-                    }
+                    await handleTriggeredSummaryAction("apply");
+                    window.open(selectedOfficer.applyUrl, "_blank", "noopener,noreferrer");
+                    resetBorrowerWorkspace();
                   }}
                   style={{
-                    ...buttonPrimaryStyle(false),
+                    ...buttonPrimaryStyle(actionBusy === "apply"),
                     textAlign: "center",
                     textDecoration: "none",
+                    pointerEvents: actionBusy ? "none" : "auto",
                   }}
                 >
-                  {t.applyNow}
+                  {actionBusy === "apply" ? "Opening..." : t.applyNow}
                 </a>
 
                 <a
@@ -2085,36 +2095,36 @@ If appropriate, ask only one useful unanswered question.
                   rel="noreferrer"
                   onClick={async (e) => {
                     e.preventDefault();
-                    const ok = await handleTriggeredSummaryAction("schedule");
-                    if (ok) {
-                      window.open(selectedOfficer.scheduleUrl, "_blank", "noopener,noreferrer");
-                    }
+                    await handleTriggeredSummaryAction("schedule");
+                    window.open(selectedOfficer.scheduleUrl, "_blank", "noopener,noreferrer");
                   }}
                   style={{
                     ...buttonSecondaryStyle(true),
                     textAlign: "center",
                     textDecoration: "none",
+                    pointerEvents: actionBusy ? "none" : "auto",
+                    opacity: actionBusy ? 0.7 : 1,
                   }}
                 >
-                  {t.schedule}
+                  {actionBusy === "schedule" ? "Opening..." : t.schedule}
                 </a>
 
                 <a
                   href={officerMailtoHref}
                   onClick={async (e) => {
                     e.preventDefault();
-                    const ok = await handleTriggeredSummaryAction("contact");
-                    if (ok) {
-                      window.location.href = officerMailtoHref;
-                    }
+                    await handleTriggeredSummaryAction("contact");
+                    window.location.href = officerMailtoHref;
                   }}
                   style={{
                     ...buttonSecondaryStyle(false),
                     textAlign: "center",
                     textDecoration: "none",
+                    pointerEvents: actionBusy ? "none" : "auto",
+                    opacity: actionBusy ? 0.7 : 1,
                   }}
                 >
-                  {t.emailOfficer}
+                  {actionBusy === "contact" ? "Opening..." : t.emailOfficer}
                 </a>
 
                 {officerPhoneHref && (
@@ -2122,18 +2132,18 @@ If appropriate, ask only one useful unanswered question.
                     href={officerPhoneHref}
                     onClick={async (e) => {
                       e.preventDefault();
-                      const ok = await handleTriggeredSummaryAction("contact");
-                      if (ok) {
-                        window.location.href = officerPhoneHref;
-                      }
+                      await handleTriggeredSummaryAction("contact");
+                      window.location.href = officerPhoneHref;
                     }}
                     style={{
                       ...buttonSecondaryStyle(false),
                       textAlign: "center",
                       textDecoration: "none",
+                      pointerEvents: actionBusy ? "none" : "auto",
+                      opacity: actionBusy ? 0.7 : 1,
                     }}
                   >
-                    {t.callOfficer}
+                    {actionBusy === "contact" ? "Opening..." : t.callOfficer}
                   </a>
                 )}
               </div>
