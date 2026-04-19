@@ -1275,7 +1275,7 @@ If appropriate, ask only one useful unanswered question.
   };
   const buildActionTranscriptMessage = (
     trigger: SummaryTrigger,
-    channel?: "email" | "call"
+     channel?: "email" | "phone"
   ): ChatMessage => {
     const content =
       language === "pt"
