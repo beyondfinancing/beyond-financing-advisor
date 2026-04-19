@@ -204,6 +204,8 @@ function buildHtml(args: {
         <p><strong>Phone:</strong> ${escapeHtml(lead.phone || "Not provided")}</p>
         <p><strong>Language:</strong> ${escapeHtml(lead.preferredLanguage || "Not provided")}</p>
         <p><strong>Loan Officer / User ID:</strong> ${escapeHtml(lead.loanOfficer || "Not provided")}</p>
+        <p><strong>Assigned Loan Officer:</strong> ${escapeHtml(lead.assignedOfficerName || "Not provided")}</p>
+        <p><strong>Estimated Loan Amount:</strong> ${escapeHtml(lead.estimatedLoanAmount || "Not provided")}</p>
         <p><strong>Professional Name:</strong> ${escapeHtml(lead.professionalName || "Not provided")}</p>
         <p><strong>Professional Role:</strong> ${escapeHtml(lead.professionalRole || "Not provided")}</p>
         <p><strong>Recipient Email:</strong> ${escapeHtml(selectedEmail)}</p>
