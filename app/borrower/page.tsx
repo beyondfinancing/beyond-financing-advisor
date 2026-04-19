@@ -631,6 +631,78 @@ export default function BorrowerPage() {
     scenario.occupancy,
   ]);
 
+  const knownFactsSummary = useMemo(() => {
+    const facts: string[] = [];
+
+    if (intake.name.trim()) facts.push(`Borrower name: ${intake.name.trim()}`);
+    if (intake.email.trim()) facts.push(`Borrower email: ${intake.email.trim()}`);
+    if (intake.phone.trim()) facts.push(`Borrower phone: ${intake.phone.trim()}`);
+    if (intake.credit.trim()) facts.push(`Estimated credit score: ${intake.credit.trim()}`);
+    if (intake.income.trim()) facts.push(`Gross monthly income: ${intake.income.trim()}`);
+    if (intake.debt.trim()) facts.push(`Monthly debt: ${intake.debt.trim()}`);
+    if (intake.currentState.trim()) facts.push(`Current state: ${intake.currentState.trim()}`);
+    if (intake.targetState.trim()) {
+      facts.push(`Target state: ${intake.targetState.trim()}`);
+      facts.push(
+        `Unless clarified otherwise, treat target state as the likely subject property state already provided.`
+      );
+    }
+    if (scenario.homePrice.trim()) facts.push(`Estimated home price: ${scenario.homePrice.trim()}`);
+    if (scenario.downPayment.trim()) facts.push(`Estimated down payment: ${scenario.downPayment.trim()}`);
+    if (estimatedLoanAmount) facts.push(`Estimated loan amount: ${estimatedLoanAmount}`);
+    if (estimatedLtv) facts.push(`Estimated LTV: ${estimatedLtv}`);
+    if (scenario.occupancy.trim()) facts.push(`Occupancy: ${scenario.occupancy.trim()}`);
+    facts.push(`Transaction purpose: ${loanPurpose}`);
+    facts.push(`Assigned loan officer: ${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`);
+
+    if (intake.realtorStatus === "yes") {
+      facts.push(`Borrower is working with a Realtor.`);
+      if (intake.realtorName.trim()) facts.push(`Realtor name: ${intake.realtorName.trim()}`);
+      if (intake.realtorPhone.trim()) facts.push(`Realtor phone: ${intake.realtorPhone.trim()}`);
+    } else if (intake.realtorStatus === "no") {
+      facts.push(`Borrower is not working with a Realtor.`);
+    } else {
+      facts.push(`Realtor status is not confirmed.`);
+    }
+
+    return facts.join("\n- ");
+  }, [
+    estimatedLoanAmount,
+    estimatedLtv,
+    intake.credit,
+    intake.currentState,
+    intake.debt,
+    intake.email,
+    intake.income,
+    intake.name,
+    intake.phone,
+    intake.realtorName,
+    intake.realtorPhone,
+    intake.realtorStatus,
+    intake.targetState,
+    loanPurpose,
+    scenario.downPayment,
+    scenario.homePrice,
+    scenario.occupancy,
+    selectedOfficer.name,
+    selectedOfficer.nmls,
+  ]);
+
+  const borrowerChatRules = `
+Rules for borrower-facing response:
+- Keep the response concise, natural, and professional.
+- Prefer 2 to 4 short paragraphs maximum.
+- Do not ask for information that is already present in the known facts.
+- If target state is already provided, do not ask again for subject property state unless there is a real reason to verify a difference.
+- Do not repeat the loan officer's full name in every message.
+- Mention the assigned loan officer only when useful, and no more than once in the response.
+- Do not promise approval.
+- Do not reveal raw internal lender/program names unless compliance-safe.
+- Encourage Apply Now naturally when useful, not mechanically every time.
+- If asking a next question, ask only one question.
+- Ask the most useful unanswered qualification question, not a question that is already answered.
+`.trim();
+
   const handleConfirmOfficer = () => {
     const found = findOfficer(loanOfficerQuery);
 
@@ -788,6 +860,9 @@ export default function BorrowerPage() {
               content: `
 Borrower intake has been collected.
 
+Known facts already collected:
+- ${knownFactsSummary}
+
 Internal match direction:
 - Top recommendation: ${
                 match?.openai_enhancement?.topRecommendation ||
@@ -796,21 +871,18 @@ Internal match direction:
               }
 - Strong match count: ${match?.summary?.strong_count || 0}
 - Conditional match count: ${match?.summary?.conditional_count || 0}
-- Next best question: ${
+- Next best question from internal engine: ${
                 match?.openai_enhancement?.nextBestQuestion ||
                 match?.next_question ||
                 "Continue qualification"
               }
 
-Rules:
-- Keep the conversation borrower-safe.
-- Do not promise approval.
-- Do not reveal raw internal lender/program names unless compliance-safe.
-- Acknowledge the borrower information already entered.
-- When referencing human review, reference the selected loan officer, not Sandro unless Sandro is actually the selected loan officer.
-- Encourage Apply Now.
-- Use visual spacing between short paragraphs.
-- Ask the next best qualification question.
+${borrowerChatRules}
+
+Start the borrower conversation.
+Acknowledge the scenario briefly.
+Do not ask for any field that is already in the known facts list.
+If a next question is needed, ask one useful unanswered question only.
               `.trim(),
             },
             starterMessage,
@@ -874,6 +946,9 @@ Rules:
               content: `
 Updated scenario details are available.
 
+Known facts already collected:
+- ${knownFactsSummary}
+
 Internal match direction:
 - Top recommendation: ${
                 match?.openai_enhancement?.topRecommendation ||
@@ -882,21 +957,17 @@ Internal match direction:
               }
 - Strong match count: ${match?.summary?.strong_count || 0}
 - Conditional match count: ${match?.summary?.conditional_count || 0}
-- Next best question: ${
+- Next best question from internal engine: ${
                 match?.openai_enhancement?.nextBestQuestion ||
                 match?.next_question ||
                 "Continue qualification"
               }
 
-Rules:
-- Keep the response borrower-safe.
-- Do not promise approval.
-- Do not disclose raw internal match logic unless appropriate.
-- Briefly acknowledge the scenario.
-- When referencing human review, reference the selected loan officer.
-- Encourage Apply Now.
-- Use visual spacing between short paragraphs.
-- Ask the next best qualification question.
+${borrowerChatRules}
+
+Acknowledge the scenario briefly.
+Do not ask for any field already collected.
+If a next question is needed, ask only one useful unanswered question.
               `.trim(),
             },
             ...nextConversation,
@@ -951,26 +1022,26 @@ Rules:
               content: `
 Continue the borrower-facing conversation.
 
+Known facts already collected:
+- ${knownFactsSummary}
+
 Internal match direction:
 - Top recommendation: ${
                 matchResult?.openai_enhancement?.topRecommendation ||
                 matchResult?.top_recommendation ||
                 "No strong direction yet"
               }
-- Next best question: ${
+- Next best question from internal engine: ${
                 matchResult?.openai_enhancement?.nextBestQuestion ||
                 matchResult?.next_question ||
                 "Continue qualification"
               }
 
-Rules:
-- Keep the response borrower-safe.
-- Do not promise approval.
-- Do not disclose raw internal lender/program detail unless appropriate.
-- Encourage Apply Now when useful.
-- When referencing human review, reference the selected loan officer.
-- Use visual spacing between short paragraphs.
-- If appropriate, ask the next best qualification question.
+${borrowerChatRules}
+
+Answer naturally.
+Do not ask for any field already collected.
+If appropriate, ask only one useful unanswered question.
               `.trim(),
             },
             ...nextConversation,
