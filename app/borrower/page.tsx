@@ -1292,8 +1292,14 @@ If appropriate, ask only one useful unanswered question.
       setPageError(`${t.actionContinuing} ${result.error || ""}`.trim());
     }
 
-    setActionBusy("");
     return result.success;
+  };
+
+  const finalizeTriggeredAction = (shouldReset = false) => {
+    setActionBusy("");
+    if (shouldReset) {
+      resetBorrowerWorkspace();
+    }
   };
 
   const officerPhoneHref = selectedOfficer.mobile
@@ -2075,9 +2081,26 @@ If appropriate, ask only one useful unanswered question.
                   rel="noreferrer"
                   onClick={async (e) => {
                     e.preventDefault();
+
+                    const applyWindow = window.open(
+                      "about:blank",
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+
                     await handleTriggeredSummaryAction("apply");
-                    window.open(selectedOfficer.applyUrl, "_blank", "noopener,noreferrer");
-                    resetBorrowerWorkspace();
+
+                    if (applyWindow) {
+                      applyWindow.location.href = selectedOfficer.applyUrl;
+                    } else {
+                      window.open(
+                        selectedOfficer.applyUrl,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+                    }
+
+                    finalizeTriggeredAction(true);
                   }}
                   style={{
                     ...buttonPrimaryStyle(actionBusy === "apply"),
@@ -2095,8 +2118,26 @@ If appropriate, ask only one useful unanswered question.
                   rel="noreferrer"
                   onClick={async (e) => {
                     e.preventDefault();
+
+                    const scheduleWindow = window.open(
+                      "about:blank",
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+
                     await handleTriggeredSummaryAction("schedule");
-                    window.open(selectedOfficer.scheduleUrl, "_blank", "noopener,noreferrer");
+
+                    if (scheduleWindow) {
+                      scheduleWindow.location.href = selectedOfficer.scheduleUrl;
+                    } else {
+                      window.open(
+                        selectedOfficer.scheduleUrl,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+                    }
+
+                    finalizeTriggeredAction(true);
                   }}
                   style={{
                     ...buttonSecondaryStyle(true),
@@ -2113,8 +2154,12 @@ If appropriate, ask only one useful unanswered question.
                   href={officerMailtoHref}
                   onClick={async (e) => {
                     e.preventDefault();
-                    await handleTriggeredSummaryAction("contact");
-                    window.location.href = officerMailtoHref;
+                    const targetHref = officerMailtoHref;
+
+                    window.location.href = targetHref;
+                    void handleTriggeredSummaryAction("contact").finally(() => {
+                      finalizeTriggeredAction(true);
+                    });
                   }}
                   style={{
                     ...buttonSecondaryStyle(false),
@@ -2129,11 +2174,16 @@ If appropriate, ask only one useful unanswered question.
 
                 {officerPhoneHref && (
                   <a
-                    href={officerPhoneHref}
                     onClick={async (e) => {
                       e.preventDefault();
-                      await handleTriggeredSummaryAction("contact");
-                      window.location.href = officerPhoneHref;
+                      const targetHref = officerPhoneHref;
+
+                      if (!targetHref) return;
+
+                      window.location.href = targetHref;
+                      void handleTriggeredSummaryAction("contact").finally(() => {
+                        finalizeTriggeredAction(true);
+                      });
                     }}
                     style={{
                       ...buttonSecondaryStyle(false),
