@@ -42,6 +42,7 @@ type LoanOfficerRecord = {
   assistantMobile?: string;
   applyUrl: string;
   scheduleUrl: string;
+  companyName: string;
 };
 
 type MatchBucket = {
@@ -151,6 +152,16 @@ type RoutingPayload = {
 
 const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
 
+/**
+ * IMPORTANT:
+ * This assumes your email summary route is located at app/api/route.ts
+ * which means the URL is /api
+ *
+ * If later you move it to app/api/summary/route.ts,
+ * then change this constant to "/api/summary"
+ */
+const SUMMARY_API_PATH = "/api";
+
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
   {
     id: "sandro-pansini-souza",
@@ -162,6 +173,7 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantMobile: "8576150836",
     applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://calendly.com/sandropansini",
+    companyName: "Beyond Financing, Inc.",
   },
   {
     id: "warren-wendt",
@@ -173,6 +185,7 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantMobile: "8576150836",
     applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://www.beyondfinancing.com",
+    companyName: "Beyond Financing, Inc.",
   },
   {
     id: "finley-beyond",
@@ -184,6 +197,7 @@ const LOAN_OFFICERS: LoanOfficerRecord[] = [
     assistantMobile: "8576150836",
     applyUrl: APPLY_NOW_URL,
     scheduleUrl: "https://www.beyondfinancing.com",
+    companyName: "Beyond Financing, Inc.",
   },
 ];
 
@@ -237,7 +251,7 @@ const COPY = {
     internalReviewText:
       "This section reflects Finley Beyond’s internal matching direction and is used to guide the conversation and routing.",
     likelyDirection: "Likely Direction",
-    lenderCoverage: "Lender Coverage",
+    lenderCoverage: "Lender/Broker Coverage",
     nextQuestion: "Next Best Question",
     chatPlaceholder:
       "Ask a question or answer Finley Beyond’s next mortgage question.",
@@ -256,6 +270,9 @@ const COPY = {
     yes: "Yes",
     no: "No",
     notSure: "Not Sure",
+    summarySent: "Internal summary sent successfully.",
+    summaryFailed:
+      "The conversation worked, but the internal summary email did not send.",
   },
   pt: {
     title: "Área do Cliente / Borrower",
@@ -302,7 +319,7 @@ const COPY = {
     internalReviewText:
       "Esta seção reflete a direção interna de matching do Finley Beyond e é usada para orientar a conversa e o roteamento.",
     likelyDirection: "Direção Mais Provável",
-    lenderCoverage: "Cobertura de Lenders",
+    lenderCoverage: "Cobertura Lender/Broker",
     nextQuestion: "Próxima Melhor Pergunta",
     chatPlaceholder:
       "Faça uma pergunta ou responda à próxima pergunta do Finley Beyond.",
@@ -322,6 +339,9 @@ const COPY = {
     yes: "Sim",
     no: "Não",
     notSure: "Não Tenho Certeza",
+    summarySent: "Resumo interno enviado com sucesso.",
+    summaryFailed:
+      "A conversa funcionou, mas o email de resumo interno não foi enviado.",
   },
   es: {
     title: "Espacio del Cliente / Borrower",
@@ -368,7 +388,7 @@ const COPY = {
     internalReviewText:
       "Esta sección refleja la dirección interna de matching de Finley Beyond y se utiliza para orientar la conversación y el enrutamiento.",
     likelyDirection: "Dirección Más Probable",
-    lenderCoverage: "Cobertura de Lenders",
+    lenderCoverage: "Cobertura Lender/Broker",
     nextQuestion: "Siguiente Mejor Pregunta",
     chatPlaceholder:
       "Haga una pregunta o responda la siguiente pregunta de Finley Beyond.",
@@ -388,6 +408,9 @@ const COPY = {
     yes: "Sí",
     no: "No",
     notSure: "No Estoy Seguro",
+    summarySent: "Resumen interno enviado correctamente.",
+    summaryFailed:
+      "La conversación funcionó, pero no se envió el correo interno de resumen.",
   },
 } as const;
 
@@ -541,6 +564,21 @@ function findOfficer(query: string): LoanOfficerRecord | null {
   return partial;
 }
 
+function sanitizeBorrowerVisibleDirection(text: string | undefined, companyName: string) {
+  if (!text?.trim()) return `Review available financing paths through ${companyName}.`;
+
+  let safe = text;
+
+  safe = safe.replace(/\bClearEdge Lending\b/gi, companyName);
+  safe = safe.replace(/\bFirst National Bank of America\b/gi, companyName);
+  safe = safe.replace(/\blenders\b/gi, "financing paths");
+  safe = safe.replace(/\blender\b/gi, "financing path");
+  safe = safe.replace(/\binvestors\b/gi, "financing sources");
+  safe = safe.replace(/\binvestor\b/gi, "financing source");
+
+  return safe;
+}
+
 export default function BorrowerPage() {
   const [language, setLanguage] = useState<LanguageCode>("en");
   const t = COPY[language];
@@ -660,6 +698,7 @@ export default function BorrowerPage() {
     if (scenario.occupancy.trim()) facts.push(`Occupancy: ${scenario.occupancy.trim()}`);
     facts.push(`Transaction purpose: ${loanPurpose}`);
     facts.push(`Assigned loan officer: ${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`);
+    facts.push(`Broker/lender company name to reference when needed: ${selectedOfficer.companyName}`);
 
     if (intake.realtorStatus === "yes") {
       facts.push(`Borrower is working with a Realtor.`);
@@ -690,6 +729,7 @@ export default function BorrowerPage() {
     scenario.downPayment,
     scenario.homePrice,
     scenario.occupancy,
+    selectedOfficer.companyName,
     selectedOfficer.name,
     selectedOfficer.nmls,
   ]);
@@ -702,6 +742,10 @@ Rules for borrower-facing response:
 - If target state is already provided, do not ask again for subject property state unless there is a real reason to verify a difference.
 - Do not repeat the loan officer's full name in every message.
 - Mention the assigned loan officer only when useful, and no more than once in the response.
+- Do not mention lender names, investor names, or internal lender coverage names to the borrower.
+- If referring to the company, use the broker/lender company name already provided in the known facts.
+- Do not tell the borrower to visit the website for Apply Now when the Apply Now button is already on the page.
+- If referencing Apply Now, say: "You can begin by selecting the Apply Now option below."
 - Do not promise approval.
 - Do not reveal raw internal lender/program names unless compliance-safe.
 - Encourage Apply Now naturally when useful, not mechanically every time.
@@ -715,6 +759,43 @@ Rules for borrower-facing response:
     return "English";
   }, [language]);
 
+  const resetBorrowerWorkspace = () => {
+    setAccepted(false);
+    setLoanPurpose("Purchase");
+    setLoanOfficerQuery("");
+    setSelectedOfficer(DEFAULT_OFFICER);
+    setReviewing(false);
+    setSending(false);
+    setMatchLoading(false);
+    setPageError("");
+    setMatchError("");
+    setOfficerStatus("");
+    setSummaryStatus("");
+    setIntake({
+      name: "",
+      email: "",
+      phone: "",
+      credit: "",
+      income: "",
+      debt: "",
+      currentState: "",
+      targetState: "",
+      realtorStatus: "not-sure",
+      realtorName: "",
+      realtorPhone: "",
+    });
+    setScenario({
+      homePrice: "",
+      downPayment: "",
+      occupancy: "",
+    });
+    setChatInput("");
+    setMessages([]);
+    setRouting(undefined);
+    setMatchResult(null);
+    sentSummaryKeysRef.current.clear();
+  };
+
   const sendSummaryToLoanOfficer = async (
     conversation: ChatMessage[],
     trigger: SummaryTrigger = "ai",
@@ -726,7 +807,7 @@ Rules for borrower-facing response:
     const activeOfficer = options?.resolvedOfficer || selectedOfficer;
 
     if (!intake.name.trim() || !intake.email.trim() || !intake.phone.trim()) {
-      return;
+      return { success: false, error: "Missing required lead details." };
     }
 
     const signature = JSON.stringify({
@@ -745,11 +826,11 @@ Rules for borrower-facing response:
     const dedupeKey = `${trigger}:${signature}`;
 
     if (!options?.force && sentSummaryKeysRef.current.has(dedupeKey)) {
-      return;
+      return { success: true, deduped: true };
     }
 
     try {
-      const response = await fetch("/api/route", {
+      const response = await fetch(SUMMARY_API_PATH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -784,16 +865,20 @@ Rules for borrower-facing response:
       sentSummaryKeysRef.current.add(dedupeKey);
 
       if (trigger === "ai") {
-        setSummaryStatus(`Internal summary sent to ${activeOfficer.email}.`);
+        setSummaryStatus(`${t.summarySent} ${activeOfficer.email}`);
       }
+
+      return { success: true };
     } catch (error) {
       console.error("Email summary failed:", error);
       if (trigger === "ai") {
         setSummaryStatus("");
-        setPageError((prev) =>
-          prev || "The conversation worked, but the internal summary email did not send."
-        );
+        setPageError((prev) => prev || t.summaryFailed);
       }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Summary email failed.",
+      };
     }
   };
 
@@ -1173,7 +1258,7 @@ If appropriate, ask only one useful unanswered question.
     }
   };
 
-  const handleTriggeredSummaryClick = (trigger: SummaryTrigger) => {
+  const handleTriggeredSummaryAction = async (trigger: SummaryTrigger) => {
     const conversationToSend = messages.length
       ? messages
       : [
@@ -1183,9 +1268,22 @@ If appropriate, ask only one useful unanswered question.
           },
         ];
 
-    void sendSummaryToLoanOfficer(conversationToSend, trigger, {
+    const result = await sendSummaryToLoanOfficer(conversationToSend, trigger, {
       force: true,
     });
+
+    if (!result.success) {
+      setPageError(
+        result.error || t.summaryFailed
+      );
+      return false;
+    }
+
+    if (trigger === "apply") {
+      resetBorrowerWorkspace();
+    }
+
+    return true;
   };
 
   const officerPhoneHref = selectedOfficer.mobile
@@ -1203,6 +1301,13 @@ If appropriate, ask only one useful unanswered question.
       ? `Hola ${selectedOfficer.name}, me gustaría hablar sobre mi escenario de financiamiento.`
       : `Hello ${selectedOfficer.name}, I would like to discuss my financing scenario.`
   )}`;
+
+  const borrowerVisibleDirection = sanitizeBorrowerVisibleDirection(
+    matchResult?.openai_enhancement?.topRecommendation ||
+      matchResult?.top_recommendation ||
+      "No strong direction yet",
+    selectedOfficer.companyName
+  );
 
   return (
     <main
@@ -1809,9 +1914,7 @@ If appropriate, ask only one useful unanswered question.
                       {t.likelyDirection}
                     </div>
                     <div style={{ fontSize: 22, fontWeight: 800 }}>
-                      {matchResult.openai_enhancement?.topRecommendation ||
-                        matchResult.top_recommendation ||
-                        "No strong direction yet"}
+                      {borrowerVisibleDirection}
                     </div>
                   </div>
 
@@ -1838,8 +1941,7 @@ If appropriate, ask only one useful unanswered question.
                     </div>
                     <div>
                       <strong>{t.lenderCoverage}:</strong>{" "}
-                      {(matchResult.lender_summary?.active_lenders_checked || []).join(", ") ||
-                        t.notProvided}
+                      {selectedOfficer.companyName || t.notProvided}
                     </div>
                   </div>
 
@@ -1961,7 +2063,13 @@ If appropriate, ask only one useful unanswered question.
                   href={selectedOfficer.applyUrl}
                   target="_blank"
                   rel="noreferrer"
-                  onClick={() => handleTriggeredSummaryClick("apply")}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    const ok = await handleTriggeredSummaryAction("apply");
+                    if (ok) {
+                      window.open(selectedOfficer.applyUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
                   style={{
                     ...buttonPrimaryStyle(false),
                     textAlign: "center",
@@ -1975,7 +2083,13 @@ If appropriate, ask only one useful unanswered question.
                   href={selectedOfficer.scheduleUrl}
                   target="_blank"
                   rel="noreferrer"
-                  onClick={() => handleTriggeredSummaryClick("schedule")}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    const ok = await handleTriggeredSummaryAction("schedule");
+                    if (ok) {
+                      window.open(selectedOfficer.scheduleUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
                   style={{
                     ...buttonSecondaryStyle(true),
                     textAlign: "center",
@@ -1987,7 +2101,13 @@ If appropriate, ask only one useful unanswered question.
 
                 <a
                   href={officerMailtoHref}
-                  onClick={() => handleTriggeredSummaryClick("contact")}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    const ok = await handleTriggeredSummaryAction("contact");
+                    if (ok) {
+                      window.location.href = officerMailtoHref;
+                    }
+                  }}
                   style={{
                     ...buttonSecondaryStyle(false),
                     textAlign: "center",
@@ -2000,7 +2120,13 @@ If appropriate, ask only one useful unanswered question.
                 {officerPhoneHref && (
                   <a
                     href={officerPhoneHref}
-                    onClick={() => handleTriggeredSummaryClick("contact")}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      const ok = await handleTriggeredSummaryAction("contact");
+                      if (ok) {
+                        window.location.href = officerPhoneHref;
+                      }
+                    }}
                     style={{
                       ...buttonSecondaryStyle(false),
                       textAlign: "center",
