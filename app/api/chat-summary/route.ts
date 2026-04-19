@@ -288,9 +288,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const fallback = buildFallbackSummary(lead, messages, trigger);
+   const providedSummary =
+  body?.summary &&
+  typeof body.summary === "object"
+    ? (body.summary as SummaryPayload)
+    : null;
 
-    const aiSummary = await callOpenAIJson<SummaryPayload>({
+const fallback = buildFallbackSummary(lead, messages, trigger);
+
+const aiSummary = providedSummary
+  ? null
+  : await callOpenAIJson<SummaryPayload>({
       system: `
 You create concise internal mortgage briefing emails.
 
@@ -335,34 +343,62 @@ ${messages
   .join("\n")}
       `.trim(),
     });
-
-    const summary: SummaryPayload = aiSummary
-      ? {
-          borrowerSummary: aiSummary.borrowerSummary || fallback.borrowerSummary,
-          likelyDirection: aiSummary.likelyDirection || fallback.likelyDirection,
-          strengths:
-            Array.isArray(aiSummary.strengths) && aiSummary.strengths.length > 0
-              ? aiSummary.strengths
-              : fallback.strengths,
-          openQuestions:
-            Array.isArray(aiSummary.openQuestions) &&
-            aiSummary.openQuestions.length > 0
-              ? aiSummary.openQuestions
-              : fallback.openQuestions,
-          provisionalPrograms:
-            Array.isArray(aiSummary.provisionalPrograms) &&
-            aiSummary.provisionalPrograms.length > 0
-              ? aiSummary.provisionalPrograms
-              : fallback.provisionalPrograms,
-          recommendedNextStep:
-            aiSummary.recommendedNextStep || fallback.recommendedNextStep,
-          loanOfficerActionPlan:
-            Array.isArray(aiSummary.loanOfficerActionPlan) &&
-            aiSummary.loanOfficerActionPlan.length > 0
-              ? aiSummary.loanOfficerActionPlan
-              : fallback.loanOfficerActionPlan,
-        }
-      : fallback;
+const summary: SummaryPayload = providedSummary
+  ? {
+      borrowerSummary:
+        providedSummary.borrowerSummary || fallback.borrowerSummary,
+      likelyDirection:
+        providedSummary.likelyDirection || fallback.likelyDirection,
+      strengths:
+        Array.isArray(providedSummary.strengths) &&
+        providedSummary.strengths.length > 0
+          ? providedSummary.strengths
+          : fallback.strengths,
+      openQuestions:
+        Array.isArray(providedSummary.openQuestions) &&
+        providedSummary.openQuestions.length > 0
+          ? providedSummary.openQuestions
+          : fallback.openQuestions,
+      provisionalPrograms:
+        Array.isArray(providedSummary.provisionalPrograms) &&
+        providedSummary.provisionalPrograms.length > 0
+          ? providedSummary.provisionalPrograms
+          : fallback.provisionalPrograms,
+      recommendedNextStep:
+        providedSummary.recommendedNextStep || fallback.recommendedNextStep,
+      loanOfficerActionPlan:
+        Array.isArray(providedSummary.loanOfficerActionPlan) &&
+        providedSummary.loanOfficerActionPlan.length > 0
+          ? providedSummary.loanOfficerActionPlan
+          : fallback.loanOfficerActionPlan,
+    }
+  : aiSummary
+  ? {
+      borrowerSummary: aiSummary.borrowerSummary || fallback.borrowerSummary,
+      likelyDirection: aiSummary.likelyDirection || fallback.likelyDirection,
+      strengths:
+        Array.isArray(aiSummary.strengths) && aiSummary.strengths.length > 0
+          ? aiSummary.strengths
+          : fallback.strengths,
+      openQuestions:
+        Array.isArray(aiSummary.openQuestions) &&
+        aiSummary.openQuestions.length > 0
+          ? aiSummary.openQuestions
+          : fallback.openQuestions,
+      provisionalPrograms:
+        Array.isArray(aiSummary.provisionalPrograms) &&
+        aiSummary.provisionalPrograms.length > 0
+          ? aiSummary.provisionalPrograms
+          : fallback.provisionalPrograms,
+      recommendedNextStep:
+        aiSummary.recommendedNextStep || fallback.recommendedNextStep,
+      loanOfficerActionPlan:
+        Array.isArray(aiSummary.loanOfficerActionPlan) &&
+        aiSummary.loanOfficerActionPlan.length > 0
+          ? aiSummary.loanOfficerActionPlan
+          : fallback.loanOfficerActionPlan,
+    }
+  : fallback;
 
     const html = buildHtml({
       lead,
