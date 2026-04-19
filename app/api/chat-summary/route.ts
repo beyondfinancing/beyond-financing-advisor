@@ -358,11 +358,16 @@ Return valid JSON only with this exact shape:
 
 Rules:
 - write for a mortgage professional
-- be practical and concise
+- be practical, concise, and operational
 - use only information actually present in the provided details and transcript
 - do not promise approval
 - provisional programs should be directional only
 - if this is professional mode, frame the summary as internal file coaching and record keeping
+- if the selected action is Apply Now, recommendedNextStep and loanOfficerActionPlan must focus on application follow-up, document collection, and rapid conversion
+- if the selected action is Schedule, recommendedNextStep and loanOfficerActionPlan must focus on consultation preparation and meeting follow-up
+- if the selected action is Contact, recommendedNextStep and loanOfficerActionPlan must focus on direct borrower response and clarification of the immediate objective
+- if the selected action is AI Conversation, recommendedNextStep and loanOfficerActionPlan should focus on review, clarification, and structured follow-up
+- prefer concrete next steps over general language
       `.trim(),
       user: `
 Lead details:
@@ -376,6 +381,9 @@ Lead details:
 - Professional Role: ${lead.professionalRole || "Not provided"}
 - Assigned Email: ${selectedEmail}
 - Trigger: ${trigger}
+- Action Selected: ${getTriggerLabel(trigger)}
+- Assigned Loan Officer Name: ${assignedOfficerName || "Not provided"}
+- Estimated Loan Amount: ${estimatedLoanAmount || "Not provided"}
 
 Conversation transcript:
 ${messages
@@ -384,6 +392,8 @@ ${messages
     return `${index + 1}. ${who}: ${msg.content || ""}`;
   })
   .join("\n")}
+
+Write the summary so the recommendedNextStep and loanOfficerActionPlan clearly reflect the selected action.
       `.trim(),
     });
 const summary: SummaryPayload = providedSummary
