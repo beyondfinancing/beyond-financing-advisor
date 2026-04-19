@@ -14,9 +14,13 @@ type LeadPayload = {
   preferredLanguage?: PreferredLanguage;
   loanOfficer?: string;
   assignedEmail?: string;
+  recipientEmail?: string;
+  professionalName?: string;
+  professionalRole?: string;
+  mode?: "borrower" | "professional";
 };
 
-type SummaryTrigger = "ai" | "apply" | "schedule" | "contact";
+type SummaryTrigger = "ai" | "apply" | "schedule" | "contact" | "professional";
 
 type SummaryPayload = {
   borrowerSummary: string;
@@ -30,8 +34,11 @@ type SummaryPayload = {
 
 const loanOfficerMap: Record<string, string> = {
   finley: "finley@beyondfinancing.com",
+  "finley-beyond": "finley@beyondfinancing.com",
   sandro: "pansini@beyondfinancing.com",
+  "sandro-pansini-souza": "pansini@beyondfinancing.com",
   warren: "warren@beyondfinancing.com",
+  "warren-wendt": "warren@beyondfinancing.com",
 };
 
 function escapeHtml(value: string): string {
@@ -50,7 +57,7 @@ function nl2br(value: string): string {
 function buildTranscriptHtml(messages: ChatMessage[]): string {
   return messages
     .map((msg, index) => {
-      const roleLabel = msg.role === "user" ? "Borrower" : "Finley Beyond";
+      const roleLabel = msg.role === "user" ? "User" : "Finley Beyond";
 
       return `
         <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;background:${
@@ -77,25 +84,32 @@ function buildFallbackSummary(
   messages: ChatMessage[],
   trigger: SummaryTrigger
 ): SummaryPayload {
-  const borrowerMessages = messages
+  const userMessages = messages
     .filter((msg) => msg.role === "user")
     .map((msg) => msg.content || "")
     .join(" ");
 
+  const isProfessional = lead.mode === "professional" || trigger === "professional";
+
   return {
-    borrowerSummary:
-      borrowerMessages ||
-      "The borrower engaged with Finley Beyond and requested mortgage guidance.",
-    likelyDirection:
-      "Borrower appears to be exploring a mortgage scenario and should receive licensed loan officer follow-up.",
+    borrowerSummary: isProfessional
+      ? userMessages ||
+        "A professional user engaged with Finley Beyond for internal mortgage analysis."
+      : userMessages ||
+        "The borrower engaged with Finley Beyond and requested mortgage guidance.",
+    likelyDirection: isProfessional
+      ? "Professional review suggests the file should be refined through guideline-based coaching and documented next steps."
+      : "Borrower appears to be exploring a mortgage scenario and should receive licensed loan officer follow-up.",
     strengths: [
-      "Lead submitted with contact details.",
-      "Borrower engaged in a meaningful mortgage conversation.",
+      "Conversation record captured successfully.",
+      isProfessional
+        ? "Professional user engaged in internal mortgage analysis."
+        : "Borrower engaged in a meaningful mortgage conversation.",
       `Preferred language: ${lead.preferredLanguage || "Not provided"}.`,
     ],
     openQuestions: [
       "Confirm occupancy and timeline.",
-      "Confirm funds source for down payment and closing.",
+      "Confirm funds source, reserves, and compensating factors.",
       "Confirm documentation strategy and final program direction.",
     ],
     provisionalPrograms: [
@@ -105,17 +119,19 @@ function buildFallbackSummary(
     ],
     recommendedNextStep:
       trigger === "apply"
-        ? "Borrower clicked or was directed toward the application flow."
+        ? "User clicked or was directed toward the application flow."
         : trigger === "schedule"
-        ? "Borrower clicked or was directed toward consultation scheduling."
+        ? "User clicked or was directed toward consultation scheduling."
         : trigger === "contact"
-        ? "Borrower clicked or was directed toward the contact flow."
+        ? "User clicked or was directed toward the contact flow."
+        : trigger === "professional"
+        ? "Professional should retain this record and continue file refinement based on the strongest remaining match direction."
         : "Loan officer should review the conversation and follow up promptly.",
     loanOfficerActionPlan: [
       "Review the transcript.",
-      "Call or email the borrower promptly.",
-      "Confirm documentation strategy.",
-      "Guide the borrower toward application and pre-approval review.",
+      "Review strongest and conditional program directions.",
+      "Confirm the missing qualification details and compensating factors.",
+      "Document the next move for the file.",
     ],
   };
 }
@@ -168,21 +184,24 @@ function buildHtml(args: {
 
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
-      <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond</h1>
+      <h1 style="margin:0 0 18px 0;color:#263366;">Finley Beyond Conversation Record</h1>
 
       <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
-        <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Session Details</h2>
+        <p><strong>Mode:</strong> ${escapeHtml(lead.mode || "borrower")}</p>
         <p><strong>Full Name:</strong> ${escapeHtml(lead.fullName || "Not provided")}</p>
         <p><strong>Email:</strong> ${escapeHtml(lead.email || "Not provided")}</p>
         <p><strong>Phone:</strong> ${escapeHtml(lead.phone || "Not provided")}</p>
         <p><strong>Language:</strong> ${escapeHtml(lead.preferredLanguage || "Not provided")}</p>
-        <p><strong>Selected Loan Officer:</strong> ${escapeHtml(lead.loanOfficer || "Not provided")}</p>
-        <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
+        <p><strong>Loan Officer / User ID:</strong> ${escapeHtml(lead.loanOfficer || "Not provided")}</p>
+        <p><strong>Professional Name:</strong> ${escapeHtml(lead.professionalName || "Not provided")}</p>
+        <p><strong>Professional Role:</strong> ${escapeHtml(lead.professionalRole || "Not provided")}</p>
+        <p><strong>Recipient Email:</strong> ${escapeHtml(selectedEmail)}</p>
         <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
       </div>
 
       <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
-        <h2 style="margin:0 0 12px 0;font-size:20px;">Borrower Summary</h2>
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Summary</h2>
         <p style="line-height:1.7;">${nl2br(summary.borrowerSummary)}</p>
 
         <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
@@ -202,15 +221,13 @@ function buildHtml(args: {
 
         <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
         <ul style="line-height:1.8;">
-          ${summary.openQuestions
-            .map((item) => `<li>${escapeHtml(item)}</li>`)
-            .join("")}
+          ${summary.openQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
         </ul>
 
         <h3 style="margin:18px 0 8px 0;">Recommended Next Step</h3>
         <p style="line-height:1.7;">${nl2br(summary.recommendedNextStep)}</p>
 
-        <h3 style="margin:18px 0 8px 0;">Loan Officer Action Plan</h3>
+        <h3 style="margin:18px 0 8px 0;">Action Plan</h3>
         <ul style="line-height:1.8;">
           ${summary.loanOfficerActionPlan
             .map((item) => `<li>${escapeHtml(item)}</li>`)
@@ -241,10 +258,12 @@ export async function POST(req: Request) {
     const phone = String(lead.phone || "").trim();
     const preferredLanguage = String(lead.preferredLanguage || "").trim();
     const loanOfficer = String(lead.loanOfficer || "").trim().toLowerCase();
+    const recipientEmail = String(lead.recipientEmail || "").trim();
+    const mode = lead.mode || "borrower";
 
-    if (!fullName || !email || !preferredLanguage || !loanOfficer) {
+    if (!preferredLanguage) {
       return NextResponse.json(
-        { success: false, error: "Missing required summary details." },
+        { success: false, error: "Missing preferred language." },
         { status: 400 }
       );
     }
@@ -257,15 +276,23 @@ export async function POST(req: Request) {
     }
 
     const selectedEmail =
+      recipientEmail ||
       String(lead.assignedEmail || "").trim() ||
       loanOfficerMap[loanOfficer] ||
       "finley@beyondfinancing.com";
+
+    if (!selectedEmail) {
+      return NextResponse.json(
+        { success: false, error: "No recipient email was resolved." },
+        { status: 400 }
+      );
+    }
 
     const fallback = buildFallbackSummary(lead, messages, trigger);
 
     const aiSummary = await callOpenAIJson<SummaryPayload>({
       system: `
-You create concise internal mortgage loan officer briefing emails.
+You create concise internal mortgage briefing emails.
 
 Return valid JSON only with this exact shape:
 {
@@ -279,27 +306,30 @@ Return valid JSON only with this exact shape:
 }
 
 Rules:
-- write for an internal mortgage loan officer
+- write for a mortgage professional
 - be practical and concise
-- use only information actually present in the lead details and transcript
+- use only information actually present in the provided details and transcript
 - do not promise approval
 - provisional programs should be directional only
-- examples can include Conventional review, FHA review, Jumbo review, ITIN review, Self-employed review, Alternative documentation review, etc.
+- if this is professional mode, frame the summary as internal file coaching and record keeping
       `.trim(),
       user: `
 Lead details:
-- Full Name: ${fullName}
-- Email: ${email}
+- Mode: ${mode}
+- Full Name: ${fullName || "Not provided"}
+- Email: ${email || "Not provided"}
 - Phone: ${phone || "Not provided"}
 - Preferred Language: ${preferredLanguage}
-- Selected Loan Officer: ${loanOfficer}
+- Loan Officer / User ID: ${loanOfficer || "Not provided"}
+- Professional Name: ${lead.professionalName || "Not provided"}
+- Professional Role: ${lead.professionalRole || "Not provided"}
 - Assigned Email: ${selectedEmail}
 - Trigger: ${trigger}
 
 Conversation transcript:
 ${messages
   .map((msg, index) => {
-    const who = msg.role === "user" ? "Borrower" : "Finley";
+    const who = msg.role === "user" ? "User" : "Finley";
     return `${index + 1}. ${who}: ${msg.content || ""}`;
   })
   .join("\n")}
@@ -353,8 +383,11 @@ ${messages
           process.env.RESEND_FROM_EMAIL ||
           "Finley Beyond <noreply@beyondfinancing.com>",
         to: [selectedEmail],
-        reply_to: email,
-        subject: `Conversation Summary: ${fullName}`,
+        reply_to: email || selectedEmail,
+        subject:
+          mode === "professional"
+            ? `Finley Professional Session Record${fullName ? `: ${fullName}` : ""}`
+            : `Conversation Summary: ${fullName || "Borrower Session"}`,
         html,
       }),
     });
@@ -369,9 +402,12 @@ ${messages
       summary,
       sentTo: selectedEmail,
     });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { success: false, error: "Server error." },
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Server error.",
+      },
       { status: 500 }
     );
   }
