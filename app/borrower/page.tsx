@@ -1283,7 +1283,7 @@ If appropriate, ask only one useful unanswered question.
           ? "Selecionei Aplicar Agora."
           : trigger === "schedule"
           ? "Selecionei Agendar com o Loan Officer."
-          : channel === "call"
+          : channel === "phone"
           ? "Selecionei Ligar para o Loan Officer."
           : "Selecionei Enviar Email ao Loan Officer."
         : language === "es"
@@ -1291,14 +1291,14 @@ If appropriate, ask only one useful unanswered question.
           ? "Seleccioné Aplicar Ahora."
           : trigger === "schedule"
           ? "Seleccioné Agendar con el Loan Officer."
-          : channel === "call"
+            : channel === "phone"
           ? "Seleccioné Llamar al Loan Officer."
           : "Seleccioné Enviar Correo al Loan Officer."
         : trigger === "apply"
         ? "I selected Apply Now."
         : trigger === "schedule"
         ? "I selected Schedule with Loan Officer."
-        : channel === "call"
+        : channel === "phone"
         ? "I selected Call Loan Officer."
         : "I selected Email Loan Officer.";
 
@@ -2216,9 +2216,9 @@ If appropriate, ask only one useful unanswered question.
                     const targetHref = officerMailtoHref;
 
                     window.location.href = targetHref;
-                            void handleTriggeredSummaryAction("contact", {
-                        channel: "call",
-                      }).finally(() => {                      
+                    void handleTriggeredSummaryAction("contact", {
+                      channel: "email",
+                    }).finally(() => {                      
                       finalizeTriggeredAction(true);
                     });
                   }}
@@ -2242,7 +2242,9 @@ If appropriate, ask only one useful unanswered question.
                       if (!targetHref) return;
 
                       window.location.href = targetHref;
-                      void handleTriggeredSummaryAction("contact").finally(() => {
+                      void handleTriggeredSummaryAction("contact", {
+                        channel: "phone",
+                      }).finally(() => {
                         finalizeTriggeredAction(true);
                       });
                     }}
