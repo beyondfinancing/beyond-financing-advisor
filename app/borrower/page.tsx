@@ -859,6 +859,10 @@ Rules for borrower-facing response:
             phone: intake.phone.trim(),
             preferredLanguage: preferredLanguageLabel,
             loanOfficer: activeOfficer.id,
+            assignedOfficerName: activeOfficer.name,
+            estimatedLoanAmount: estimatedLoanAmount
+              ? formatMoney(estimatedLoanAmount)
+              : "",
             assignedEmail: activeOfficer.email,
           },
           messages: conversation,
