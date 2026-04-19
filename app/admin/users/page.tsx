@@ -10,6 +10,7 @@ type UserRow = {
   email: string | null;
   nmls: string | null;
   role: string | null;
+  company_name: string | null;
   created_at: string | null;
 };
 
@@ -61,10 +62,33 @@ function pillStyle(): CSSProperties {
   };
 }
 
-export default async function AdminUsersPage() {
+function alertStyle(success = true): CSSProperties {
+  return {
+    border: success ? "1px solid #BADBCC" : "1px solid #F3C5BC",
+    background: success ? "#F0FFF4" : "#FFF4F2",
+    color: success ? "#0F5132" : "#8A3B2F",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  };
+}
+
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   if (!(await isAdminSignedIn())) {
     redirect("/admin/login");
   }
+
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const successMessage = Array.isArray(resolvedSearchParams.success)
+    ? resolvedSearchParams.success[0]
+    : resolvedSearchParams.success;
+  const errorMessage = Array.isArray(resolvedSearchParams.error)
+    ? resolvedSearchParams.error[0]
+    : resolvedSearchParams.error;
 
   async function createUser(formData: FormData) {
     "use server";
@@ -73,9 +97,10 @@ export default async function AdminUsersPage() {
     const email = String(formData.get("email") || "").trim().toLowerCase();
     const nmls = String(formData.get("nmls") || "").trim();
     const role = String(formData.get("role") || "").trim();
+    const companyName = String(formData.get("company_name") || "").trim();
 
-    if (!name || !email || !nmls || !role) {
-      redirect("/admin/users?error=Please complete all user fields.");
+    if (!name || !email || !nmls || !role || !companyName) {
+      redirect("/admin/users?error=Please complete all user fields, including Company Name.");
     }
 
     const { error } = await supabaseAdmin.from("users").insert({
@@ -83,6 +108,7 @@ export default async function AdminUsersPage() {
       email,
       nmls,
       role,
+      company_name: companyName,
     });
 
     if (error) {
@@ -172,6 +198,14 @@ export default async function AdminUsersPage() {
           </div>
         </div>
 
+        {successMessage ? (
+          <div style={alertStyle(true)}>{successMessage}</div>
+        ) : null}
+
+        {errorMessage ? (
+          <div style={alertStyle(false)}>{errorMessage}</div>
+        ) : null}
+
         <div
           style={{
             display: "grid",
@@ -206,6 +240,16 @@ export default async function AdminUsersPage() {
                   name="nmls"
                   style={inputStyle()}
                   placeholder="Example: 1625542 or 2394496BM"
+                />
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Company Name</div>
+                <input
+                  name="company_name"
+                  style={inputStyle()}
+                  placeholder="Example: Beyond Financing, Inc."
+                  defaultValue="Beyond Financing, Inc."
                 />
               </div>
 
@@ -287,6 +331,9 @@ export default async function AdminUsersPage() {
                         </div>
                         <div style={{ marginTop: 8, color: "#5A6A84" }}>
                           NMLS / Login ID: {user.nmls || "-"}
+                        </div>
+                        <div style={{ marginTop: 8, color: "#5A6A84" }}>
+                          Company Name: {user.company_name || "-"}
                         </div>
                       </div>
 
