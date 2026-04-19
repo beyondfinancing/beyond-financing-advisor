@@ -383,6 +383,31 @@ function buildSummaryPayload(args: {
     `Available reserves months: ${
       form.available_reserves_months || "Not provided"
     }`,
+    "",
+    strongMatches.length > 0
+      ? `Strong matches: ${strongMatches
+          .map(
+            (item) =>
+              `${item.program_name || "Unknown Program"} - ${item.lender_name || "Unknown Lender"}`
+          )
+          .join("; ")}`
+      : "Strong matches: None",
+    conditionalMatches.length > 0
+      ? `Conditional matches: ${conditionalMatches
+          .map(
+            (item) =>
+              `${item.program_name || "Unknown Program"} - ${item.lender_name || "Unknown Lender"}`
+          )
+          .join("; ")}`
+      : "Conditional matches: None",
+    eliminatedPaths.length > 0
+      ? `Eliminated paths: ${eliminatedPaths
+          .map(
+            (item) =>
+              `${item.program_name || "Unknown Program"} - ${item.lender_name || "Unknown Lender"}`
+          )
+          .join("; ")}`
+      : "Eliminated paths: None",
   ]
     .filter(Boolean)
     .join("\n");
@@ -412,7 +437,8 @@ function buildSummaryPayload(args: {
 
   const provisionalPrograms = [
     ...strongMatches.map(
-      (item) => `${item.program_name || "Unknown Program"} — ${item.lender_name || "Unknown Lender"}`
+      (item) =>
+        `${item.program_name || "Unknown Program"} — ${item.lender_name || "Unknown Lender"}`
     ),
     ...conditionalMatches.map(
       (item) =>
@@ -424,7 +450,7 @@ function buildSummaryPayload(args: {
     "Review the current match results and determine the strongest lender/program direction.",
     "Confirm missing qualification details and documentation.",
     "Review conditional matches, blockers, concerns, and reserves requirements.",
-    "Validate final eligibility directly against the applicable lender/investor guide before issuing advice or decisioning.",
+    "Validate final eligibility directly against the applicable lender or investor guide before issuing advice or decisioning.",
   ];
 
   return {
@@ -432,14 +458,16 @@ function buildSummaryPayload(args: {
       fullName: professionalSession?.name || "Professional User",
       email: professionalSession?.email || "",
       phone: "",
-      preferredLanguage: "English",
+      preferredLanguage: "English" as const,
       loanOfficer: professionalSession?.name || "Professional User",
       assignedEmail: professionalSession?.email || "",
+      recipientEmail: professionalSession?.email || "",
+      professionalName: professionalSession?.name || "Professional User",
+      professionalRole: professionalSession?.role || "Professional",
+      mode: "professional" as const,
     },
-    trigger: "manual",
-    formSnapshot: form,
-    transcript: chatMessages,
-    borrowerSummary,
+    trigger: "professional" as const,
+    messages: chatMessages,
     summary: {
       borrowerSummary,
       likelyDirection,
@@ -450,14 +478,6 @@ function buildSummaryPayload(args: {
         nextQuestion ||
         "Review the current file, collect the next missing detail, and validate lender-specific fit.",
       loanOfficerActionPlan,
-    },
-    rawMatchResults: {
-      strongMatches,
-      conditionalMatches,
-      eliminatedPaths,
-      topRecommendation,
-      nextQuestion,
-      openAiEnhancement,
     },
   };
 }
