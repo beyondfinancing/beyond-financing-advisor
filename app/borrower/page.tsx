@@ -669,7 +669,6 @@ const downPayment = Number(scenario.downPayment.replace(/,/g, "") || 0);
     const ltv = ((homePrice - downPayment) / homePrice) * 100;
     return `${Math.max(0, Math.round(ltv))}%`;
   }, [scenario.homePrice, scenario.downPayment]);
-
   const matchRequestBody = useMemo(() => {
     return {
       borrower_status: guessBorrowerStatus(),
@@ -2176,23 +2175,13 @@ If appropriate, ask only one useful unanswered question.
                   onClick={async (e) => {
                     e.preventDefault();
 
-                    const applyWindow = window.open(
+                    window.open(
                       selectedOfficer.applyUrl,
                       "_blank",
                       "noopener,noreferrer"
                     );
 
                     await handleTriggeredSummaryAction("apply");
-
-                    if (applyWindow) {
-                      applyWindow.location.href = selectedOfficer.applyUrl;
-                    } else {
-                      window.open(
-                        selectedOfficer.applyUrl,
-                        "_blank",
-                        "noopener,noreferrer"
-                      );
-                    }
 
                     finalizeTriggeredAction(
                       true,
@@ -2216,28 +2205,19 @@ If appropriate, ask only one useful unanswered question.
                   onClick={async (e) => {
                     e.preventDefault();
 
-                    const scheduleWindow = window.open(
-                      "about:blank",
+                    window.open(
+                      selectedOfficer.scheduleUrl,
                       "_blank",
                       "noopener,noreferrer"
                     );
 
                     await handleTriggeredSummaryAction("schedule");
 
-                    if (scheduleWindow) {
-                      scheduleWindow.location.href = selectedOfficer.scheduleUrl;
-                    } else {
-                      window.open(
-                        selectedOfficer.scheduleUrl,
-                        "_blank",
-                        "noopener,noreferrer"
-                      );
-                    }
-
                     finalizeTriggeredAction(
                       true,
                       "Scheduling page opened. Your information was routed successfully."
                     );
+                  }}
                   style={{
                     ...buttonSecondaryStyle(true),
                     textAlign: "center",
@@ -2256,13 +2236,15 @@ If appropriate, ask only one useful unanswered question.
                     const targetHref = officerMailtoHref;
 
                     window.location.href = targetHref;
+
                     void handleTriggeredSummaryAction("contact", {
                       channel: "email",
-                    }).finally(() => {                      
+                    }).finally(() => {
                       finalizeTriggeredAction(
                         true,
                         "Email action launched. Your information was routed successfully."
                       );
+                    });
                   }}
                   style={{
                     ...buttonSecondaryStyle(false),
@@ -2284,6 +2266,7 @@ If appropriate, ask only one useful unanswered question.
                       if (!targetHref) return;
 
                       window.location.href = targetHref;
+
                       void handleTriggeredSummaryAction("contact", {
                         channel: "phone",
                       }).finally(() => {
@@ -2291,6 +2274,7 @@ If appropriate, ask only one useful unanswered question.
                           true,
                           "Call action launched. Your information was routed successfully."
                         );
+                      });
                     }}
                     style={{
                       ...buttonSecondaryStyle(false),
