@@ -62,7 +62,7 @@ export default function Page() {
 
         .bi-cards {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 16px;
         }
 
@@ -295,7 +295,7 @@ export default function Page() {
             </h1>
 
             <p className="bi-subtitle">
-              Beyond Intelligence helps borrowers prepare for mortgage review and helps
+              Beyond Intelligence™ helps borrowers prepare for mortgage review and helps
               loan officers, loan officer assistants, and processors sharpen program
               direction, identify missing information, and move files forward with
               greater structure and speed.
@@ -307,7 +307,7 @@ export default function Page() {
               <div className="bi-side-eyebrow">Start Here</div>
               <h2 className="bi-side-title">One cleaner screen. Faster entry.</h2>
               <p className="bi-side-text">
-                Borrowers can begin guided intake with Finley Beyond. Mortgage
+                Borrowers can begin guided intake with Finley Beyond™. Mortgage
                 professionals can test scenarios, discuss borrower structure, and
                 move toward the next best program direction.
               </p>
@@ -326,7 +326,7 @@ export default function Page() {
               <div className="bi-divider" />
 
               <p className="bi-disclaimer">
-                Beyond Intelligence provides preliminary decision support only. All
+                Beyond Intelligence™ provides preliminary decision support only. All
                 scenarios remain subject to licensed loan officer review, investor and
                 agency guidelines, documentation, verification, underwriting,
                 appraisal, title, and program requirements.
@@ -340,7 +340,7 @@ export default function Page() {
             <div className="bi-mini-title">Client / Borrower</div>
             <h3 className="bi-mini-headline">Prepare before you speak with your loan officer</h3>
             <p className="bi-mini-text">
-              Finley Beyond gathers intake details, target property scenario, loan
+              Finley Beyond™ gathers intake details, target property scenario, loan
               purpose, state-to-state plans, and follow-up questions so the file
               starts with stronger clarity.
             </p>
@@ -348,7 +348,7 @@ export default function Page() {
 
           <article className="bi-mini-card">
             <div className="bi-mini-title">Loan Officer Team</div>
-            <h3 className="bi-mini-headline">Collaborate with Finley Beyond on program direction</h3>
+            <h3 className="bi-mini-headline">Collaborate with Finley Beyond™ on program direction</h3>
             <p className="bi-mini-text">
               Loan officers, assistants, and processors can test scenarios, narrow
               likely paths, and generate cleaner internal decision support before
@@ -360,17 +360,28 @@ export default function Page() {
             <div className="bi-mini-title">Growth Engine</div>
             <h3 className="bi-mini-headline">Built for institutional-grade mortgage decision support</h3>
             <p className="bi-mini-text">
-              As Beyond Intelligence expands through agency guidance, investor
+              As Beyond Intelligence™ expands through agency guidance, investor
               overlays, niche loan products, and workflow intelligence, it becomes a
               stronger platform for borrowers and mortgage operations.
+            </p>
+          </article>
+
+          <article className="bi-mini-card">
+            <div className="bi-mini-title">AI-Powered Team Upgrade</div>
+            <h3 className="bi-mini-headline">Equip your mortgage team with Beyond Intelligence™</h3>
+            <p className="bi-mini-text">
+              Contact Beyond Intelligence™ to help transform your mortgage operation
+              with structured AI decision support, cleaner intake, stronger internal
+              guidance, and faster team execution.
+              <br />
+              <br />
+              Contact: <a href="mailto:mtgpro@beyondintelligence.io">mtgpro@beyondintelligence.io</a>
             </p>
           </article>
         </section>
 
         <p className="bi-footer-note">
-          This compact layout is intentionally tighter so the main page presents the
-          brand, the two primary paths, and the platform summary with less scrolling
-          and a cleaner first impression.
+          Powered by: Beyond Intelligence™ @2026
         </p>
       </div>
     </main>
