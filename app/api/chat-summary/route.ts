@@ -13,6 +13,8 @@ type LeadPayload = {
   phone?: string;
   preferredLanguage?: PreferredLanguage;
   loanOfficer?: string;
+  assignedOfficerName?: string;
+  estimatedLoanAmount?: string;
   assignedEmail?: string;
   recipientEmail?: string;
   professionalName?: string;
@@ -266,6 +268,8 @@ export async function POST(req: Request) {
     const phone = String(lead.phone || "").trim();
     const preferredLanguage = String(lead.preferredLanguage || "").trim();
     const loanOfficer = String(lead.loanOfficer || "").trim().toLowerCase();
+    const assignedOfficerName = String(lead.assignedOfficerName || "").trim();
+    const estimatedLoanAmount = String(lead.estimatedLoanAmount || "").trim();
     const recipientEmail = String(lead.recipientEmail || "").trim();
     const mode = lead.mode || "borrower";
 
@@ -430,8 +434,16 @@ const summary: SummaryPayload = providedSummary
         reply_to: email || selectedEmail,
         subject:
           mode === "professional"
-            ? `Finley Professional Session — ${getTriggerLabel(trigger)}${fullName ? ` — ${fullName}` : ""}`
-            : `${getTriggerLabel(trigger)} — ${fullName || "Borrower Session"}`,
+            ? `Finley Professional Session — ${getTriggerLabel(trigger)}${
+                estimatedLoanAmount ? ` — ${estimatedLoanAmount}` : ""
+              }${fullName ? ` — ${fullName}` : ""}${
+                assignedOfficerName ? ` — ${assignedOfficerName}` : ""
+              }`
+            : `${getTriggerLabel(trigger)}${
+                estimatedLoanAmount ? ` — ${estimatedLoanAmount}` : ""
+              } — ${fullName || "Borrower Session"}${
+                assignedOfficerName ? ` — ${assignedOfficerName}` : ""
+              }`,
         html,
       }),
     });
