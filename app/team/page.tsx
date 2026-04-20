@@ -1001,7 +1001,7 @@ export default function TeamPage() {
                       {item}
                     </span>
 
-                    <button
+                        <button
                       type="button"
                       style={{
                         ...styles.secondaryButton,
