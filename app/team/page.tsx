@@ -35,6 +35,8 @@ type TeamLeadForm = {
   fullName: string;
   email: string;
   phone: string;
+  realtorName: string;
+  realtorPhone: string;
   preferredLanguage: PreferredLanguage;
   notes: string;
 };
@@ -563,6 +565,8 @@ Lead details:
 - Borrower Name: ${lead.fullName || "Not provided"}
 - Borrower Email: ${lead.email || "Not provided"}
 - Borrower Phone: ${lead.phone || "Not provided"}
+- Realtor Name: ${lead.realtorName || "Not provided"}
+- Realtor Phone: ${lead.realtorPhone || "Not provided"}
 - Preferred Language: ${lead.preferredLanguage || "Not provided"}
 - Professional Notes: ${lead.notes || "Not provided"}
 
@@ -597,6 +601,8 @@ export default function TeamPage() {
     fullName: "",
     email: "",
     phone: "",
+    realtorName: "",
+    realtorPhone: "",
     preferredLanguage: "English",
     notes: "",
   });
@@ -906,6 +912,8 @@ Continue the internal professional review. Be practical, concise, and action-ori
             fullName: leadForm.fullName,
             email: leadForm.email,
             phone: leadForm.phone,
+            realtorName: leadForm.realtorName,
+            realtorPhone: leadForm.realtorPhone,
             preferredLanguage: leadForm.preferredLanguage,
             loanOfficer: activeUser.id.includes("sandro")
               ? "sandro"
@@ -966,6 +974,8 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
       fullName: "",
       email: "",
       phone: "",
+      realtorName: "",
+      realtorPhone: "",
       preferredLanguage: "English",
       notes: "",
     });
@@ -1176,6 +1186,7 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
                 </div>
 
                 <div>
+                <div>
                   <label style={styles.label}>{t.phone}</label>
                   <input
                     style={styles.input}
@@ -1184,6 +1195,28 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
                       setLeadField("phone", formatPhoneNumber(e.target.value))
                     }
                     placeholder={t.phone}
+                  />
+                </div>
+
+                <div>
+                  <label style={styles.label}>Realtor Name</label>
+                  <input
+                    style={styles.input}
+                    value={leadForm.realtorName}
+                    onChange={(e) => setLeadField("realtorName", e.target.value)}
+                    placeholder="Realtor Name"
+                  />
+                </div>
+
+                <div>
+                  <label style={styles.label}>Realtor Phone</label>
+                  <input
+                    style={styles.input}
+                    value={leadForm.realtorPhone}
+                    onChange={(e) =>
+                      setLeadField("realtorPhone", formatPhoneNumber(e.target.value))
+                    }
+                    placeholder="Realtor Phone"
                   />
                 </div>
 
