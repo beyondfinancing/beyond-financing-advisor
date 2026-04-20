@@ -7,6 +7,8 @@ type ChatMessage = {
   content: string;
 };
 
+type PreferredLanguage = "English" | "Português" | "Español";
+
 type LoanOfficer = {
   id: string;
   name: string;
@@ -68,6 +70,8 @@ export default function BorrowerPage() {
   const [phone, setPhone] = useState("");
   const [realtorName, setRealtorName] = useState("");
   const [realtorPhone, setRealtorPhone] = useState("");
+  const [preferredLanguage, setPreferredLanguage] =
+    useState<PreferredLanguage>("English");
 
   const [loanOfficer] = useState<LoanOfficer>(DEFAULT_LO);
 
@@ -92,7 +96,7 @@ export default function BorrowerPage() {
             fullName: name,
             email,
             phone,
-            preferredLanguage: "English",
+            preferredLanguage,
             loanOfficer: loanOfficer.id,
             assignedEmail: loanOfficer.email,
             realtorName,
@@ -104,6 +108,31 @@ export default function BorrowerPage() {
       });
     } catch (err) {
       console.error("Summary error:", err);
+    }
+  };
+
+  const sendBorrowerFollowUp = async (
+    trigger: "ai" | "apply" | "schedule" | "contact"
+  ) => {
+    try {
+      await fetch("/api/borrower-follow-up", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fullName: name,
+          email,
+          preferredLanguage,
+          loanOfficerName: loanOfficer.name,
+          loanOfficerEmail: loanOfficer.email,
+          applyUrl: loanOfficer.applyUrl,
+          scheduleUrl: loanOfficer.scheduleUrl,
+          trigger,
+        }),
+      });
+    } catch (err) {
+      console.error("Borrower follow-up error:", err);
     }
   };
 
@@ -157,18 +186,21 @@ export default function BorrowerPage() {
 
   const handleApply = async () => {
     await sendSummary("apply");
+    await sendBorrowerFollowUp("apply");
     window.open(loanOfficer.applyUrl, "_blank");
     resetSession();
   };
 
   const handleSchedule = async () => {
     await sendSummary("schedule");
+    await sendBorrowerFollowUp("schedule");
     window.open(loanOfficer.scheduleUrl, "_blank");
     resetSession();
   };
 
   const handleEmail = async () => {
     await sendSummary("contact");
+    await sendBorrowerFollowUp("contact");
     window.location.href = `mailto:${loanOfficer.email}`;
     resetSession();
   };
@@ -207,6 +239,17 @@ export default function BorrowerPage() {
             value={phone}
             onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
           />
+
+          <select
+            value={preferredLanguage}
+            onChange={(e) =>
+              setPreferredLanguage(e.target.value as PreferredLanguage)
+            }
+          >
+            <option value="English">English</option>
+            <option value="Português">Português</option>
+            <option value="Español">Español</option>
+          </select>
 
           <input
             placeholder="Realtor Name"
