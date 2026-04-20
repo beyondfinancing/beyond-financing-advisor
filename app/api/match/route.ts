@@ -99,14 +99,6 @@ type RawProgramGuidelineRow = {
 };
 
 type RawLenderStateEligibilityRow = {
-  lender_id?: unknown;
-  state_code?: unknown;
-  owner_occupied_allowed?: unknown;
-  non_owner_occupied_allowed?: unknown;
-  second_home_allowed?: unknown;
-  heloc_allowed?: unknown;
-  notes?: unknown;
-};
 
 type ProgramRelation = {
   id: string;
@@ -150,6 +142,19 @@ type LenderStateEligibility = {
   second_home_allowed: boolean;
   heloc_allowed: boolean;
   notes: string | null;
+};
+
+type LenderProductAssignment = {
+  lender_id: string;
+  product_type_id: string;
+  owner_occupied_allowed: boolean;
+  non_owner_occupied_allowed: boolean;
+  notes: string | null;
+  loan_product_type: {
+    id: string;
+    name: string;
+    category: string | null;
+  } | null;
 };
 
 type MatchBucket = {
@@ -627,6 +632,182 @@ function normalizeLenderStateEligibilityRow(
     notes:
       raw.notes === null || raw.notes === undefined ? null : String(raw.notes),
   };
+}
+
+function normalizeLenderProductAssignmentRow(
+  raw: RawLenderProductAssignmentRow
+): LenderProductAssignment {
+  const loanProductRaw = Array.isArray(raw.loan_product_types)
+    ? ((raw.loan_product_types[0] ?? null) as RawLoanProductTypeRelation)
+    : ((raw.loan_product_types ?? null) as RawLoanProductTypeRelation);
+
+  return {
+    lender_id: normalizeString(raw.lender_id),
+    product_type_id: normalizeString(raw.product_type_id),
+    owner_occupied_allowed: Boolean(raw.owner_occupied_allowed),
+    non_owner_occupied_allowed: Boolean(raw.non_owner_occupied_allowed),
+    notes:
+      raw.notes === null || raw.notes === undefined ? null : String(raw.notes),
+    loan_product_type:
+      loanProductRaw && typeof loanProductRaw === "object"
+        ? {
+            id: normalizeString(loanProductRaw.id),
+            name: normalizeString(loanProductRaw.name),
+            category:
+              loanProductRaw.category === null || loanProductRaw.category === undefined
+                ? null
+                : String(loanProductRaw.category),
+          }
+        : null,
+  };
+}
+
+function detectEligibleProductTypeIds(input: QualificationInput): string[] {
+  const ids: string[] = [];
+
+  const ownerOccupied =
+    input.occupancy_type === "primary_residence" ||
+    input.occupancy_type === "second_home";
+
+  if (
+    ownerOccupied &&
+    input.transaction_type === "purchase" &&
+    input.credit_score !== null &&
+    input.ltv !== null &&
+    input.credit_score >= 620 &&
+    input.ltv <= 97
+  ) {
+    ids.push("conventional");
+  }
+
+  if (
+    ownerOccupied &&
+    input.transaction_type === "purchase" &&
+    input.credit_score !== null &&
+    input.credit_score >= 580
+  ) {
+    ids.push("fha");
+  }
+
+  if (
+    ownerOccupied &&
+    input.transaction_type === "purchase" &&
+    input.credit_score !== null &&
+    input.credit_score >= 580
+  ) {
+    ids.push("va");
+  }
+
+  if (
+    ownerOccupied &&
+    input.transaction_type === "purchase" &&
+    input.credit_score !== null &&
+    input.credit_score >= 640
+  ) {
+    ids.push("usda");
+  }
+
+  if (input.borrower_status === "itin_borrower") {
+    ids.push("itin");
+  }
+
+  if (input.income_type === "bank_statements") {
+    ids.push("bank_statement");
+  }
+
+  if (input.income_type === "pnl") {
+    ids.push("pnl");
+  }
+
+  if (input.income_type === "dscr") {
+    ids.push("dscr");
+  }
+
+  if (input.income_type === "no_ratio") {
+    ids.push("stated_income");
+  }
+
+  return uniqueStrings(ids);
+}
+
+function applyProductAssignmentAwareness(
+  bucket: MatchBucket,
+  input: QualificationInput,
+  assignmentsByLender: Map<string, LenderProductAssignment[]>
+) {
+  const lenderAssignments = assignmentsByLender.get(bucket.lender_id) || [];
+  if (lenderAssignments.length === 0) return;
+
+  const ownerOccupied =
+    input.occupancy_type === "primary_residence" ||
+    input.occupancy_type === "second_home";
+
+  const eligibleProductIds = detectEligibleProductTypeIds(input);
+
+  const matchingAssignments = lenderAssignments.filter((assignment) => {
+    if (!eligibleProductIds.includes(assignment.product_type_id)) return false;
+
+    if (ownerOccupied && !assignment.owner_occupied_allowed) return false;
+    if (!ownerOccupied && !assignment.non_owner_occupied_allowed) return false;
+
+    return true;
+  });
+
+  if (matchingAssignments.length === 0) return;
+
+  const productNames = uniqueStrings(
+    matchingAssignments
+      .map((item) => item.loan_product_type?.name || "")
+      .filter(Boolean)
+  );
+
+  const productIds = matchingAssignments.map((item) => item.product_type_id);
+
+  bucket.score += 8;
+  bucket.notes.push(
+    `Lender product assignment match: ${productNames.join(", ")}.`
+  );
+
+  if (productIds.includes("conventional")) {
+    bucket.score += 8;
+    bucket.strengths.push(
+      "This scenario appears eligible for conventional execution, which may fall within Fannie Mae / Freddie Mac agency direction subject to AUS and full guideline review."
+    );
+  }
+
+  if (productIds.includes("fha")) {
+    bucket.score += 5;
+    bucket.strengths.push("Lender appears assigned for FHA execution.");
+  }
+
+  if (productIds.includes("va")) {
+    bucket.score += 5;
+    bucket.strengths.push("Lender appears assigned for VA execution.");
+  }
+
+  if (productIds.includes("usda")) {
+    bucket.score += 5;
+    bucket.strengths.push("Lender appears assigned for USDA execution.");
+  }
+
+  if (
+    productIds.includes("itin") ||
+    productIds.includes("bank_statement") ||
+    productIds.includes("stated_income") ||
+    productIds.includes("pnl") ||
+    productIds.includes("dscr")
+  ) {
+    bucket.score += 6;
+    bucket.strengths.push(
+      "Lender appears assigned for a matching non-QM execution path."
+    );
+  }
+
+  for (const assignment of matchingAssignments) {
+    if (assignment.notes) {
+      bucket.notes.push(`Product assignment note: ${assignment.notes}`);
+    }
+  }
 }
 
 function includesOrEmpty(list: string[], value: string): boolean {
@@ -1322,49 +1503,92 @@ export async function POST(req: Request) {
     const rawRows = Array.isArray(data) ? (data as RawProgramGuidelineRow[]) : [];
     const rows = rawRows.map(normalizeGuidelineRow).filter((row) => row.programs);
 
-    const lenderIds = uniqueStrings(
-      rows.map((row) => row.programs?.lender_id || "").filter(Boolean)
-    );
+const lenderIds = uniqueStrings(
+  rows.map((row) => row.programs?.lender_id || "").filter(Boolean)
+);
 
-    let lenderEligibilityMap = new Map<string, LenderStateEligibility>();
+let lenderEligibilityMap = new Map<string, LenderStateEligibility>();
+let lenderProductAssignmentsMap = new Map<string, LenderProductAssignment[]>();
 
-    if (input.subject_state && lenderIds.length > 0) {
-      const { data: eligibilityData } = await supabase
-        .from("lender_state_eligibility")
-        .select(`
-          lender_id,
-          state_code,
-          owner_occupied_allowed,
-          non_owner_occupied_allowed,
-          second_home_allowed,
-          heloc_allowed,
-          notes
-        `)
-        .eq("state_code", input.subject_state)
-        .in("lender_id", lenderIds);
+if (input.subject_state && lenderIds.length > 0) {
+  const { data: eligibilityData } = await supabase
+    .from("lender_state_eligibility")
+    .select(`
+      lender_id,
+      state_code,
+      owner_occupied_allowed,
+      non_owner_occupied_allowed,
+      second_home_allowed,
+      heloc_allowed,
+      notes
+    `)
+    .eq("state_code", input.subject_state)
+    .in("lender_id", lenderIds);
 
-      const normalizedEligibility = Array.isArray(eligibilityData)
-        ? (eligibilityData as RawLenderStateEligibilityRow[]).map(
-            normalizeLenderStateEligibilityRow
-          )
-        : [];
+  const normalizedEligibility = Array.isArray(eligibilityData)
+    ? (eligibilityData as RawLenderStateEligibilityRow[]).map(
+        normalizeLenderStateEligibilityRow
+      )
+    : [];
 
-      lenderEligibilityMap = new Map(
-        normalizedEligibility.map((item) => [item.lender_id, item])
-      );
-    }
+  lenderEligibilityMap = new Map(
+    normalizedEligibility.map((item) => [item.lender_id, item])
+  );
+}
 
+if (lenderIds.length > 0) {
+  const { data: assignmentData } = await supabase
+    .from("lender_product_assignments")
+    .select(`
+      lender_id,
+      product_type_id,
+      owner_occupied_allowed,
+      non_owner_occupied_allowed,
+      notes,
+      loan_product_types (
+        id,
+        name,
+        category
+      )
+    `)
+    .in("lender_id", lenderIds);
+
+  const normalizedAssignments = Array.isArray(assignmentData)
+    ? (assignmentData as RawLenderProductAssignmentRow[]).map(
+        normalizeLenderProductAssignmentRow
+      )
+    : [];
+
+  lenderProductAssignmentsMap = normalizedAssignments.reduce((map, item) => {
+    const existing = map.get(item.lender_id) || [];
+    existing.push(item);
+    map.set(item.lender_id, existing);
+    return map;
+  }, new Map<string, LenderProductAssignment[]>());
+}
     const strong_matches: MatchBucket[] = [];
     const conditional_matches: MatchBucket[] = [];
     const eliminated_paths: MatchBucket[] = [];
 
-    for (const row of rows) {
-      const result = evaluateRow(row, input, lenderEligibilityMap);
+for (const row of rows) {
+  const result = evaluateRow(row, input, lenderEligibilityMap);
 
-      if (result.status === "strong") strong_matches.push(result.bucket);
-      if (result.status === "conditional") conditional_matches.push(result.bucket);
-      if (result.status === "eliminated") eliminated_paths.push(result.bucket);
-    }
+  applyProductAssignmentAwareness(
+    result.bucket,
+    input,
+    lenderProductAssignmentsMap
+  );
+
+  result.bucket.notes = uniqueStrings(result.bucket.notes);
+  result.bucket.strengths = uniqueStrings(result.bucket.strengths);
+  result.bucket.concerns = uniqueStrings(result.bucket.concerns);
+  result.bucket.score = Math.max(1, Math.min(100, result.bucket.score));
+  result.bucket.explanation = buildExplanation(result.bucket);
+
+  if (result.status === "strong") strong_matches.push(result.bucket);
+  if (result.status === "conditional") conditional_matches.push(result.bucket);
+  if (result.status === "eliminated") eliminated_paths.push(result.bucket);
+}
 
     strong_matches.sort((a, b) => b.score - a.score);
     conditional_matches.sort((a, b) => b.score - a.score);
