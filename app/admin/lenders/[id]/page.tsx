@@ -39,7 +39,7 @@ type ProductAssignmentInput = {
   categories: string[];
 };
 
-type CustomProductTypeInput = {
+type ExclusiveProductInput = {
   id: string;
   name: string;
   category: string | null;
@@ -125,7 +125,7 @@ function normalizeProductAssignments(value: unknown): ProductAssignmentInput[] {
     .filter((item) => item.productId && item.productName);
 }
 
-function normalizeCustomProductTypes(value: unknown): CustomProductTypeInput[] {
+function normalizeExclusiveProducts(value: unknown): ExclusiveProductInput[] {
   if (!Array.isArray(value)) return [];
 
   return value
@@ -143,6 +143,12 @@ function normalizeCustomProductTypes(value: unknown): CustomProductTypeInput[] {
       };
     })
     .filter((item) => item.id && item.name);
+}
+
+function sharedProductNames(items: ProductAssignmentInput[], exclusiveIds: Set<string>) {
+  return items
+    .filter((item) => !exclusiveIds.has(item.productId))
+    .map((item) => item.productName);
 }
 
 export default async function LenderDetailPage({ params }: PageProps) {
@@ -234,9 +240,12 @@ export default async function LenderDetailPage({ params }: PageProps) {
   const productAssignments = normalizeProductAssignments(
     lenderRow.product_assignments
   );
-  const customProductTypes = normalizeCustomProductTypes(
+  const exclusiveProducts = normalizeExclusiveProducts(
     lenderRow.custom_product_types
   );
+
+  const exclusiveIds = new Set(exclusiveProducts.map((item) => item.id));
+  const sharedProducts = sharedProductNames(productAssignments, exclusiveIds);
 
   return (
     <main
@@ -354,7 +363,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 initialNonOwnerOccupiedStates={nonOwnerOccupiedStates}
                 initialNotes={notes}
                 initialProductAssignments={productAssignments}
-                initialCustomProductTypes={customProductTypes}
+                initialCustomProductTypes={exclusiveProducts}
               />
             </div>
 
@@ -448,10 +457,10 @@ export default async function LenderDetailPage({ params }: PageProps) {
                   <strong>Notes:</strong> {notes || "—"}
                 </div>
                 <div>
-                  <strong>Product Assignments:</strong> {productAssignments.length}
+                  <strong>Shared Products:</strong> {sharedProducts.length}
                 </div>
                 <div>
-                  <strong>Custom Product Types:</strong> {customProductTypes.length}
+                  <strong>Exclusive Products:</strong> {exclusiveProducts.length}
                 </div>
                 <div>
                   <strong>Created:</strong> {formatDateTime(lenderRow.created_at)}
@@ -501,7 +510,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
 
             <div style={cardStyle()}>
               <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>
-                Product Assignment Summary
+                Product Architecture Summary
               </h2>
 
               <div
@@ -514,24 +523,16 @@ export default async function LenderDetailPage({ params }: PageProps) {
                   lineHeight: 1.8,
                 }}
               >
-                {productAssignments.length === 0 && customProductTypes.length === 0 ? (
-                  <div>No product assignment data saved yet.</div>
-                ) : (
-                  <>
-                    <div>
-                      <strong>Assigned Products:</strong>{" "}
-                      {productAssignments.length > 0
-                        ? productAssignments.map((item) => item.productName).join(", ")
-                        : "—"}
-                    </div>
-                    <div>
-                      <strong>Custom Product Types:</strong>{" "}
-                      {customProductTypes.length > 0
-                        ? customProductTypes.map((item) => item.name).join(", ")
-                        : "—"}
-                    </div>
-                  </>
-                )}
+                <div>
+                  <strong>Shared Products:</strong>{" "}
+                  {sharedProducts.length > 0 ? sharedProducts.join(", ") : "—"}
+                </div>
+                <div>
+                  <strong>Exclusive Products:</strong>{" "}
+                  {exclusiveProducts.length > 0
+                    ? exclusiveProducts.map((item) => item.name).join(", ")
+                    : "—"}
+                </div>
               </div>
             </div>
 
