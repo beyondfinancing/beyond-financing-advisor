@@ -117,6 +117,12 @@ type RawLenderProductAssignmentRow = {
   loan_product_types?: unknown;
 };
 
+type RawLoanProductTypeRelation = {
+  id?: unknown;
+  name?: unknown;
+  category?: unknown;
+} | null;
+
 type ProgramRelation = {
   id: string;
   name: string;
@@ -667,7 +673,7 @@ function normalizeLenderProductAssignmentRow(
     non_owner_occupied_allowed: Boolean(raw.non_owner_occupied_allowed),
     notes:
       raw.notes === null || raw.notes === undefined ? null : String(raw.notes),
-    loan_product_type:
+    loan_product_types:
       loanProductRaw && typeof loanProductRaw === "object"
         ? {
             id: normalizeString(loanProductRaw.id),
