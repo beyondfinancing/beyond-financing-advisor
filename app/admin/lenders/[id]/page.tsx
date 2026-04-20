@@ -15,8 +15,8 @@ type PageProps = {
 type LenderRow = {
   id: string;
   name: string | null;
-  channel: string[] | null;
-  states: string[] | null;
+  channel: unknown;
+  states: unknown;
   created_at: string | null;
   notes: string | null;
   product_assignments: unknown;
@@ -69,15 +69,44 @@ function normalizeState(value: unknown): string {
 }
 
 function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(
+        value
+          .map((item) => String(item ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+  }
 
-  return Array.from(
-    new Set(
-      value
-        .map((item) => String(item ?? "").trim())
-        .filter(Boolean)
-    )
-  );
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return Array.from(
+          new Set(
+            parsed
+              .map((item) => String(item ?? "").trim())
+              .filter(Boolean)
+          )
+        );
+      }
+    } catch {
+      return Array.from(
+        new Set(
+          trimmed
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        )
+      );
+    }
+  }
+
+  return [];
 }
 
 function normalizeProductAssignments(value: unknown): ProductAssignmentInput[] {
@@ -102,7 +131,6 @@ function normalizeCustomProductTypes(value: unknown): CustomProductTypeInput[] {
   return value
     .map((item) => {
       const row = (item ?? {}) as Record<string, unknown>;
-
       const rawCategory = row.category;
 
       return {
@@ -198,9 +226,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
     )
   ).sort();
 
-  const channels = Array.isArray(lenderRow.channel)
-  ? lenderRow.channel.filter(Boolean).map((c) => String(c).trim())
-  : [];
+  const channels = normalizeStringArray(lenderRow.channel);
   const legacyStates = normalizeStringArray(lenderRow.states).map((state) =>
     state.toUpperCase()
   );
@@ -392,7 +418,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <strong>Channels:</strong>{" "}
-                  {channels.length > 0 ? channels.join(", ") : "—"}
+                  {channels.length > 0 ? channels.join(", ") : "Not set"}
                 </div>
                 <div>
                   <strong>Owner-Occupied States:</strong>{" "}
