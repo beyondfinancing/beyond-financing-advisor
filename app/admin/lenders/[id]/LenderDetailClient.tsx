@@ -1,6 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+
+type ProductAssignmentInput = {
+  productId: string;
+  productName: string;
+  categories: string[];
+};
+
+type CustomProductTypeInput = {
+  id: string;
+  name: string;
+  category: string | null;
+};
 
 type Props = {
   lenderId: string;
@@ -9,23 +21,54 @@ type Props = {
   initialLegacyStates: string[];
   initialOwnerOccupiedStates: string[];
   initialNonOwnerOccupiedStates: string[];
+  initialNotes?: string;
+  initialProductAssignments?: ProductAssignmentInput[];
+  initialCustomProductTypes?: CustomProductTypeInput[];
 };
 
-const US_STATES = [
-  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
-];
+type ProductDefinition = {
+  id: string;
+  name: string;
+  category: string;
+};
 
 const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
 
-function getSelectedValues(e: React.ChangeEvent<HTMLSelectElement>) {
-  return Array.from(e.target.selectedOptions).map((option) => option.value);
+const STATE_OPTIONS = [
+  "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL",
+  "IN","KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE",
+  "NH","NJ","NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT",
+  "VA","VT","WA","WI","WV","WY",
+];
+
+const BUILT_IN_PRODUCTS: ProductDefinition[] = [
+  { id: "conventional", name: "Conventional", category: "agency" },
+  { id: "fha", name: "FHA", category: "government" },
+  { id: "va", name: "VA", category: "government" },
+  { id: "usda", name: "USDA", category: "government" },
+  { id: "itin", name: "ITIN", category: "non_qm" },
+  { id: "bank_statement", name: "Bank Statement", category: "non_qm" },
+  { id: "stated_income", name: "Stated Income", category: "non_qm" },
+  { id: "dscr", name: "DSCR", category: "non_qm" },
+  { id: "pnl", name: "P&L", category: "non_qm" },
+  { id: "1099", name: "1099", category: "non_qm" },
+  { id: "asset_depletion", name: "Asset Depletion", category: "non_qm" },
+  { id: "foreign_national", name: "Foreign National", category: "non_qm" },
+  { id: "interest_only", name: "Interest Only", category: "non_qm" },
+  { id: "jumbo_non_qm", name: "Jumbo Non-QM", category: "non_qm" },
+];
+
+function normalizeStringArray(values: string[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  );
 }
 
-function normalizeStates(values: string[]) {
+function normalizeStateArray(values: string[]) {
   return Array.from(
     new Set(
       values
@@ -35,6 +78,70 @@ function normalizeStates(values: string[]) {
   ).sort();
 }
 
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function prettyCategoryLabel(category: string | null | undefined) {
+  if (!category) return "Uncategorized";
+
+  const map: Record<string, string> = {
+    agency: "Agency Products",
+    government: "Government Products",
+    non_qm: "Non-QM Products",
+    custom: "Custom Products",
+  };
+
+  return map[category] || category;
+}
+
+function getSelectedValues(event: React.ChangeEvent<HTMLSelectElement>) {
+  return Array.from(event.target.selectedOptions).map((option) => option.value);
+}
+
+async function saveLenderDetail(
+  lenderId: string,
+  payload: Record<string, unknown>
+) {
+  const url = `/api/admin/lenders/${lenderId}`;
+
+  const methods = ["PUT", "PATCH"];
+
+  let lastError = "Failed to save lender.";
+
+  for (const method of methods) {
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      const isJson = contentType.includes("application/json");
+      const data = isJson ? await response.json() : null;
+
+      if (response.ok) {
+        return data;
+      }
+
+      lastError =
+        String(data?.error || data?.message || `Request failed with ${method}.`);
+    } catch (error) {
+      lastError =
+        error instanceof Error ? error.message : `Request failed with ${method}.`;
+    }
+  }
+
+  throw new Error(lastError);
+}
+
 export default function LenderDetailClient({
   lenderId,
   initialName,
@@ -42,256 +149,691 @@ export default function LenderDetailClient({
   initialLegacyStates,
   initialOwnerOccupiedStates,
   initialNonOwnerOccupiedStates,
+  initialNotes = "",
+  initialProductAssignments = [],
+  initialCustomProductTypes = [],
 }: Props) {
   const [name, setName] = useState(initialName);
   const [channels, setChannels] = useState<string[]>(
-    Array.isArray(initialChannels) ? initialChannels : []
+    normalizeStringArray(initialChannels)
   );
-  const [ownerStates, setOwnerStates] = useState<string[]>(
-    normalizeStates(initialOwnerOccupiedStates || [])
+  const [ownerOccupiedStates, setOwnerOccupiedStates] = useState<string[]>(
+    normalizeStateArray(initialOwnerOccupiedStates)
   );
-  const [nonOwnerStates, setNonOwnerStates] = useState<string[]>(
-    normalizeStates(initialNonOwnerOccupiedStates || [])
+  const [nonOwnerOccupiedStates, setNonOwnerOccupiedStates] = useState<string[]>(
+    normalizeStateArray(initialNonOwnerOccupiedStates)
   );
   const [legacyStates, setLegacyStates] = useState<string[]>(
-    normalizeStates(initialLegacyStates || [])
+    normalizeStateArray(initialLegacyStates)
   );
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
+  const [notes, setNotes] = useState(initialNotes);
 
-  async function save() {
-    setLoading(true);
-    setMessage("");
+  const [productAssignments, setProductAssignments] = useState<
+    ProductAssignmentInput[]
+  >(
+    initialProductAssignments.map((item) => ({
+      productId: String(item.productId ?? "").trim(),
+      productName: String(item.productName ?? "").trim(),
+      categories: normalizeStringArray(item.categories || []),
+    }))
+  );
 
-    try {
-      const mergedLegacyStates = normalizeStates([
-        ...ownerStates,
-        ...nonOwnerStates,
-        ...legacyStates,
-      ]);
+  const [customProductTypes, setCustomProductTypes] = useState<
+    CustomProductTypeInput[]
+  >(
+    initialCustomProductTypes.map((item) => ({
+      id: String(item.id ?? "").trim(),
+      name: String(item.name ?? "").trim(),
+      category:
+        item.category === null || item.category === undefined
+          ? null
+          : String(item.category).trim() || null,
+    }))
+  );
 
-      const res = await fetch(`/api/admin/lenders/${lenderId}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          channels,
-          states: mergedLegacyStates,
-          ownerOccupiedStates: normalizeStates(ownerStates),
-          nonOwnerOccupiedStates: normalizeStates(nonOwnerStates),
-        }),
-      });
+  const [customProductName, setCustomProductName] = useState("");
+  const [customProductCategory, setCustomProductCategory] =
+    useState<string>("non_qm");
 
-      const result = await res.json().catch(() => null);
+  const [saving, setSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
-      if (!res.ok) {
-        setMessage(result?.error ? `Error: ${result.error}` : "Error saving lender.");
-        setLoading(false);
-        return;
-      }
+  const builtInAssignmentMap = useMemo(() => {
+    const map = new Map<string, ProductAssignmentInput>();
 
-      setLegacyStates(mergedLegacyStates);
-      setMessage("Saved successfully.");
-    } catch {
-      setMessage("Error saving lender.");
+    for (const item of productAssignments) {
+      map.set(item.productId, item);
     }
 
-    setLoading(false);
+    return map;
+  }, [productAssignments]);
+
+  const totalUniqueStates = useMemo(() => {
+    return Array.from(
+      new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
+    ).length;
+  }, [ownerOccupiedStates, nonOwnerOccupiedStates]);
+
+  function syncLegacyStates(
+    ownerStates: string[],
+    nonOwnerStates: string[]
+  ): string[] {
+    return normalizeStateArray([...ownerStates, ...nonOwnerStates]);
   }
 
+  function handleOwnerOccupiedChange(
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) {
+    const nextOwner = normalizeStateArray(getSelectedValues(event));
+    setOwnerOccupiedStates(nextOwner);
+    setLegacyStates(syncLegacyStates(nextOwner, nonOwnerOccupiedStates));
+  }
+
+  function handleNonOwnerOccupiedChange(
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) {
+    const nextNonOwner = normalizeStateArray(getSelectedValues(event));
+    setNonOwnerOccupiedStates(nextNonOwner);
+    setLegacyStates(syncLegacyStates(ownerOccupiedStates, nextNonOwner));
+  }
+
+  function handleChannelsChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    setChannels(normalizeStringArray(getSelectedValues(event)));
+  }
+
+  function toggleBuiltInProduct(product: ProductDefinition) {
+    setProductAssignments((prev) => {
+      const exists = prev.some((item) => item.productId === product.id);
+
+      if (exists) {
+        return prev.filter((item) => item.productId !== product.id);
+      }
+
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          productName: product.name,
+          categories: [product.category],
+        },
+      ];
+    });
+  }
+
+  function addCustomProduct() {
+    const trimmedName = customProductName.trim();
+
+    if (!trimmedName) {
+      setErrorMessage("Custom product name is required.");
+      setSuccessMessage("");
+      return;
+    }
+
+    const idBase = slugify(trimmedName);
+    if (!idBase) {
+      setErrorMessage("Enter a valid custom product name.");
+      setSuccessMessage("");
+      return;
+    }
+
+    const nextId = `custom_${idBase}`;
+
+    const existsInCustom = customProductTypes.some((item) => item.id === nextId);
+    const existsInBuiltIn = BUILT_IN_PRODUCTS.some((item) => item.id === nextId);
+
+    if (existsInCustom || existsInBuiltIn) {
+      setErrorMessage("A custom product with this name already exists.");
+      setSuccessMessage("");
+      return;
+    }
+
+    const nextCustomType: CustomProductTypeInput = {
+      id: nextId,
+      name: trimmedName,
+      category: customProductCategory || "custom",
+    };
+
+    setCustomProductTypes((prev) => [...prev, nextCustomType]);
+    setProductAssignments((prev) => [
+      ...prev,
+      {
+        productId: nextCustomType.id,
+        productName: nextCustomType.name,
+        categories: [nextCustomType.category || "custom"],
+      },
+    ]);
+
+    setCustomProductName("");
+    setCustomProductCategory("non_qm");
+    setErrorMessage("");
+    setSuccessMessage("");
+  }
+
+  function toggleCustomProductAssignment(item: CustomProductTypeInput) {
+    setProductAssignments((prev) => {
+      const exists = prev.some((entry) => entry.productId === item.id);
+
+      if (exists) {
+        return prev.filter((entry) => entry.productId !== item.id);
+      }
+
+      return [
+        ...prev,
+        {
+          productId: item.id,
+          productName: item.name,
+          categories: [item.category || "custom"],
+        },
+      ];
+    });
+  }
+
+  function removeCustomProduct(item: CustomProductTypeInput) {
+    setCustomProductTypes((prev) => prev.filter((entry) => entry.id !== item.id));
+    setProductAssignments((prev) =>
+      prev.filter((entry) => entry.productId !== item.id)
+    );
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const normalizedOwner = normalizeStateArray(ownerOccupiedStates);
+      const normalizedNonOwner = normalizeStateArray(nonOwnerOccupiedStates);
+      const normalizedLegacy = syncLegacyStates(
+        normalizedOwner,
+        normalizedNonOwner
+      );
+
+      const payload = {
+        name: name.trim(),
+        channels: normalizeStringArray(channels),
+        ownerOccupiedStates: normalizedOwner,
+        nonOwnerOccupiedStates: normalizedNonOwner,
+        states: normalizedLegacy,
+        notes: notes.trim(),
+        productAssignments: productAssignments.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          categories: normalizeStringArray(item.categories),
+        })),
+        customProductTypes: customProductTypes.map((item) => ({
+          id: item.id,
+          name: item.name,
+          category: item.category,
+        })),
+      };
+
+      await saveLenderDetail(lenderId, payload);
+
+      setOwnerOccupiedStates(normalizedOwner);
+      setNonOwnerOccupiedStates(normalizedNonOwner);
+      setLegacyStates(normalizedLegacy);
+      setSuccessMessage("Saved successfully.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to save lender."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const groupedBuiltInProducts = useMemo(() => {
+    const groups: Record<string, ProductDefinition[]> = {
+      agency: [],
+      government: [],
+      non_qm: [],
+    };
+
+    for (const product of BUILT_IN_PRODUCTS) {
+      groups[product.category] = groups[product.category] || [];
+      groups[product.category].push(product);
+    }
+
+    return groups;
+  }, []);
+
   return (
-    <div>
-      <h2
-        style={{
-          margin: "0 0 18px",
-          fontSize: 18,
-        }}
-      >
-        Edit Lender
-      </h2>
+    <div style={{ display: "grid", gap: 22 }}>
+      <section>
+        <h2 style={sectionTitleStyle}>Edit Lender</h2>
 
-      <div style={{ display: "grid", gap: 18 }}>
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Lender Name
-          </label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={inputStyle}
-            placeholder="Lender name"
-          />
+        <label style={labelStyle}>Lender Name</label>
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Lender Name"
+          style={inputStyle}
+        />
+
+        <label style={{ ...labelStyle, marginTop: 18 }}>Channels</label>
+        <select
+          multiple
+          value={channels}
+          onChange={handleChannelsChange}
+          style={multiSelectStyle}
+        >
+          {CHANNEL_OPTIONS.map((channel) => (
+            <option key={channel} value={channel}>
+              {channel}
+            </option>
+          ))}
+        </select>
+        <div style={helperTextStyle}>
+          Hold Ctrl on Windows or Command on Mac to select more than one.
         </div>
 
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Channels
-          </label>
-          <select
-            multiple
-            value={channels}
-            onChange={(e) => setChannels(getSelectedValues(e))}
-            style={multiStyle}
-          >
-            {CHANNEL_OPTIONS.map((channel) => (
-              <option key={channel} value={channel}>
-                {channel}
-              </option>
-            ))}
-          </select>
-          <div style={helpTextStyle}>
-            Hold Ctrl on Windows or Command on Mac to select more than one.
+        <label style={{ ...labelStyle, marginTop: 18 }}>
+          Owner-Occupied States
+        </label>
+        <select
+          multiple
+          value={ownerOccupiedStates}
+          onChange={handleOwnerOccupiedChange}
+          style={multiSelectStyle}
+        >
+          {STATE_OPTIONS.map((state) => (
+            <option key={`owner-${state}`} value={state}>
+              {state}
+            </option>
+          ))}
+        </select>
+        <div style={helperTextStyle}>
+          States where this lender can do owner-occupied lending.
+        </div>
+
+        <label style={{ ...labelStyle, marginTop: 18 }}>
+          Non-Owner-Occupied States
+        </label>
+        <select
+          multiple
+          value={nonOwnerOccupiedStates}
+          onChange={handleNonOwnerOccupiedChange}
+          style={multiSelectStyle}
+        >
+          {STATE_OPTIONS.map((state) => (
+            <option key={`nonowner-${state}`} value={state}>
+              {state}
+            </option>
+          ))}
+        </select>
+        <div style={helperTextStyle}>
+          States where this lender can do non-owner-occupied lending.
+        </div>
+
+        <div style={metricBoxStyle}>
+          <strong>Total unique states selected:</strong> {totalUniqueStates}
+        </div>
+
+        <label style={{ ...labelStyle, marginTop: 18 }}>Notes</label>
+        <textarea
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder="Internal notes, overlays, relationship details, or lender-specific comments."
+          rows={5}
+          style={textareaStyle}
+        />
+      </section>
+
+      <section>
+        <div style={pillLabelStyle}>Agency Products</div>
+        <div style={productGridStyle}>
+          {groupedBuiltInProducts.agency.map((product) => {
+            const checked = builtInAssignmentMap.has(product.id);
+
+            return (
+              <label key={product.id} style={productCardStyle}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleBuiltInProduct(product)}
+                />
+                <span style={productNameStyle}>{product.name}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        <div style={{ ...pillLabelStyle, marginTop: 18 }}>
+          Government Products
+        </div>
+        <div style={productGridStyle}>
+          {groupedBuiltInProducts.government.map((product) => {
+            const checked = builtInAssignmentMap.has(product.id);
+
+            return (
+              <label key={product.id} style={productCardStyle}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleBuiltInProduct(product)}
+                />
+                <span style={productNameStyle}>{product.name}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        <div style={{ ...pillLabelStyle, marginTop: 18 }}>Non-QM Products</div>
+        <div style={productGridStyle}>
+          {groupedBuiltInProducts.non_qm.map((product) => {
+            const checked = builtInAssignmentMap.has(product.id);
+
+            return (
+              <label key={product.id} style={productCardStyle}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleBuiltInProduct(product)}
+                />
+                <span style={productNameStyle}>{product.name}</span>
+              </label>
+            );
+          })}
+        </div>
+      </section>
+
+      <section style={customBoxStyle}>
+        <h3 style={{ margin: "0 0 16px", fontSize: 16, color: "#263366" }}>
+          Add Custom Product Type
+        </h3>
+
+        <input
+          value={customProductName}
+          onChange={(event) => setCustomProductName(event.target.value)}
+          placeholder="Example: 1-Year Tax Return Only"
+          style={inputStyle}
+        />
+
+        <label style={{ ...labelStyle, marginTop: 16 }}>Category</label>
+        <select
+          value={customProductCategory}
+          onChange={(event) => setCustomProductCategory(event.target.value)}
+          style={inputStyle}
+        >
+          <option value="agency">Agency</option>
+          <option value="government">Government</option>
+          <option value="non_qm">Non-QM</option>
+          <option value="custom">Custom</option>
+        </select>
+
+        <button
+          type="button"
+          onClick={addCustomProduct}
+          style={secondaryButtonStyle}
+        >
+          Add Custom Product
+        </button>
+
+        <div style={{ ...helperTextStyle, marginTop: 12 }}>
+          Custom products added here can be selected immediately for this lender
+          and can later be promoted into reusable platform-wide options through
+          the admin API.
+        </div>
+
+        {customProductTypes.length > 0 && (
+          <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
+            {customProductTypes.map((item) => {
+              const assigned = builtInAssignmentMap.has(item.id);
+
+              return (
+                <div key={item.id} style={customItemStyle}>
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#263366" }}>
+                      {item.name}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#6A7A94" }}>
+                      {prettyCategoryLabel(item.category)}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => toggleCustomProductAssignment(item)}
+                      style={miniOutlineButtonStyle}
+                    >
+                      {assigned ? "Unassign" : "Assign"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => removeCustomProduct(item)}
+                      style={miniDangerButtonStyle}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        )}
+      </section>
 
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Owner-Occupied States
-          </label>
-          <select
-            multiple
-            value={ownerStates}
-            onChange={(e) => setOwnerStates(getSelectedValues(e))}
-            style={multiStyle}
-          >
-            {US_STATES.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Non-Owner-Occupied States
-          </label>
-          <select
-            multiple
-            value={nonOwnerStates}
-            onChange={(e) => setNonOwnerStates(getSelectedValues(e))}
-            style={multiStyle}
-          >
-            {US_STATES.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 800,
-              marginBottom: 8,
-            }}
-          >
-            Legacy States Column
-          </label>
-          <select
-            multiple
-            value={legacyStates}
-            onChange={(e) => setLegacyStates(getSelectedValues(e))}
-            style={multiStyle}
-          >
-            {US_STATES.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
-            ))}
-          </select>
-          <div style={helpTextStyle}>
-            This is kept in sync for backward compatibility and summary display.
-          </div>
-        </div>
-      </div>
-
-      <button onClick={save} style={btnStyle} disabled={loading}>
-        {loading ? "Saving..." : "Save Changes"}
-      </button>
-
-      {message ? (
-        <div
+      <section>
+        <label style={labelStyle}>Legacy States Column</label>
+        <select
+          multiple
+          value={legacyStates}
+          readOnly
           style={{
-            marginTop: 12,
-            color: message.startsWith("Error") ? "#A33A2B" : "#1D6F42",
-            fontWeight: 700,
+            ...multiSelectStyle,
+            background: "#F8FBFF",
+            borderColor: "#CFE0F2",
           }}
         >
-          {message}
+          {legacyStates.map((state) => (
+            <option key={`legacy-${state}`} value={state}>
+              {state}
+            </option>
+          ))}
+        </select>
+        <div style={helperTextStyle}>
+          This is kept in sync for backward compatibility and summary display.
         </div>
-      ) : null}
+      </section>
+
+      <div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            ...primaryButtonStyle,
+            opacity: saving ? 0.7 : 1,
+            cursor: saving ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving ? "Saving..." : "Save Changes"}
+        </button>
+
+        {successMessage ? (
+          <div style={successTextStyle}>{successMessage}</div>
+        ) : null}
+
+        {errorMessage ? <div style={errorTextStyle}>{errorMessage}</div> : null}
+      </div>
     </div>
   );
 }
 
+const sectionTitleStyle: React.CSSProperties = {
+  margin: "0 0 18px",
+  fontSize: 18,
+  color: "#263366",
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  marginBottom: 8,
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#263366",
+};
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  height: 48,
-  borderRadius: 12,
-  border: "1px solid #C9D5E6",
-  padding: "0 14px",
-  fontSize: 16,
+  boxSizing: "border-box",
+  border: "1px solid #C9D8E8",
+  borderRadius: 16,
+  padding: "14px 16px",
+  fontSize: 15,
   color: "#263366",
   background: "#FFFFFF",
-  boxSizing: "border-box",
 };
 
-const multiStyle: React.CSSProperties = {
+const textareaStyle: React.CSSProperties = {
   width: "100%",
-  minHeight: 140,
-  borderRadius: 12,
-  border: "1px solid #C9D5E6",
-  padding: 10,
-  fontSize: 16,
+  boxSizing: "border-box",
+  border: "1px solid #C9D8E8",
+  borderRadius: 16,
+  padding: "14px 16px",
+  fontSize: 15,
   color: "#263366",
   background: "#FFFFFF",
+  resize: "vertical",
+  fontFamily: "Arial, Helvetica, sans-serif",
+};
+
+const multiSelectStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 110,
   boxSizing: "border-box",
+  border: "1px solid #C9D8E8",
+  borderRadius: 16,
+  padding: 10,
+  fontSize: 15,
+  color: "#263366",
+  background: "#FFFFFF",
 };
 
-const btnStyle: React.CSSProperties = {
-  marginTop: 20,
-  padding: "14px 20px",
-  background: "#0096C7",
-  color: "#FFFFFF",
-  border: "none",
-  borderRadius: 12,
-  cursor: "pointer",
-  fontWeight: 800,
-  fontSize: 16,
-};
-
-const helpTextStyle: React.CSSProperties = {
+const helperTextStyle: React.CSSProperties = {
   marginTop: 8,
   fontSize: 13,
+  lineHeight: 1.6,
   color: "#6A7A94",
-  lineHeight: 1.5,
+};
+
+const metricBoxStyle: React.CSSProperties = {
+  marginTop: 16,
+  padding: "14px 16px",
+  borderRadius: 16,
+  background: "#F8FBFF",
+  border: "1px solid #D9E1EC",
+  color: "#52627A",
+};
+
+const pillLabelStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "6px 12px",
+  borderRadius: 999,
+  background: "#EEF3FA",
+  color: "#263366",
+  fontSize: 13,
+  fontWeight: 800,
+  marginBottom: 12,
+};
+
+const productGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 12,
+};
+
+const productCardStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 14,
+  padding: "14px 16px",
+  border: "1px solid #D9E1EC",
+  borderRadius: 18,
+  background: "#FFFFFF",
+  cursor: "pointer",
+};
+
+const productNameStyle: React.CSSProperties = {
+  fontWeight: 800,
+  color: "#263366",
+  fontSize: 15,
+};
+
+const customBoxStyle: React.CSSProperties = {
+  border: "1px solid #D9E1EC",
+  borderRadius: 20,
+  padding: 16,
+  background: "#FBFCFE",
+};
+
+const customItemStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 14,
+  flexWrap: "wrap",
+  alignItems: "center",
+  border: "1px solid #D9E1EC",
+  borderRadius: 16,
+  padding: "14px 16px",
+  background: "#FFFFFF",
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  width: "100%",
+  border: "none",
+  borderRadius: 18,
+  padding: "16px 20px",
+  background: "#2D3B7A",
+  color: "#FFFFFF",
+  fontSize: 16,
+  fontWeight: 800,
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  width: "100%",
+  marginTop: 14,
+  border: "1px solid #2D3B7A",
+  borderRadius: 16,
+  padding: "14px 16px",
+  background: "#FFFFFF",
+  color: "#2D3B7A",
+  fontSize: 15,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const miniOutlineButtonStyle: React.CSSProperties = {
+  border: "1px solid #2D3B7A",
+  borderRadius: 12,
+  padding: "10px 12px",
+  background: "#FFFFFF",
+  color: "#2D3B7A",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const miniDangerButtonStyle: React.CSSProperties = {
+  border: "1px solid #D92D20",
+  borderRadius: 12,
+  padding: "10px 12px",
+  background: "#FFFFFF",
+  color: "#D92D20",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const successTextStyle: React.CSSProperties = {
+  marginTop: 12,
+  color: "#15803D",
+  fontWeight: 700,
+};
+
+const errorTextStyle: React.CSSProperties = {
+  marginTop: 12,
+  color: "#B42318",
+  fontWeight: 700,
 };
