@@ -157,6 +157,8 @@ const COPY = {
     fullName: "Borrower Full Name",
     email: "Borrower Email",
     phone: "Borrower Phone",
+    realtorName: "Realtor Name",
+    realtorPhone: "Realtor Phone",
     preferredLanguage: "Preferred Language",
     notes: "Professional Notes",
     creditScore: "Estimated Credit Score",
@@ -230,6 +232,8 @@ const COPY = {
     fullName: "Nome Completo do Cliente",
     email: "Email do Cliente",
     phone: "Telefone do Cliente",
+    realtorName: "Nome do Corretor",
+    realtorPhone: "Telefone do Corretor",
     preferredLanguage: "Idioma Preferido",
     notes: "Notas Profissionais",
     creditScore: "Pontuação de Crédito Estimada",
@@ -303,6 +307,8 @@ const COPY = {
     fullName: "Nombre Completo del Cliente",
     email: "Correo del Cliente",
     phone: "Teléfono del Cliente",
+    realtorName: "Nombre del Agente",
+    realtorPhone: "Teléfono del Agente",
     preferredLanguage: "Idioma Preferido",
     notes: "Notas Profesionales",
     creditScore: "Puntaje de Crédito Estimado",
@@ -1198,24 +1204,24 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
                 </div>
 
                 <div>
-                  <label style={styles.label}>Realtor Name</label>
+                  <label style={styles.label}>{t.realtorName}</label>
                   <input
                     style={styles.input}
                     value={leadForm.realtorName}
                     onChange={(e) => setLeadField("realtorName", e.target.value)}
-                    placeholder="Realtor Name"
+                    placeholder={t.realtorName}
                   />
                 </div>
 
                 <div>
-                  <label style={styles.label}>Realtor Phone</label>
+                  <label style={styles.label}>{t.realtorPhone}</label>
                   <input
                     style={styles.input}
                     value={leadForm.realtorPhone}
                     onChange={(e) =>
                       setLeadField("realtorPhone", formatPhoneNumber(e.target.value))
                     }
-                    placeholder="Realtor Phone"
+                    placeholder={t.realtorPhone}
                   />
                 </div>
 
