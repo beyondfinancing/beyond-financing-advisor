@@ -18,16 +18,15 @@ type LenderRow = {
   channel: string[] | null;
   states: string[] | null;
   created_at: string | null;
+  notes: string | null;
+  product_assignments: unknown;
+  custom_product_types: unknown;
 };
 
 type LenderStateEligibilityRow = {
   lender_id: string;
-  state_code: string | null;
-  owner_occupied_allowed: boolean | null;
-  non_owner_occupied_allowed: boolean | null;
-  second_home_allowed: boolean | null;
-  heloc_allowed: boolean | null;
-  notes: string | null;
+  state: string | null;
+  eligibility_type: "owner_occupied" | "non_owner_occupied" | string | null;
 };
 
 function cardStyle(): CSSProperties {
@@ -53,6 +52,22 @@ function normalizeState(value: string | null) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function summarizeUnknownArray(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
 export default async function LenderDetailPage({ params }: PageProps) {
   const signedIn = await isAdminSignedIn();
 
@@ -62,20 +77,22 @@ export default async function LenderDetailPage({ params }: PageProps) {
 
   const { id } = await params;
 
-  const [{ data: lender, error: lenderError }, { data: stateEligibility, error: stateEligibilityError }] =
-    await Promise.all([
-      supabaseAdmin
-        .from("lenders")
-        .select("id, name, channel, states, created_at")
-        .eq("id", id)
-        .maybeSingle(),
-      supabaseAdmin
-        .from("lender_state_eligibility")
-        .select(
-          "lender_id, state_code, owner_occupied_allowed, non_owner_occupied_allowed, second_home_allowed, heloc_allowed, notes"
-        )
-        .eq("lender_id", id),
-    ]);
+  const [
+    { data: lender, error: lenderError },
+    { data: stateEligibility, error: stateEligibilityError },
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("lenders")
+      .select(
+        "id, name, channel, states, created_at, notes, product_assignments, custom_product_types"
+      )
+      .eq("id", id)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("lender_state_eligibility")
+      .select("lender_id, state, eligibility_type")
+      .eq("lender_id", id),
+  ]);
 
   if (lenderError) {
     throw new Error(lenderError.message);
@@ -95,8 +112,8 @@ export default async function LenderDetailPage({ params }: PageProps) {
   const ownerOccupiedStates = Array.from(
     new Set(
       eligibilityRows
-        .filter((row) => row.owner_occupied_allowed)
-        .map((row) => normalizeState(row.state_code))
+        .filter((row) => row.eligibility_type === "owner_occupied")
+        .map((row) => normalizeState(row.state))
         .filter(Boolean)
     )
   ).sort();
@@ -104,11 +121,21 @@ export default async function LenderDetailPage({ params }: PageProps) {
   const nonOwnerOccupiedStates = Array.from(
     new Set(
       eligibilityRows
-        .filter((row) => row.non_owner_occupied_allowed)
-        .map((row) => normalizeState(row.state_code))
+        .filter((row) => row.eligibility_type === "non_owner_occupied")
+        .map((row) => normalizeState(row.state))
         .filter(Boolean)
     )
   ).sort();
+
+  const legacyStates = normalizeStringArray(lenderRow.states).map((state) =>
+    state.toUpperCase()
+  );
+
+  const channels = normalizeStringArray(lenderRow.channel);
+
+  const notes = String(lenderRow.notes ?? "").trim();
+  const productAssignmentCount = summarizeUnknownArray(lenderRow.product_assignments);
+  const customProductTypeCount = summarizeUnknownArray(lenderRow.custom_product_types);
 
   return (
     <main
@@ -220,8 +247,8 @@ export default async function LenderDetailPage({ params }: PageProps) {
               <LenderDetailClient
                 lenderId={lenderRow.id}
                 initialName={lenderRow.name || ""}
-                initialChannels={Array.isArray(lenderRow.channel) ? lenderRow.channel : []}
-                initialLegacyStates={Array.isArray(lenderRow.states) ? lenderRow.states : []}
+                initialChannels={channels}
+                initialLegacyStates={legacyStates}
                 initialOwnerOccupiedStates={ownerOccupiedStates}
                 initialNonOwnerOccupiedStates={nonOwnerOccupiedStates}
               />
@@ -287,9 +314,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <strong>Channels:</strong>{" "}
-                  {Array.isArray(lenderRow.channel) && lenderRow.channel.length > 0
-                    ? lenderRow.channel.join(", ")
-                    : "—"}
+                  {channels.length > 0 ? channels.join(", ") : "—"}
                 </div>
                 <div>
                   <strong>Owner-Occupied States:</strong>{" "}
@@ -305,9 +330,16 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <strong>Legacy States Column:</strong>{" "}
-                  {Array.isArray(lenderRow.states) && lenderRow.states.length > 0
-                    ? lenderRow.states.join(", ")
-                    : "—"}
+                  {legacyStates.length > 0 ? legacyStates.join(", ") : "—"}
+                </div>
+                <div>
+                  <strong>Notes:</strong> {notes || "—"}
+                </div>
+                <div>
+                  <strong>Product Assignments:</strong> {productAssignmentCount}
+                </div>
+                <div>
+                  <strong>Custom Product Types:</strong> {customProductTypeCount}
                 </div>
                 <div>
                   <strong>Created:</strong> {formatDateTime(lenderRow.created_at)}
@@ -334,7 +366,9 @@ export default async function LenderDetailPage({ params }: PageProps) {
               >
                 <div>
                   <strong>Owner-Occupied:</strong>{" "}
-                  {ownerOccupiedStates.length > 0 ? ownerOccupiedStates.join(", ") : "—"}
+                  {ownerOccupiedStates.length > 0
+                    ? ownerOccupiedStates.join(", ")
+                    : "—"}
                 </div>
                 <div>
                   <strong>Non-Owner-Occupied:</strong>{" "}
