@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 type FileStage =
@@ -40,6 +40,11 @@ type FileUpdate = {
   role: "Loan Officer" | "Processor" | "Assistant" | "System";
   time: string;
   text: string;
+};
+
+type FinleyChatMessage = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 const STAGE_LABELS: Record<FileStage, string> = {
@@ -190,7 +195,7 @@ function stageColor(stage: FileStage) {
       return { bg: "#F3F4F6", text: "#374151", border: "#E5E7EB" };
     default:
       return { bg: "#F8FAFC", text: "#334155", border: "#E2E8F0" };
-    }
+  }
 }
 
 function priorityColor(priority: PriorityLevel) {
@@ -210,6 +215,15 @@ function formatDate(value: string) {
   return date.toLocaleDateString();
 }
 
+function formatDateTimeNow() {
+  return new Date().toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function metricCard(
   _label: string,
   _value: string,
@@ -227,17 +241,113 @@ function metricCard(
   };
 }
 
+function buildTeamFileContext(file: TeamFile) {
+  return `
+Team Command Center file context:
+
+- File ID: ${file.id}
+- Borrower Name: ${file.borrowerName}
+- Loan Officer: ${file.loanOfficer}
+- Processor: ${file.processor}
+- Loan Purpose: ${file.purpose}
+- Occupancy: ${file.occupancy}
+- Loan Amount: ${file.amount}
+- Target Close Date: ${file.targetCloseDate}
+- File Stage: ${STAGE_LABELS[file.stage]}
+- Priority: ${file.priority}
+- File Age Days: ${file.ageDays}
+- Current Blocker: ${file.blocker}
+- Latest Update: ${file.lastUpdate}
+- Next Internal Action: ${file.nextInternalAction}
+- Next Borrower Action: ${file.nextBorrowerAction}
+
+You are Finley Beyond inside the Team Command Center.
+You are assisting internal mortgage professionals.
+Be practical, concise, operational, and realistic.
+Do not guarantee approval.
+Do not state rates or terms as final.
+Do not invent lender approvals.
+Focus on:
+1. file risk
+2. missing documentation
+3. next best internal action
+4. borrower communication strategy
+5. possible mortgage direction at a high level
+`.trim();
+}
+
+function extractAiText(data: unknown): string {
+  if (!data || typeof data !== "object") return "";
+
+  const record = data as Record<string, unknown>;
+
+  if (typeof record.reply === "string" && record.reply.trim()) {
+    return record.reply.trim();
+  }
+
+  if (typeof record.message === "string" && record.message.trim()) {
+    return record.message.trim();
+  }
+
+  if (typeof record.content === "string" && record.content.trim()) {
+    return record.content.trim();
+  }
+
+  if (typeof record.output === "string" && record.output.trim()) {
+    return record.output.trim();
+  }
+
+  if (Array.isArray(record.messages)) {
+    const assistant = [...record.messages]
+      .reverse()
+      .find((item) => {
+        if (!item || typeof item !== "object") return false;
+        const msg = item as Record<string, unknown>;
+        return (
+          msg.role === "assistant" &&
+          typeof msg.content === "string" &&
+          msg.content.trim()
+        );
+      }) as Record<string, unknown> | undefined;
+
+    if (assistant && typeof assistant.content === "string") {
+      return assistant.content.trim();
+    }
+  }
+
+  if (Array.isArray(record.choices)) {
+    const firstChoice = record.choices[0];
+    if (firstChoice && typeof firstChoice === "object") {
+      const choice = firstChoice as Record<string, unknown>;
+      const message = choice.message as Record<string, unknown> | undefined;
+      if (message && typeof message.content === "string" && message.content.trim()) {
+        return message.content.trim();
+      }
+    }
+  }
+
+  return "";
+}
+
 export default function TeamPage() {
   const [files, setFiles] = useState<TeamFile[]>(mockFiles);
   const [updates, setUpdates] = useState<FileUpdate[]>(initialUpdates);
-  const [selectedFileId, setSelectedFileId] = useState<string>(mockFiles[0]?.id ?? "");
+  const [selectedFileId, setSelectedFileId] = useState<string>(
+    mockFiles[0]?.id ?? ""
+  );
   const [search, setSearch] = useState("");
   const [handoffProcessor, setHandoffProcessor] = useState("Amarilis Santos");
   const [handoffTargetClose, setHandoffTargetClose] = useState("");
-  const [handoffUrgency, setHandoffUrgency] = useState<PriorityLevel>("priority");
+  const [handoffUrgency, setHandoffUrgency] =
+    useState<PriorityLevel>("priority");
   const [handoffNote, setHandoffNote] = useState("");
   const [activityInput, setActivityInput] = useState("");
   const [banner, setBanner] = useState("");
+
+  const [finleyInput, setFinleyInput] = useState("");
+  const [finleyConversation, setFinleyConversation] = useState<FinleyChatMessage[]>([]);
+  const [finleyLoading, setFinleyLoading] = useState(false);
+  const [finleyError, setFinleyError] = useState("");
 
   const filteredFiles = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -298,7 +408,9 @@ export default function TeamPage() {
 
     const avgAge =
       files.length > 0
-        ? Math.round(files.reduce((sum, file) => sum + file.ageDays, 0) / files.length)
+        ? Math.round(
+            files.reduce((sum, file) => sum + file.ageDays, 0) / files.length
+          )
         : 0;
 
     return {
@@ -308,6 +420,12 @@ export default function TeamPage() {
       avgAge,
     };
   }, [files]);
+
+  useEffect(() => {
+    setFinleyConversation([]);
+    setFinleyInput("");
+    setFinleyError("");
+  }, [selectedFileId]);
 
   function handleSendToProcessing() {
     if (!selectedFile) return;
@@ -323,8 +441,10 @@ export default function TeamPage() {
             lastUpdate: handoffNote.trim()
               ? `Processing handoff sent. ${handoffNote.trim()}`
               : "Processing handoff sent from Team Command Center.",
-            nextInternalAction: "Processor to acknowledge handoff and open checklist.",
-            nextBorrowerAction: "Stand by for processing checklist and conditions.",
+            nextInternalAction:
+              "Processor to acknowledge handoff and open checklist.",
+            nextBorrowerAction:
+              "Stand by for processing checklist and conditions.",
           }
         : file
     );
@@ -374,6 +494,119 @@ export default function TeamPage() {
     setBanner(`Internal update added to ${selectedFile.borrowerName}.`);
   }
 
+  async function handleAskFinley() {
+    const trimmed = finleyInput.trim();
+
+    if (!selectedFile || !trimmed) return;
+
+    setFinleyLoading(true);
+    setFinleyError("");
+
+    const nextConversation: FinleyChatMessage[] = [
+      ...finleyConversation,
+      { role: "user", content: trimmed },
+    ];
+
+    setFinleyConversation(nextConversation);
+    setFinleyInput("");
+
+    try {
+      const prompt = `
+${buildTeamFileContext(selectedFile)}
+
+Existing internal Finley conversation:
+${nextConversation
+  .map((message, index) => `${index + 1}. ${message.role}: ${message.content}`)
+  .join("\n")}
+
+Latest internal question from the team:
+${trimmed}
+
+Respond as Finley Beyond inside the Team Command Center.
+Keep it concise, practical, and operational.
+Prefer short paragraphs or bullets.
+Include:
+- immediate read
+- missing items or risks
+- best next step
+- optional borrower-facing phrasing if useful
+      `.trim();
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          stage: "team_command",
+          routing: {
+            source: "team_command_center",
+            fileId: selectedFile.id,
+            borrowerName: selectedFile.borrowerName,
+            loanOfficer: selectedFile.loanOfficer,
+            processor: selectedFile.processor,
+            purpose: selectedFile.purpose,
+            occupancy: selectedFile.occupancy,
+            amount: selectedFile.amount,
+            targetCloseDate: selectedFile.targetCloseDate,
+            stageLabel: STAGE_LABELS[selectedFile.stage],
+            priority: selectedFile.priority,
+            blocker: selectedFile.blocker,
+            nextInternalAction: selectedFile.nextInternalAction,
+            nextBorrowerAction: selectedFile.nextBorrowerAction,
+            conversation: nextConversation,
+          },
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+        }),
+      });
+
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        const extracted = extractAiText(data);
+        throw new Error(extracted || "Finley did not complete the request.");
+      }
+
+      const aiText =
+        extractAiText(data) ||
+        "Finley returned no visible guidance for this request.";
+
+      setFinleyConversation((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: aiText,
+        },
+      ]);
+
+      setUpdates((prev) => [
+        {
+          id: `U-${Date.now()}`,
+          fileId: selectedFile.id,
+          author: "Finley Beyond",
+          role: "Assistant",
+          time: formatDateTimeNow(),
+          text: aiText,
+        },
+        ...prev,
+      ]);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "There was an error connecting to Finley.";
+      setFinleyError(message);
+      setFinleyConversation((prev) => prev.slice(0, -1));
+    } finally {
+      setFinleyLoading(false);
+    }
+  }
+
   return (
     <main
       style={{
@@ -402,6 +635,12 @@ export default function TeamPage() {
           .tc-bottom-grid {
             grid-template-columns: 1fr !important;
           }
+          .tc-command-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .tc-command-top-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
         }
         @media (max-width: 760px) {
           .tc-wrap {
@@ -421,6 +660,9 @@ export default function TeamPage() {
           }
           .tc-pipeline-grid {
             grid-template-columns: 1fr 1fr !important;
+          }
+          .tc-command-top-grid {
+            grid-template-columns: 1fr !important;
           }
         }
         @media (max-width: 520px) {
@@ -941,6 +1183,7 @@ export default function TeamPage() {
               {selectedFile ? (
                 <>
                   <div
+                    className="tc-command-top-grid"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
@@ -976,18 +1219,295 @@ export default function TeamPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-                    <div style={styles.statusNote}>
-                      <strong>Current blocker:</strong> {selectedFile.blocker}
+                  <div
+                    className="tc-command-grid"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 18,
+                      marginTop: 18,
+                    }}
+                  >
+                    <div style={{ display: "grid", gap: 18 }}>
+                      <div style={{ display: "grid", gap: 12 }}>
+                        <div style={styles.statusNote}>
+                          <strong>Current blocker:</strong> {selectedFile.blocker}
+                        </div>
+                        <div style={styles.statusNote}>
+                          <strong>Next internal action:</strong>{" "}
+                          {selectedFile.nextInternalAction}
+                        </div>
+                        <div style={styles.statusNote}>
+                          <strong>Next borrower action:</strong>{" "}
+                          {selectedFile.nextBorrowerAction}
+                        </div>
+                        <div style={styles.statusNote}>
+                          <strong>Latest file update:</strong> {selectedFile.lastUpdate}
+                        </div>
+                      </div>
+
+                      <div style={styles.cardInset}>
+                        <div style={styles.sectionEyebrow}>AUDIT & DATES</div>
+                        <h2 style={styles.sectionTitleSmall}>Execution Tracking</h2>
+
+                        <div style={{ display: "grid", gap: 0, marginTop: 16 }}>
+                          {[
+                            "Submitted to UW",
+                            "Approved w/ Conditions",
+                            "Clear to Close",
+                            "Docs Out",
+                            "Docs Signed",
+                            "Loan Funded",
+                            "Initial CD Sent",
+                            "Intent to Proceed",
+                            "Appraisal Ordered",
+                            "Title Ordered",
+                          ].map((item) => (
+                            <div
+                              key={item}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: 12,
+                                padding: "12px 0",
+                                borderBottom: "1px solid #E2E8F0",
+                              }}
+                            >
+                              <span style={{ color: "#334155", fontWeight: 700 }}>
+                                {item}
+                              </span>
+
+                              <button
+                                type="button"
+                                style={{
+                                  ...styles.secondaryButton,
+                                  minHeight: 40,
+                                  padding: "8px 14px",
+                                  fontSize: 13,
+                                }}
+                              >
+                                Mark Complete
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={styles.cardInset}>
+                        <div style={styles.sectionEyebrow}>PROCESSING HANDOFF</div>
+                        <h2 style={styles.sectionTitleSmall}>
+                          Trigger and alert processing
+                        </h2>
+
+                        <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
+                          <div>
+                            <label style={styles.label}>Assign processor</label>
+                            <select
+                              value={handoffProcessor}
+                              onChange={(e) => setHandoffProcessor(e.target.value)}
+                              style={styles.input}
+                            >
+                              <option>Amarilis Santos</option>
+                              <option>Kyle Nicholson</option>
+                              <option>Bia Marques</option>
+                              <option>Processor Queue</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={styles.label}>Target close date</label>
+                            <input
+                              type="date"
+                              value={handoffTargetClose}
+                              onChange={(e) => setHandoffTargetClose(e.target.value)}
+                              style={styles.input}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={styles.label}>Urgency</label>
+                            <select
+                              value={handoffUrgency}
+                              onChange={(e) =>
+                                setHandoffUrgency(e.target.value as PriorityLevel)
+                              }
+                              style={styles.input}
+                            >
+                              <option value="standard">Standard</option>
+                              <option value="priority">Priority</option>
+                              <option value="rush">Rush</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={styles.label}>Handoff note</label>
+                            <textarea
+                              value={handoffNote}
+                              onChange={(e) => setHandoffNote(e.target.value)}
+                              rows={4}
+                              placeholder="Example: Borrower already reviewed pre-approval terms. Income profile is stable. Please issue first processing checklist today."
+                              style={styles.textarea}
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleSendToProcessing}
+                            style={styles.primaryButton}
+                          >
+                            Send to Processing
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div style={styles.statusNote}>
-                      <strong>Next internal action:</strong> {selectedFile.nextInternalAction}
-                    </div>
-                    <div style={styles.statusNote}>
-                      <strong>Next borrower action:</strong> {selectedFile.nextBorrowerAction}
-                    </div>
-                    <div style={styles.statusNote}>
-                      <strong>Latest file update:</strong> {selectedFile.lastUpdate}
+
+                    <div style={{ display: "grid", gap: 18 }}>
+                      <div style={styles.cardInset}>
+                        <div style={styles.sectionEyebrow}>FINLEY BEYOND™</div>
+                        <h2 style={styles.sectionTitleSmall}>Command Intelligence</h2>
+
+                        <div
+                          style={{
+                            marginTop: 16,
+                            minHeight: 260,
+                            maxHeight: 420,
+                            overflowY: "auto",
+                            display: "grid",
+                            gap: 10,
+                            paddingRight: 4,
+                          }}
+                        >
+                          {finleyConversation.length === 0 ? (
+                            <div style={styles.statusNote}>
+                              Ask Finley to analyze this file for risk, missing
+                              items, next best steps, borrower communication, or
+                              general mortgage direction.
+                            </div>
+                          ) : (
+                            finleyConversation.map((message, index) => (
+                              <div
+                                key={`${message.role}-${index}`}
+                                style={{
+                                  ...styles.chatBubble,
+                                  background:
+                                    message.role === "assistant"
+                                      ? "#F8FBFF"
+                                      : "#E6F7FD",
+                                  borderColor:
+                                    message.role === "assistant"
+                                      ? "#D9E1EC"
+                                      : "#BDEFF5",
+                                }}
+                              >
+                                <div style={styles.chatRole}>
+                                  {message.role === "assistant"
+                                    ? "Finley Beyond"
+                                    : "Team User"}
+                                </div>
+                                <div style={styles.chatContent}>{message.content}</div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                          <textarea
+                            value={finleyInput}
+                            onChange={(e) => setFinleyInput(e.target.value)}
+                            rows={5}
+                            placeholder="Ask Finley about this file... (risk, missing docs, next steps, program direction)"
+                            style={styles.textarea}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={handleAskFinley}
+                            disabled={finleyLoading || !selectedFile}
+                            style={{
+                              ...styles.secondaryButton,
+                              opacity: finleyLoading ? 0.75 : 1,
+                              cursor: finleyLoading ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {finleyLoading ? "Finley is analyzing..." : "Ask Finley"}
+                          </button>
+
+                          {finleyError ? (
+                            <div
+                              style={{
+                                padding: 12,
+                                borderRadius: 14,
+                                background: "#FFF1F2",
+                                border: "1px solid #FECDD3",
+                                color: "#BE123C",
+                                fontWeight: 700,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              {finleyError}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div style={{ marginTop: 18 }}>
+                          <div style={styles.statusNote}>
+                            Finley will analyze:
+                            <br />• Borrower structure
+                            <br />• File stage
+                            <br />• Missing documentation
+                            <br />• Risk of delay
+                            <br />• Possible program direction
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={styles.cardInset}>
+                        <div style={styles.sectionEyebrow}>COMMAND PACKAGE</div>
+                        <h2 style={styles.sectionTitleSmall}>
+                          What this module becomes
+                        </h2>
+
+                        <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
+                          <div style={styles.packageItem}>
+                            <div style={styles.packageTitle}>Processing Handoff</div>
+                            <div style={styles.packageBody}>
+                              Loan officer triggers file handoff with processor
+                              assignment, urgency, and operational note in one action.
+                            </div>
+                          </div>
+
+                          <div style={styles.packageItem}>
+                            <div style={styles.packageTitle}>
+                              Open File Communication
+                            </div>
+                            <div style={styles.packageBody}>
+                              Shared internal updates keep loan officer and processor
+                              aligned from handoff through close.
+                            </div>
+                          </div>
+
+                          <div style={styles.packageItem}>
+                            <div style={styles.packageTitle}>Timeline Visibility</div>
+                            <div style={styles.packageBody}>
+                              File age, milestone stage, target close date, and
+                              blockers stay visible to the team without losing
+                              context.
+                            </div>
+                          </div>
+
+                          <div style={styles.packageItem}>
+                            <div style={styles.packageTitle}>
+                              Future LOS Connection
+                            </div>
+                            <div style={styles.packageBody}>
+                              This command layer can later sit above systems like
+                              ARIVE as the coordination and intelligence layer
+                              rather than replacing the LOS.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </>
@@ -997,144 +1517,6 @@ export default function TeamPage() {
                 </div>
               )}
             </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>AUDIT & DATES</div>
-              <h2 style={styles.sectionTitle}>Execution Tracking</h2>
-
-              <div style={{ display: "grid", gap: 0, marginTop: 16 }}>
-                {[
-                  "Submitted to UW",
-                  "Approved w/ Conditions",
-                  "Clear to Close",
-                  "Docs Out",
-                  "Docs Signed",
-                  "Loan Funded",
-                  "Initial CD Sent",
-                  "Intent to Proceed",
-                  "Appraisal Ordered",
-                  "Title Ordered",
-                ].map((item) => (
-                  <div
-                    key={item}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "12px 0",
-                      borderBottom: "1px solid #E2E8F0",
-                    }}
-                  >
-                    <span style={{ color: "#334155", fontWeight: 700 }}>
-                      {item}
-                    </span>
-
-                    <button
-                      type="button"
-                      style={{
-                        ...styles.secondaryButton,
-                        minHeight: 40,
-                        padding: "8px 14px",
-                        fontSize: 13,
-                      }}
-                    >
-                      Mark Complete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>PROCESSING HANDOFF</div>
-              <h2 style={styles.sectionTitle}>Trigger and alert processing</h2>
-
-              <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
-                <div>
-                  <label style={styles.label}>Assign processor</label>
-                  <select
-                    value={handoffProcessor}
-                    onChange={(e) => setHandoffProcessor(e.target.value)}
-                    style={styles.input}
-                  >
-                    <option>Amarilis Santos</option>
-                    <option>Kyle Nicholson</option>
-                    <option>Bia Marques</option>
-                    <option>Processor Queue</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>Target close date</label>
-                  <input
-                    type="date"
-                    value={handoffTargetClose}
-                    onChange={(e) => setHandoffTargetClose(e.target.value)}
-                    style={styles.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>Urgency</label>
-                  <select
-                    value={handoffUrgency}
-                    onChange={(e) => setHandoffUrgency(e.target.value as PriorityLevel)}
-                    style={styles.input}
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="priority">Priority</option>
-                    <option value="rush">Rush</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>Handoff note</label>
-                  <textarea
-                    value={handoffNote}
-                    onChange={(e) => setHandoffNote(e.target.value)}
-                    rows={4}
-                    placeholder="Example: Borrower already reviewed pre-approval terms. Income profile is stable. Please issue first processing checklist today."
-                    style={styles.textarea}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSendToProcessing}
-                  style={styles.primaryButton}
-                >
-                  Send to Processing
-                </button>
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>FINLEY BEYOND™</div>
-              <h2 style={styles.sectionTitle}>Command Intelligence</h2>
-
-              <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-                <textarea
-                  placeholder="Ask Finley about this file... (risk, missing docs, next steps, program direction)"
-                  style={styles.textarea}
-                />
-
-                <button type="button" style={styles.secondaryButton}>
-                  Ask Finley
-                </button>
-              </div>
-
-              <div style={{ marginTop: 18 }}>
-                <div style={styles.statusNote}>
-                  Finley will analyze:
-                  <br />• Borrower structure
-                  <br />• File stage
-                  <br />• Missing documentation
-                  <br />• Risk of delay
-                  <br />• Possible program direction
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -1142,7 +1524,7 @@ export default function TeamPage() {
           className="tc-bottom-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "1.08fr 0.92fr",
+            gridTemplateColumns: "1fr",
             gap: 18,
           }}
         >
@@ -1196,46 +1578,6 @@ export default function TeamPage() {
                 </div>
               ))}
             </div>
-          </div>
-
-          <div style={styles.card}>
-            <div style={styles.sectionEyebrow}>COMMAND PACKAGE</div>
-            <h2 style={styles.sectionTitle}>What this module becomes</h2>
-
-            <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-              <div style={styles.packageItem}>
-                <div style={styles.packageTitle}>Processing Handoff</div>
-                <div style={styles.packageBody}>
-                  Loan officer triggers file handoff with processor assignment,
-                  urgency, and operational note in one action.
-                </div>
-              </div>
-
-              <div style={styles.packageItem}>
-                <div style={styles.packageTitle}>Open File Communication</div>
-                <div style={styles.packageBody}>
-                  Shared internal updates keep loan officer and processor aligned
-                  from handoff through close.
-                </div>
-              </div>
-
-              <div style={styles.packageItem}>
-                <div style={styles.packageTitle}>Timeline Visibility</div>
-                <div style={styles.packageBody}>
-                  File age, milestone stage, target close date, and blockers stay
-                  visible to the team without losing context.
-                </div>
-              </div>
-
-              <div style={styles.packageItem}>
-                <div style={styles.packageTitle}>Future LOS Connection</div>
-                <div style={styles.packageBody}>
-                  This command layer can later sit above systems like ARIVE as
-                  the coordination and intelligence layer rather than replacing
-                  the LOS.
-                </div>
-              </div>
-            </div>
 
             <footer
               style={{
@@ -1268,6 +1610,13 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: "blur(14px)",
     WebkitBackdropFilter: "blur(14px)",
   },
+  cardInset: {
+    background: "#FFFFFF",
+    border: "1px solid #D9E1EC",
+    borderRadius: 22,
+    padding: 20,
+    boxShadow: "0 10px 24px rgba(38,51,102,0.04)",
+  },
   sectionEyebrow: {
     color: "#0096C7",
     fontWeight: 900,
@@ -1280,6 +1629,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 28,
     lineHeight: 1.06,
     letterSpacing: -0.5,
+    color: "#263366",
+  },
+  sectionTitleSmall: {
+    margin: 0,
+    fontSize: 22,
+    lineHeight: 1.08,
+    letterSpacing: -0.4,
     color: "#263366",
   },
   metricLabel: {
@@ -1435,6 +1791,24 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#4F5F79",
     lineHeight: 1.6,
     fontSize: 15,
+  },
+  chatBubble: {
+    padding: 14,
+    borderRadius: 18,
+    border: "1px solid #D9E1EC",
+  },
+  chatRole: {
+    fontSize: 12,
+    fontWeight: 900,
+    color: "#0096C7",
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  chatContent: {
+    color: "#334155",
+    lineHeight: 1.65,
+    whiteSpace: "pre-wrap",
+    fontSize: 14,
   },
   feedRow: {
     padding: 16,
