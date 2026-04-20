@@ -618,16 +618,16 @@ export default function LenderDetailClient({
 
       <section>
         <label style={labelStyle}>Legacy States Column</label>
-        <select
-          multiple
-          value={legacyStates}
-          readOnly
-          style={{
-            ...multiSelectStyle,
-            background: "#F8FBFF",
-            borderColor: "#CFE0F2",
-          }}
-        >
+<select
+  multiple
+  value={legacyStates}
+  disabled
+  style={{
+    ...multiSelectStyle,
+    background: "#F8FBFF",
+    borderColor: "#CFE0F2",
+  }}
+>
           {legacyStates.map((state) => (
             <option key={`legacy-${state}`} value={state}>
               {state}
