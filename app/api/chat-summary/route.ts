@@ -15,6 +15,8 @@ type LeadPayload = {
   preferredLanguage?: PreferredLanguage;
   loanOfficer?: string;
   assignedEmail?: string;
+  realtorName?: string;
+  realtorPhone?: string;
 };
 
 type SummaryPayload = {
@@ -128,11 +130,13 @@ export async function POST(req: Request) {
       : [];
     const trigger = (body?.trigger || "ai") as SummaryTrigger;
 
-    const fullName = String(lead.fullName || "").trim();
-    const email = String(lead.email || "").trim();
-    const phone = String(lead.phone || "").trim();
-    const preferredLanguage = String(lead.preferredLanguage || "").trim();
-    const loanOfficer = String(lead.loanOfficer || "").trim();
+const fullName = String(lead.fullName || "").trim();
+const email = String(lead.email || "").trim();
+const phone = String(lead.phone || "").trim();
+const preferredLanguage = String(lead.preferredLanguage || "").trim();
+const loanOfficer = String(lead.loanOfficer || "").trim();
+const realtorName = String(lead.realtorName || "").trim();
+const realtorPhone = String(lead.realtorPhone || "").trim();
 
     if (!fullName || !email || !phone || !preferredLanguage || !loanOfficer) {
       return NextResponse.json(
@@ -274,6 +278,8 @@ ${messages
           <p><strong>Full Name:</strong> ${escapeHtml(fullName)}</p>
           <p><strong>Email:</strong> ${escapeHtml(email)}</p>
           <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
+          <p><strong>Realtor Name:</strong> ${escapeHtml(realtorName || 'Not provided')}</p>
+          <p><strong>Realtor Phone:</strong> ${escapeHtml(realtorPhone || 'Not provided')}</p>
           <p><strong>Language:</strong> ${escapeHtml(preferredLanguage)}</p>
           <p><strong>Selected Loan Officer:</strong> ${escapeHtml(loanOfficer)}</p>
           <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
