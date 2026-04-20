@@ -355,6 +355,21 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatPhoneNumber(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  }
+
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
+}
+
+function normalizeText(value: string) {
+  return value.trim().toLowerCase();
+}
+
 function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
@@ -704,22 +719,18 @@ export default function TeamPage() {
 
   const handleForgotPasswordHelp = () => {
     setAuthError("");
-
-    const normalizedCredential = normalizeText(credential);
-
-    const matched =
-      TEAM_USERS.find((user) => normalizeText(user.nmls) === normalizedCredential) ||
-      TEAM_USERS.find((user) => normalizeText(user.email) === normalizedCredential) ||
-      TEAM_USERS.find((user) => normalizeText(user.name) === normalizedCredential);
+    const matched = resolveUserByCredential(credential);
 
     if (!matched) {
       setPasswordHint(
-        `${t.resetHintPrefix} Please enter your email, NMLS, or full name first.`
+        "Password reset help is not available until a valid credential is entered."
       );
       return;
     }
 
-    setPasswordHint(`${t.resetHintPrefix} ${matched.password}`);
+    setPasswordHint(
+      "For security, the password cannot be displayed here. Please contact the system administrator for credential assistance."
+    );
   };
 
   const handleSignOut = () => {
@@ -1069,10 +1080,10 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
             <div style={styles.mutedHelpText}>{t.forgotPasswordText}</div>
 
             <div style={styles.loginHintBox}>
-              <div style={styles.loginHintTitle}>Internal Testing Credentials</div>
+              <div style={styles.loginHintTitle}>Internal Access Notice</div>
               <div style={styles.loginHintText}>
-                For the currently seeded users, the password matches the NMLS/company
-                credential. Replace this with a secure auth system when ready.
+                Internal access is restricted to authorized users. Secure authentication
+                and reset workflows should replace this temporary testing method.
               </div>
             </div>
           </div>
