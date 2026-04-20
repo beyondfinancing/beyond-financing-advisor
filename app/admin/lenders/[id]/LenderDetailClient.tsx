@@ -35,10 +35,57 @@ type ProductDefinition = {
 const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
 
 const STATE_OPTIONS = [
-  "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL",
-  "IN","KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE",
-  "NH","NJ","NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT",
-  "VA","VT","WA","WI","WV","WY",
+  "AL",
+  "AK",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DC",
+  "DE",
+  "FL",
+  "GA",
+  "HI",
+  "IA",
+  "ID",
+  "IL",
+  "IN",
+  "KS",
+  "KY",
+  "LA",
+  "MA",
+  "MD",
+  "ME",
+  "MI",
+  "MN",
+  "MO",
+  "MS",
+  "MT",
+  "NC",
+  "ND",
+  "NE",
+  "NH",
+  "NJ",
+  "NM",
+  "NV",
+  "NY",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UT",
+  "VA",
+  "VT",
+  "WA",
+  "WI",
+  "WV",
+  "WY",
 ];
 
 const BUILT_IN_PRODUCTS: ProductDefinition[] = [
@@ -108,9 +155,7 @@ async function saveLenderDetail(
   payload: Record<string, unknown>
 ) {
   const url = `/api/admin/lenders/${lenderId}`;
-
   const methods = ["PUT", "PATCH"];
-
   let lastError = "Failed to save lender.";
 
   for (const method of methods) {
@@ -131,11 +176,14 @@ async function saveLenderDetail(
         return data;
       }
 
-      lastError =
-        String(data?.error || data?.message || `Request failed with ${method}.`);
+      lastError = String(
+        data?.error || data?.message || `Request failed with ${method}.`
+      );
     } catch (error) {
       lastError =
-        error instanceof Error ? error.message : `Request failed with ${method}.`;
+        error instanceof Error
+          ? error.message
+          : `Request failed with ${method}.`;
     }
   }
 
@@ -373,6 +421,7 @@ export default function LenderDetailClient({
       setOwnerOccupiedStates(normalizedOwner);
       setNonOwnerOccupiedStates(normalizedNonOwner);
       setLegacyStates(normalizedLegacy);
+      setChannels(normalizeStringArray(channels));
       setSuccessMessage("Saved successfully.");
     } catch (error) {
       setErrorMessage(
@@ -618,16 +667,16 @@ export default function LenderDetailClient({
 
       <section>
         <label style={labelStyle}>Legacy States Column</label>
-<select
-  multiple
-  value={legacyStates}
-  disabled
-  style={{
-    ...multiSelectStyle,
-    background: "#F8FBFF",
-    borderColor: "#CFE0F2",
-  }}
->
+        <select
+          multiple
+          value={legacyStates}
+          disabled
+          style={{
+            ...multiSelectStyle,
+            background: "#F8FBFF",
+            borderColor: "#CFE0F2",
+          }}
+        >
           {legacyStates.map((state) => (
             <option key={`legacy-${state}`} value={state}>
               {state}
