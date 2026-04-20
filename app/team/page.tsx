@@ -1173,7 +1173,9 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
                   <input
                     style={styles.input}
                     value={leadForm.phone}
-                    onChange={(e) => setLeadField("phone", e.target.value)}
+                    onChange={(e) =>
+                      setLeadField("phone", formatPhoneNumber(e.target.value))
+                    }
                     placeholder={t.phone}
                   />
                 </div>
