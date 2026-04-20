@@ -176,19 +176,6 @@ type LenderProductAssignment = {
   loan_product_types: LoanProductTypeRelation;
 };
 
-type LenderProductAssignment = {
-  lender_id: string;
-  product_type_id: string;
-  owner_occupied_allowed: boolean;
-  non_owner_occupied_allowed: boolean;
-  notes: string | null;
-  loan_product_type: {
-    id: string;
-    name: string;
-    category: string | null;
-  } | null;
-};
-
 type MatchBucket = {
   lender_name: string;
   lender_id: string;
