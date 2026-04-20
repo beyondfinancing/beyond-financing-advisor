@@ -370,10 +370,6 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
 
-function normalizeText(value: string) {
-  return value.trim().toLowerCase();
-}
-
 function extractAiText(data: unknown): string {
   if (typeof data === "string") return data;
 
