@@ -24,9 +24,25 @@ type LenderRow = {
 };
 
 type LenderStateEligibilityRow = {
-  lender_id: string;
-  state: string | null;
-  eligibility_type: "owner_occupied" | "non_owner_occupied" | string | null;
+  lender_id: string | null;
+  state_code: string | null;
+  owner_occupied_allowed: boolean | null;
+  non_owner_occupied_allowed: boolean | null;
+  second_home_allowed: boolean | null;
+  heloc_allowed: boolean | null;
+  notes: string | null;
+};
+
+type ProductAssignmentInput = {
+  productId: string;
+  productName: string;
+  categories: string[];
+};
+
+type CustomProductTypeInput = {
+  id: string;
+  name: string;
+  category: string | null;
 };
 
 function cardStyle(): CSSProperties {
@@ -48,7 +64,7 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString();
 }
 
-function normalizeState(value: string | null) {
+function normalizeState(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
@@ -64,8 +80,41 @@ function normalizeStringArray(value: unknown): string[] {
   );
 }
 
-function summarizeUnknownArray(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0;
+function normalizeProductAssignments(value: unknown): ProductAssignmentInput[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const row = (item ?? {}) as Record<string, unknown>;
+
+      return {
+        productId: String(row.productId ?? row.product_id ?? "").trim(),
+        productName: String(row.productName ?? row.product_name ?? "").trim(),
+        categories: normalizeStringArray(row.categories),
+      };
+    })
+    .filter((item) => item.productId && item.productName);
+}
+
+function normalizeCustomProductTypes(value: unknown): CustomProductTypeInput[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const row = (item ?? {}) as Record<string, unknown>;
+
+      const rawCategory = row.category;
+
+      return {
+        id: String(row.id ?? "").trim(),
+        name: String(row.name ?? "").trim(),
+        category:
+          rawCategory === null || rawCategory === undefined
+            ? null
+            : String(rawCategory).trim() || null,
+      };
+    })
+    .filter((item) => item.id && item.name);
 }
 
 export default async function LenderDetailPage({ params }: PageProps) {
@@ -90,12 +139,14 @@ export default async function LenderDetailPage({ params }: PageProps) {
       .maybeSingle(),
     supabaseAdmin
       .from("lender_state_eligibility")
-      .select("lender_id, state, eligibility_type")
+      .select(
+        "lender_id, state_code, owner_occupied_allowed, non_owner_occupied_allowed, second_home_allowed, heloc_allowed, notes"
+      )
       .eq("lender_id", id),
   ]);
 
   if (lenderError) {
-    throw new Error(lenderError.message);
+    throw new Error(`Failed to load lender: ${lenderError.message}`);
   }
 
   if (!lender) {
@@ -103,7 +154,9 @@ export default async function LenderDetailPage({ params }: PageProps) {
   }
 
   if (stateEligibilityError) {
-    throw new Error(stateEligibilityError.message);
+    throw new Error(
+      `Failed to load lender state eligibility: ${stateEligibilityError.message}`
+    );
   }
 
   const lenderRow = lender as LenderRow;
@@ -112,8 +165,8 @@ export default async function LenderDetailPage({ params }: PageProps) {
   const ownerOccupiedStates = Array.from(
     new Set(
       eligibilityRows
-        .filter((row) => row.eligibility_type === "owner_occupied")
-        .map((row) => normalizeState(row.state))
+        .filter((row) => Boolean(row.owner_occupied_allowed))
+        .map((row) => normalizeState(row.state_code))
         .filter(Boolean)
     )
   ).sort();
@@ -121,21 +174,41 @@ export default async function LenderDetailPage({ params }: PageProps) {
   const nonOwnerOccupiedStates = Array.from(
     new Set(
       eligibilityRows
-        .filter((row) => row.eligibility_type === "non_owner_occupied")
-        .map((row) => normalizeState(row.state))
+        .filter((row) => Boolean(row.non_owner_occupied_allowed))
+        .map((row) => normalizeState(row.state_code))
         .filter(Boolean)
     )
   ).sort();
 
+  const secondHomeStates = Array.from(
+    new Set(
+      eligibilityRows
+        .filter((row) => Boolean(row.second_home_allowed))
+        .map((row) => normalizeState(row.state_code))
+        .filter(Boolean)
+    )
+  ).sort();
+
+  const helocStates = Array.from(
+    new Set(
+      eligibilityRows
+        .filter((row) => Boolean(row.heloc_allowed))
+        .map((row) => normalizeState(row.state_code))
+        .filter(Boolean)
+    )
+  ).sort();
+
+  const channels = normalizeStringArray(lenderRow.channel);
   const legacyStates = normalizeStringArray(lenderRow.states).map((state) =>
     state.toUpperCase()
   );
-
-  const channels = normalizeStringArray(lenderRow.channel);
-
   const notes = String(lenderRow.notes ?? "").trim();
-  const productAssignmentCount = summarizeUnknownArray(lenderRow.product_assignments);
-  const customProductTypeCount = summarizeUnknownArray(lenderRow.custom_product_types);
+  const productAssignments = normalizeProductAssignments(
+    lenderRow.product_assignments
+  );
+  const customProductTypes = normalizeCustomProductTypes(
+    lenderRow.custom_product_types
+  );
 
   return (
     <main
@@ -251,6 +324,9 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 initialLegacyStates={legacyStates}
                 initialOwnerOccupiedStates={ownerOccupiedStates}
                 initialNonOwnerOccupiedStates={nonOwnerOccupiedStates}
+                initialNotes={notes}
+                initialProductAssignments={productAssignments}
+                initialCustomProductTypes={customProductTypes}
               />
             </div>
 
@@ -329,6 +405,14 @@ export default async function LenderDetailPage({ params }: PageProps) {
                     : "—"}
                 </div>
                 <div>
+                  <strong>Second-Home States:</strong>{" "}
+                  {secondHomeStates.length > 0 ? secondHomeStates.join(", ") : "—"}
+                </div>
+                <div>
+                  <strong>HELOC States:</strong>{" "}
+                  {helocStates.length > 0 ? helocStates.join(", ") : "—"}
+                </div>
+                <div>
                   <strong>Legacy States Column:</strong>{" "}
                   {legacyStates.length > 0 ? legacyStates.join(", ") : "—"}
                 </div>
@@ -336,10 +420,10 @@ export default async function LenderDetailPage({ params }: PageProps) {
                   <strong>Notes:</strong> {notes || "—"}
                 </div>
                 <div>
-                  <strong>Product Assignments:</strong> {productAssignmentCount}
+                  <strong>Product Assignments:</strong> {productAssignments.length}
                 </div>
                 <div>
-                  <strong>Custom Product Types:</strong> {customProductTypeCount}
+                  <strong>Custom Product Types:</strong> {customProductTypes.length}
                 </div>
                 <div>
                   <strong>Created:</strong> {formatDateTime(lenderRow.created_at)}
@@ -376,6 +460,50 @@ export default async function LenderDetailPage({ params }: PageProps) {
                     ? nonOwnerOccupiedStates.join(", ")
                     : "—"}
                 </div>
+                <div>
+                  <strong>Second-Home:</strong>{" "}
+                  {secondHomeStates.length > 0 ? secondHomeStates.join(", ") : "—"}
+                </div>
+                <div>
+                  <strong>HELOC / Second-Lien:</strong>{" "}
+                  {helocStates.length > 0 ? helocStates.join(", ") : "—"}
+                </div>
+              </div>
+            </div>
+
+            <div style={cardStyle()}>
+              <h2 style={{ margin: "0 0 16px", fontSize: 18 }}>
+                Product Assignment Summary
+              </h2>
+
+              <div
+                style={{
+                  border: "1px solid #D9E1EC",
+                  borderRadius: 16,
+                  padding: 18,
+                  background: "#FBFCFE",
+                  color: "#4C5C76",
+                  lineHeight: 1.8,
+                }}
+              >
+                {productAssignments.length === 0 && customProductTypes.length === 0 ? (
+                  <div>No product assignment data saved yet.</div>
+                ) : (
+                  <>
+                    <div>
+                      <strong>Assigned Products:</strong>{" "}
+                      {productAssignments.length > 0
+                        ? productAssignments.map((item) => item.productName).join(", ")
+                        : "—"}
+                    </div>
+                    <div>
+                      <strong>Custom Product Types:</strong>{" "}
+                      {customProductTypes.length > 0
+                        ? customProductTypes.map((item) => item.name).join(", ")
+                        : "—"}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -394,8 +522,8 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 }}
               >
                 File management is available from the main file center. This
-                detail page is currently focused on lender identity and state
-                eligibility.
+                detail page is currently focused on lender identity, state
+                eligibility, notes, and product assignments.
               </div>
 
               <div style={{ marginTop: 16 }}>
