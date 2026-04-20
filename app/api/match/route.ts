@@ -99,6 +99,23 @@ type RawProgramGuidelineRow = {
 };
 
 type RawLenderStateEligibilityRow = {
+  lender_id?: unknown;
+  state_code?: unknown;
+  owner_occupied_allowed?: unknown;
+  non_owner_occupied_allowed?: unknown;
+  second_home_allowed?: unknown;
+  heloc_allowed?: unknown;
+  notes?: unknown;
+};
+
+type RawLenderProductAssignmentRow = {
+  lender_id?: unknown;
+  product_type_id?: unknown;
+  owner_occupied_allowed?: unknown;
+  non_owner_occupied_allowed?: unknown;
+  notes?: unknown;
+  loan_product_types?: unknown;
+};
 
 type ProgramRelation = {
   id: string;
@@ -110,6 +127,12 @@ type ProgramRelation = {
     id: string;
     name: string;
   } | null;
+} | null;
+
+type LoanProductTypeRelation = {
+  id: string;
+  name: string;
+  category: string | null;
 } | null;
 
 type ProgramGuidelineRow = {
@@ -142,6 +165,15 @@ type LenderStateEligibility = {
   second_home_allowed: boolean;
   heloc_allowed: boolean;
   notes: string | null;
+};
+
+type LenderProductAssignment = {
+  lender_id: string;
+  product_type_id: string;
+  owner_occupied_allowed: boolean;
+  non_owner_occupied_allowed: boolean;
+  notes: string | null;
+  loan_product_types: LoanProductTypeRelation;
 };
 
 type LenderProductAssignment = {
