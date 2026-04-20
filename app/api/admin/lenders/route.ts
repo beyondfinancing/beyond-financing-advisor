@@ -4,6 +4,18 @@ import { signInAdminSession } from "@/lib/admin-auth";
 
 type EligibilityType = "owner_occupied" | "non_owner_occupied";
 
+type ProductAssignmentInput = {
+  productId: string;
+  productName: string;
+  categories: string[];
+};
+
+type CustomProductTypeInput = {
+  id: string;
+  name: string;
+  category: string | null;
+};
+
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
 
@@ -20,6 +32,83 @@ function normalizeStateArray(value: unknown): string[] {
   return Array.from(
     new Set(normalizeStringArray(value).map((state) => state.toUpperCase()))
   );
+}
+
+function normalizeNotes(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeProductAssignments(value: unknown): ProductAssignmentInput[] {
+  if (!Array.isArray(value)) return [];
+
+  const cleaned = value
+    .map((item) => {
+      const row = (item ?? {}) as Record<string, unknown>;
+
+      return {
+        productId: String(row.productId ?? row.product_id ?? "").trim(),
+        productName: String(row.productName ?? row.product_name ?? "").trim(),
+        categories: normalizeStringArray(row.categories),
+      };
+    })
+    .filter((item) => item.productId && item.productName);
+
+  const dedupedMap = new Map<string, ProductAssignmentInput>();
+
+  for (const item of cleaned) {
+    const key = item.productId.toLowerCase();
+    const existing = dedupedMap.get(key);
+
+    if (!existing) {
+      dedupedMap.set(key, {
+        productId: item.productId,
+        productName: item.productName,
+        categories: item.categories,
+      });
+      continue;
+    }
+
+    dedupedMap.set(key, {
+      productId: existing.productId,
+      productName: existing.productName || item.productName,
+      categories: Array.from(
+        new Set([...(existing.categories || []), ...(item.categories || [])])
+      ),
+    });
+  }
+
+  return Array.from(dedupedMap.values());
+}
+
+function normalizeCustomProductTypes(value: unknown): CustomProductTypeInput[] {
+  if (!Array.isArray(value)) return [];
+
+  const cleaned = value
+    .map((item) => {
+      const row = (item ?? {}) as Record<string, unknown>;
+
+      const id = String(row.id ?? "").trim();
+      const name = String(row.name ?? "").trim();
+      const rawCategory = row.category;
+
+      return {
+        id,
+        name,
+        category:
+          rawCategory === null || rawCategory === undefined
+            ? null
+            : String(rawCategory).trim() || null,
+      };
+    })
+    .filter((item) => item.id && item.name);
+
+  const dedupedMap = new Map<string, CustomProductTypeInput>();
+
+  for (const item of cleaned) {
+    dedupedMap.set(item.id.toLowerCase(), item);
+  }
+
+  return Array.from(dedupedMap.values());
 }
 
 async function ensureAdminAccess() {
@@ -78,6 +167,9 @@ export async function POST(request: NextRequest) {
   const channels = normalizeStringArray(body?.channels);
   const ownerOccupiedStates = normalizeStateArray(body?.ownerOccupiedStates);
   const nonOwnerOccupiedStates = normalizeStateArray(body?.nonOwnerOccupiedStates);
+  const notes = normalizeNotes(body?.notes);
+  const productAssignments = normalizeProductAssignments(body?.productAssignments);
+  const customProductTypes = normalizeCustomProductTypes(body?.customProductTypes);
 
   if (!name) {
     return NextResponse.json(
@@ -110,13 +202,18 @@ export async function POST(request: NextRequest) {
     new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
   );
 
+  const insertPayload = {
+    name,
+    channel: channels,
+    states: combinedStates,
+    notes,
+    product_assignments: productAssignments,
+    custom_product_types: customProductTypes,
+  };
+
   const { data: insertedLender, error: lenderInsertError } = await supabaseAdmin
     .from("lenders")
-    .insert({
-      name,
-      channel: channels,
-      states: combinedStates,
-    })
+    .insert(insertPayload)
     .select("*")
     .single();
 
