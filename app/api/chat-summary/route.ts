@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
-type PreferredLanguage = "English" | "Português" | "Español";
-
 type ChatMessage = {
-  role?: "user" | "assistant";
-  content?: string;
+  role: "user" | "assistant";
+  content: string;
 };
+
+type PreferredLanguage = "English" | "Português" | "Español";
+type SummaryTrigger = "ai" | "apply" | "schedule" | "contact";
 
 type LeadPayload = {
   fullName?: string;
@@ -13,16 +14,8 @@ type LeadPayload = {
   phone?: string;
   preferredLanguage?: PreferredLanguage;
   loanOfficer?: string;
-  assignedOfficerName?: string;
-  estimatedLoanAmount?: string;
   assignedEmail?: string;
-  recipientEmail?: string;
-  professionalName?: string;
-  professionalRole?: string;
-  mode?: "borrower" | "professional";
 };
-
-type SummaryTrigger = "ai" | "apply" | "schedule" | "contact" | "professional";
 
 type SummaryPayload = {
   borrowerSummary: string;
@@ -36,11 +29,8 @@ type SummaryPayload = {
 
 const loanOfficerMap: Record<string, string> = {
   finley: "finley@beyondfinancing.com",
-  "finley-beyond": "finley@beyondfinancing.com",
   sandro: "pansini@beyondfinancing.com",
-  "sandro-pansini-souza": "pansini@beyondfinancing.com",
   warren: "warren@beyondfinancing.com",
-  "warren-wendt": "warren@beyondfinancing.com",
 };
 
 function escapeHtml(value: string): string {
@@ -59,14 +49,14 @@ function nl2br(value: string): string {
 function buildTranscriptHtml(messages: ChatMessage[]): string {
   return messages
     .map((msg, index) => {
-      const roleLabel = msg.role === "user" ? "User" : "Finley Beyond";
+      const roleLabel = msg.role === "user" ? "Borrower" : "Finley Beyond Advisor";
 
       return `
         <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;background:${
           msg.role === "user" ? "#DCEAFE" : "#F3F4F6"
         };color:#263366;">
           <div style="font-weight:700;margin-bottom:6px;">${roleLabel} ${index + 1}</div>
-          <div style="line-height:1.6;">${nl2br(msg.content || "")}</div>
+          <div style="line-height:1.6;">${nl2br(msg.content)}</div>
         </div>
       `;
     })
@@ -81,207 +71,51 @@ function parseJsonSafely<T>(value: string): T | null {
   }
 }
 
-function getTriggerLabel(trigger: SummaryTrigger): string {
-  if (trigger === "apply") return "Apply Now";
-  if (trigger === "schedule") return "Schedule";
-  if (trigger === "contact") return "Contact";
-  if (trigger === "professional") return "Professional Session";
-  return "AI Conversation";
-}
-
 function buildFallbackSummary(
   lead: LeadPayload,
   messages: ChatMessage[],
   trigger: SummaryTrigger
 ): SummaryPayload {
-  const userMessages = messages
+  const borrowerMessages = messages
     .filter((msg) => msg.role === "user")
-    .map((msg) => msg.content || "")
+    .map((msg) => msg.content)
     .join(" ");
 
-  const isProfessional = lead.mode === "professional" || trigger === "professional";
-
   return {
-    borrowerSummary: isProfessional
-      ? userMessages ||
-        "A professional user engaged with Finley Beyond for internal mortgage analysis."
-      : userMessages ||
-        "The borrower engaged with Finley Beyond and requested mortgage guidance.",
-    likelyDirection: isProfessional
-      ? "Professional review suggests the file should be refined through guideline-based coaching and documented next steps."
-      : "Borrower appears to be exploring a mortgage scenario and should receive licensed loan officer follow-up.",
+    borrowerSummary:
+      borrowerMessages ||
+      "The borrower engaged with Finley Beyond Advisor and requested mortgage guidance.",
+    likelyDirection:
+      "Borrower appears to be exploring a home financing scenario and may be ready for live review.",
     strengths: [
-      "Conversation record captured successfully.",
-      isProfessional
-        ? "Professional user engaged in internal mortgage analysis."
-        : "Borrower engaged in a meaningful mortgage conversation.",
+      "Lead submitted with full contact details.",
+      "Borrower engaged in a meaningful mortgage conversation.",
       `Preferred language: ${lead.preferredLanguage || "Not provided"}.`,
     ],
     openQuestions: [
-      "Confirm occupancy and timeline.",
-      "Confirm funds source, reserves, and compensating factors.",
-      "Confirm documentation strategy and final program direction.",
+      "Confirm final documentation package.",
+      "Confirm property details, occupancy, and down payment funds if still pending.",
     ],
     provisionalPrograms: [
-      "Conventional review",
+      "Conventional financing review",
       "FHA review if needed",
-      "Alternative documentation review if applicable",
+      "Alternative/self-employed review if applicable",
     ],
     recommendedNextStep:
       trigger === "apply"
-        ? "Borrower selected Apply Now. Review the file promptly, confirm application completion, validate the strongest program direction, and move the borrower into document collection and licensing-compliant follow-up."
+        ? "Borrower clicked or was directed toward the application flow."
         : trigger === "schedule"
-        ? "Borrower selected Schedule. Prepare for the consultation by reviewing the conversation, likely direction, missing items, and the most important qualification questions to address during the meeting."
+        ? "Borrower clicked or was directed toward consultation scheduling."
         : trigger === "contact"
-        ? "Borrower selected direct contact. Respond promptly, confirm the borrower’s main objective, and move the conversation toward the strongest next step based on the scenario."
-        : trigger === "professional"
-        ? "Professional should retain this record, continue refining the file, confirm missing documentation, and validate final fit directly against the applicable lender or investor guide."
-        : "Loan officer should review the conversation, confirm the scenario structure, and follow up with the borrower promptly.",
-    loanOfficerActionPlan:
-      trigger === "apply"
-        ? [
-            "Review the transcript and summary immediately.",
-            "Confirm whether the borrower completed the application successfully.",
-            "Validate the strongest program direction and identify required supporting documents.",
-            "Reach out promptly to move the file into active application and processing workflow.",
-          ]
-        : trigger === "schedule"
-        ? [
-            "Review the transcript and summary before the appointment.",
-            "Prepare the most important qualification and documentation questions.",
-            "Use the consultation to confirm structure, timeline, and program direction.",
-            "Document the post-call next step and follow-up commitment.",
-          ]
-        : trigger === "contact"
-        ? [
-            "Review the transcript and summary promptly.",
-            "Respond to the borrower directly by email or phone.",
-            "Clarify the borrower’s immediate objective and missing qualification details.",
-            "Move the borrower toward the strongest next action based on the scenario.",
-          ]
-        : trigger === "professional"
-        ? [
-            "Review the transcript and internal summary.",
-            "Confirm the strongest remaining program direction.",
-            "Validate missing items, compensating factors, and reserves requirements.",
-            "Document the next internal action and confirm fit against the applicable guide.",
-          ]
-        : [
-            "Review the transcript.",
-            "Review strongest and conditional program directions.",
-            "Confirm the missing qualification details and compensating factors.",
-            "Document the next move for the file.",
-          ],
+        ? "Borrower clicked or was directed toward Beyond Financing contact page."
+        : "Borrower appears ready for a licensed loan officer to review and follow up.",
+    loanOfficerActionPlan: [
+      "Review the transcript.",
+      "Contact the borrower promptly.",
+      "Confirm income, credit, assets, and documentation strategy.",
+      "Move borrower toward application, pre-approval, or consultation as appropriate.",
+    ],
   };
-}
-
-async function callOpenAIJson<T>(args: {
-  system: string;
-  user: string;
-}): Promise<T | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_SUMMARY_MODEL || "gpt-4o-mini",
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: args.system },
-          { role: "user", content: args.user },
-        ],
-      }),
-    });
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const raw = data?.choices?.[0]?.message?.content;
-    if (typeof raw !== "string" || !raw.trim()) return null;
-
-    return parseJsonSafely<T>(raw);
-  } catch {
-    return null;
-  }
-}
-
-function buildHtml(args: {
-  lead: LeadPayload;
-  selectedEmail: string;
-  trigger: SummaryTrigger;
-  summary: SummaryPayload;
-  messages: ChatMessage[];
-}) {
-  const { lead, selectedEmail, trigger, summary, messages } = args;
-
-  return `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
-      <h1 style="margin:0 0 18px 0;color:#263366;">Finley Beyond Conversation Record</h1>
-
-      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
-        <h2 style="margin:0 0 12px 0;font-size:20px;">Session Details</h2>
-        <p><strong>Mode:</strong> ${escapeHtml(lead.mode || "borrower")}</p>
-        <p><strong>Full Name:</strong> ${escapeHtml(lead.fullName || "Not provided")}</p>
-        <p><strong>Email:</strong> ${escapeHtml(lead.email || "Not provided")}</p>
-        <p><strong>Phone:</strong> ${escapeHtml(lead.phone || "Not provided")}</p>
-        <p><strong>Language:</strong> ${escapeHtml(lead.preferredLanguage || "Not provided")}</p>
-        <p><strong>Loan Officer / User ID:</strong> ${escapeHtml(lead.loanOfficer || "Not provided")}</p>
-        <p><strong>Assigned Loan Officer:</strong> ${escapeHtml(lead.assignedOfficerName || "Not provided")}</p>
-        <p><strong>Estimated Loan Amount:</strong> ${escapeHtml(lead.estimatedLoanAmount || "Not provided")}</p>
-        <p><strong>Professional Name:</strong> ${escapeHtml(lead.professionalName || "Not provided")}</p>
-        <p><strong>Professional Role:</strong> ${escapeHtml(lead.professionalRole || "Not provided")}</p>
-        <p><strong>Recipient Email:</strong> ${escapeHtml(selectedEmail)}</p>
-        <p><strong>Action Selected:</strong> ${escapeHtml(getTriggerLabel(trigger))}</p>
-      </div>
-
-      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
-        <h2 style="margin:0 0 12px 0;font-size:20px;">Summary</h2>
-        <p style="line-height:1.7;">${nl2br(summary.borrowerSummary)}</p>
-
-        <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
-        <p style="line-height:1.7;">${nl2br(summary.likelyDirection)}</p>
-
-        <h3 style="margin:18px 0 8px 0;">Provisional Program Directions</h3>
-        <ul style="line-height:1.8;">
-          ${summary.provisionalPrograms
-            .map((item) => `<li>${escapeHtml(item)}</li>`)
-            .join("")}
-        </ul>
-
-        <h3 style="margin:18px 0 8px 0;">Strengths</h3>
-        <ul style="line-height:1.8;">
-          ${summary.strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-        </ul>
-
-        <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
-        <ul style="line-height:1.8;">
-          ${summary.openQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-        </ul>
-
-        <h3 style="margin:18px 0 8px 0;">Recommended Next Step</h3>
-        <p style="line-height:1.7;">${nl2br(summary.recommendedNextStep)}</p>
-
-        <h3 style="margin:18px 0 8px 0;">Action Plan</h3>
-        <ul style="line-height:1.8;">
-          ${summary.loanOfficerActionPlan
-            .map((item) => `<li>${escapeHtml(item)}</li>`)
-            .join("")}
-        </ul>
-      </div>
-
-      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
-        <h2 style="margin:0 0 12px 0;font-size:20px;">Full Conversation Transcript</h2>
-        ${messages.length > 0 ? buildTranscriptHtml(messages) : "<p>No transcript available.</p>"}
-      </div>
-    </div>
-  `;
 }
 
 export async function POST(req: Request) {
@@ -298,15 +132,11 @@ export async function POST(req: Request) {
     const email = String(lead.email || "").trim();
     const phone = String(lead.phone || "").trim();
     const preferredLanguage = String(lead.preferredLanguage || "").trim();
-    const loanOfficer = String(lead.loanOfficer || "").trim().toLowerCase();
-    const assignedOfficerName = String(lead.assignedOfficerName || "").trim();
-    const estimatedLoanAmount = String(lead.estimatedLoanAmount || "").trim();
-    const recipientEmail = String(lead.recipientEmail || "").trim();
-    const mode = lead.mode || "borrower";
+    const loanOfficer = String(lead.loanOfficer || "").trim();
 
-    if (!preferredLanguage) {
+    if (!fullName || !email || !phone || !preferredLanguage || !loanOfficer) {
       return NextResponse.json(
-        { success: false, error: "Missing preferred language." },
+        { success: false, error: "Missing lead details." },
         { status: 400 }
       );
     }
@@ -319,31 +149,15 @@ export async function POST(req: Request) {
     }
 
     const selectedEmail =
-      recipientEmail ||
       String(lead.assignedEmail || "").trim() ||
       loanOfficerMap[loanOfficer] ||
       "finley@beyondfinancing.com";
 
-    if (!selectedEmail) {
-      return NextResponse.json(
-        { success: false, error: "No recipient email was resolved." },
-        { status: 400 }
-      );
-    }
+    let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
 
-   const providedSummary =
-  body?.summary &&
-  typeof body.summary === "object"
-    ? (body.summary as SummaryPayload)
-    : null;
-
-const fallback = buildFallbackSummary(lead, messages, trigger);
-
-const aiSummary = providedSummary
-  ? null
-  : await callOpenAIJson<SummaryPayload>({
-      system: `
-You create concise internal mortgage briefing emails.
+    if (process.env.OPENAI_API_KEY && messages.length > 0) {
+      const summaryPrompt = `
+You are preparing an internal loan-officer briefing email for Beyond Financing.
 
 Return valid JSON only with this exact shape:
 {
@@ -357,109 +171,160 @@ Return valid JSON only with this exact shape:
 }
 
 Rules:
-- write for a mortgage professional
-- be practical, concise, and operational
-- use only information actually present in the provided details and transcript
-- do not promise approval
-- provisional programs should be directional only
-- if this is professional mode, frame the summary as internal file coaching and record keeping
-- if the selected action is Apply Now, recommendedNextStep and loanOfficerActionPlan must focus on application follow-up, document collection, and rapid conversion
-- if the selected action is Schedule, recommendedNextStep and loanOfficerActionPlan must focus on consultation preparation and meeting follow-up
-- if the selected action is Contact, recommendedNextStep and loanOfficerActionPlan must focus on direct borrower response and clarification of the immediate objective
-- if the selected action is AI Conversation, recommendedNextStep and loanOfficerActionPlan should focus on review, clarification, and structured follow-up
-- prefer concrete next steps over general language
-      `.trim(),
-      user: `
+- Write for an internal mortgage loan officer
+- Be practical and concise
+- Use only information actually present in the conversation and lead details
+- If the borrower is self-employed, employed, immigrant, green card holder, conventional candidate, FHA fallback candidate, etc., note that only if supported by the transcript
+- "provisionalPrograms" should be directional only, not lender-specific guarantees
+- Include realistic possible directions like Conventional, FHA, HomeReady/Home Possible style review, self-employed review, etc., only when supported by the scenario
+- Do not promise approval
+- Do not mention that no lender folder exists
+- Assume this is an internal pre-brief before full underwriting
+
 Lead details:
-- Mode: ${mode}
-- Full Name: ${fullName || "Not provided"}
-- Email: ${email || "Not provided"}
-- Phone: ${phone || "Not provided"}
+- Full Name: ${fullName}
+- Email: ${email}
+- Phone: ${phone}
 - Preferred Language: ${preferredLanguage}
-- Loan Officer / User ID: ${loanOfficer || "Not provided"}
-- Professional Name: ${lead.professionalName || "Not provided"}
-- Professional Role: ${lead.professionalRole || "Not provided"}
+- Selected Loan Officer: ${loanOfficer}
 - Assigned Email: ${selectedEmail}
 - Trigger: ${trigger}
-- Action Selected: ${getTriggerLabel(trigger)}
-- Assigned Loan Officer Name: ${assignedOfficerName || "Not provided"}
-- Estimated Loan Amount: ${estimatedLoanAmount || "Not provided"}
 
 Conversation transcript:
 ${messages
   .map((msg, index) => {
-    const who = msg.role === "user" ? "User" : "Finley";
-    return `${index + 1}. ${who}: ${msg.content || ""}`;
+    const who = msg.role === "user" ? "Borrower" : "Finley";
+    return `${index + 1}. ${who}: ${msg.content}`;
   })
   .join("\n")}
+`;
 
-Write the summary so the recommendedNextStep and loanOfficerActionPlan clearly reflect the selected action.
-      `.trim(),
-    });
-const summary: SummaryPayload = providedSummary
-  ? {
-      borrowerSummary:
-        providedSummary.borrowerSummary || fallback.borrowerSummary,
-      likelyDirection:
-        providedSummary.likelyDirection || fallback.likelyDirection,
-      strengths:
-        Array.isArray(providedSummary.strengths) &&
-        providedSummary.strengths.length > 0
-          ? providedSummary.strengths
-          : fallback.strengths,
-      openQuestions:
-        Array.isArray(providedSummary.openQuestions) &&
-        providedSummary.openQuestions.length > 0
-          ? providedSummary.openQuestions
-          : fallback.openQuestions,
-      provisionalPrograms:
-        Array.isArray(providedSummary.provisionalPrograms) &&
-        providedSummary.provisionalPrograms.length > 0
-          ? providedSummary.provisionalPrograms
-          : fallback.provisionalPrograms,
-      recommendedNextStep:
-        providedSummary.recommendedNextStep || fallback.recommendedNextStep,
-      loanOfficerActionPlan:
-        Array.isArray(providedSummary.loanOfficerActionPlan) &&
-        providedSummary.loanOfficerActionPlan.length > 0
-          ? providedSummary.loanOfficerActionPlan
-          : fallback.loanOfficerActionPlan,
-    }
-  : aiSummary
-  ? {
-      borrowerSummary: aiSummary.borrowerSummary || fallback.borrowerSummary,
-      likelyDirection: aiSummary.likelyDirection || fallback.likelyDirection,
-      strengths:
-        Array.isArray(aiSummary.strengths) && aiSummary.strengths.length > 0
-          ? aiSummary.strengths
-          : fallback.strengths,
-      openQuestions:
-        Array.isArray(aiSummary.openQuestions) &&
-        aiSummary.openQuestions.length > 0
-          ? aiSummary.openQuestions
-          : fallback.openQuestions,
-      provisionalPrograms:
-        Array.isArray(aiSummary.provisionalPrograms) &&
-        aiSummary.provisionalPrograms.length > 0
-          ? aiSummary.provisionalPrograms
-          : fallback.provisionalPrograms,
-      recommendedNextStep:
-        aiSummary.recommendedNextStep || fallback.recommendedNextStep,
-      loanOfficerActionPlan:
-        Array.isArray(aiSummary.loanOfficerActionPlan) &&
-        aiSummary.loanOfficerActionPlan.length > 0
-          ? aiSummary.loanOfficerActionPlan
-          : fallback.loanOfficerActionPlan,
-    }
-  : fallback;
+      const summaryResponse = await fetch(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            temperature: 0.2,
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You create concise internal mortgage advisor briefings in strict JSON.",
+              },
+              {
+                role: "user",
+                content: summaryPrompt,
+              },
+            ],
+          }),
+        }
+      );
 
-    const html = buildHtml({
-      lead,
-      selectedEmail,
-      trigger,
-      summary,
-      messages,
-    });
+      if (summaryResponse.ok) {
+        const summaryData = await summaryResponse.json();
+        const rawContent = summaryData?.choices?.[0]?.message?.content;
+        const parsed = rawContent
+          ? parseJsonSafely<SummaryPayload>(rawContent)
+          : null;
+
+        if (parsed) {
+          summary = {
+            borrowerSummary: parsed.borrowerSummary || summary.borrowerSummary,
+            likelyDirection: parsed.likelyDirection || summary.likelyDirection,
+            strengths:
+              Array.isArray(parsed.strengths) && parsed.strengths.length > 0
+                ? parsed.strengths
+                : summary.strengths,
+            openQuestions:
+              Array.isArray(parsed.openQuestions) &&
+              parsed.openQuestions.length > 0
+                ? parsed.openQuestions
+                : summary.openQuestions,
+            provisionalPrograms:
+              Array.isArray(parsed.provisionalPrograms) &&
+              parsed.provisionalPrograms.length > 0
+                ? parsed.provisionalPrograms
+                : summary.provisionalPrograms,
+            recommendedNextStep:
+              parsed.recommendedNextStep || summary.recommendedNextStep,
+            loanOfficerActionPlan:
+              Array.isArray(parsed.loanOfficerActionPlan) &&
+              parsed.loanOfficerActionPlan.length > 0
+                ? parsed.loanOfficerActionPlan
+                : summary.loanOfficerActionPlan,
+          };
+        }
+      }
+    }
+
+    const transcriptHtml = buildTranscriptHtml(messages);
+
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
+        <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond Advisor</h1>
+
+        <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+          <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
+          <p><strong>Full Name:</strong> ${escapeHtml(fullName)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+          <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
+          <p><strong>Language:</strong> ${escapeHtml(preferredLanguage)}</p>
+          <p><strong>Selected Loan Officer:</strong> ${escapeHtml(loanOfficer)}</p>
+          <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
+          <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
+        </div>
+
+        <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+          <h2 style="margin:0 0 12px 0;font-size:20px;">Borrower Summary</h2>
+          <p style="line-height:1.7;">${nl2br(summary.borrowerSummary)}</p>
+
+          <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
+          <p style="line-height:1.7;">${nl2br(summary.likelyDirection)}</p>
+
+          <h3 style="margin:18px 0 8px 0;">Provisional Program Directions</h3>
+          <ul style="line-height:1.8;">
+            ${summary.provisionalPrograms
+              .map((item) => `<li>${escapeHtml(item)}</li>`)
+              .join("")}
+          </ul>
+
+          <h3 style="margin:18px 0 8px 0;">Strengths</h3>
+          <ul style="line-height:1.8;">
+            ${summary.strengths
+              .map((item) => `<li>${escapeHtml(item)}</li>`)
+              .join("")}
+          </ul>
+
+          <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
+          <ul style="line-height:1.8;">
+            ${summary.openQuestions
+              .map((item) => `<li>${escapeHtml(item)}</li>`)
+              .join("")}
+          </ul>
+
+          <h3 style="margin:18px 0 8px 0;">Recommended Next Step</h3>
+          <p style="line-height:1.7;">${nl2br(summary.recommendedNextStep)}</p>
+
+          <h3 style="margin:18px 0 8px 0;">Loan Officer Action Plan</h3>
+          <ul style="line-height:1.8;">
+            ${summary.loanOfficerActionPlan
+              .map((item) => `<li>${escapeHtml(item)}</li>`)
+              .join("")}
+          </ul>
+        </div>
+
+        <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+          <h2 style="margin:0 0 12px 0;font-size:20px;">Full Conversation Transcript</h2>
+          ${transcriptHtml || "<p>No transcript available.</p>"}
+        </div>
+      </div>
+    `;
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -468,23 +333,10 @@ const summary: SummaryPayload = providedSummary
         Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from:
-          process.env.RESEND_FROM_EMAIL ||
-          "Finley Beyond <noreply@beyondfinancing.com>",
+        from: "Finley Beyond <finley@beyondfinancing.com>",
         to: [selectedEmail],
-        reply_to: email || selectedEmail,
-        subject:
-          mode === "professional"
-            ? `Finley Professional Session — ${getTriggerLabel(trigger)}${
-                estimatedLoanAmount ? ` — ${estimatedLoanAmount}` : ""
-              }${fullName ? ` — ${fullName}` : ""}${
-                assignedOfficerName ? ` — ${assignedOfficerName}` : ""
-              }`
-            : `${getTriggerLabel(trigger)}${
-                estimatedLoanAmount ? ` — ${estimatedLoanAmount}` : ""
-              } — ${fullName || "Borrower Session"}${
-                assignedOfficerName ? ` — ${assignedOfficerName}` : ""
-              }`,
+        reply_to: email,
+        subject: `Conversation Summary: ${fullName}`,
         html,
       }),
     });
@@ -494,17 +346,10 @@ const summary: SummaryPayload = providedSummary
       return NextResponse.json({ success: false, error }, { status: 500 });
     }
 
-    return NextResponse.json({
-      success: true,
-      summary,
-      sentTo: selectedEmail,
-    });
-  } catch (error) {
+    return NextResponse.json({ success: true });
+  } catch {
     return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Server error.",
-      },
+      { success: false, error: "Server error." },
       { status: 500 }
     );
   }
