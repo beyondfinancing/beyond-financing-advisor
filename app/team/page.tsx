@@ -670,9 +670,26 @@ export default function TeamPage() {
     setPasswordHint("");
 
     try {
-      const matched = resolveUserByCredential(credential);
+      const normalizedCredential = normalizeText(credential);
+      const normalizedPassword = password.trim();
 
-      if (!matched || matched.password !== password.trim()) {
+      const matched =
+        TEAM_USERS.find((user) => normalizeText(user.nmls) === normalizedCredential) ||
+        TEAM_USERS.find((user) => normalizeText(user.email) === normalizedCredential) ||
+        TEAM_USERS.find((user) => normalizeText(user.name) === normalizedCredential);
+
+      if (!matched) {
+        setAuthError(t.loginError);
+        return;
+      }
+
+      const validPasswords = [
+        matched.password.trim(),
+        matched.nmls.trim(),
+        matched.email.trim(),
+      ];
+
+      if (!validPasswords.includes(normalizedPassword)) {
         setAuthError(t.loginError);
         return;
       }
@@ -687,10 +704,18 @@ export default function TeamPage() {
 
   const handleForgotPasswordHelp = () => {
     setAuthError("");
-    const matched = resolveUserByCredential(credential);
+
+    const normalizedCredential = normalizeText(credential);
+
+    const matched =
+      TEAM_USERS.find((user) => normalizeText(user.nmls) === normalizedCredential) ||
+      TEAM_USERS.find((user) => normalizeText(user.email) === normalizedCredential) ||
+      TEAM_USERS.find((user) => normalizeText(user.name) === normalizedCredential);
 
     if (!matched) {
-      setPasswordHint(`${t.resetHintPrefix} Please enter your email, NMLS, or full name first.`);
+      setPasswordHint(
+        `${t.resetHintPrefix} Please enter your email, NMLS, or full name first.`
+      );
       return;
     }
 
