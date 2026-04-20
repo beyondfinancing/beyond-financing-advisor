@@ -2,6 +2,18 @@
 
 import React, { useMemo, useState } from "react";
 
+type ProductAssignmentInput = {
+  productId: string;
+  productName: string;
+  categories: string[];
+};
+
+type ExclusiveProductInput = {
+  id: string;
+  name: string;
+  category: string | null;
+};
+
 type SharedProductCategory =
   | "agency"
   | "government"
@@ -15,11 +27,6 @@ type SharedProductType = {
   category: SharedProductCategory;
 };
 
-type ExclusiveProductType = {
-  name: string;
-  category: string;
-};
-
 type Props = {
   lenderId: string;
   initialName: string;
@@ -30,25 +37,62 @@ type Props = {
   initialSecondHomeStates?: string[];
   initialHelocStates?: string[];
   initialNotes?: string;
-  initialSharedAssignedProductIds?: string[];
-  initialSharedProductTypes?: SharedProductType[];
-  initialExclusiveProducts?: ExclusiveProductType[];
+  initialProductAssignments?: ProductAssignmentInput[];
+  initialCustomProductTypes?: ExclusiveProductInput[];
 };
 
+const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
+
 const ALL_STATES = [
-  "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN","KS","KY","LA","MA",
-  "MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK","OR","PA","RI",
-  "SC","SD","TN","TX","UT","VA","VT","WA","WI","WV","WY",
+  "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN",
+  "KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ",
+  "NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VA","VT","WA",
+  "WI","WV","WY",
+];
+
+const SHARED_PRODUCT_TYPES: SharedProductType[] = [
+  { id: "conventional", name: "Conventional", category: "agency" },
+
+  { id: "fha", name: "FHA", category: "government" },
+  { id: "va", name: "VA", category: "government" },
+  { id: "usda", name: "USDA", category: "government" },
+
+  { id: "heloc", name: "HELOC", category: "second_lien" },
+
+  { id: "itin", name: "ITIN", category: "non_qm" },
+  { id: "bank_statement", name: "Bank Statement", category: "non_qm" },
+  { id: "stated_income", name: "Stated Income", category: "non_qm" },
+  { id: "dscr", name: "DSCR", category: "non_qm" },
+  { id: "pnl", name: "P&L", category: "non_qm" },
+  { id: "1099", name: "1099", category: "non_qm" },
+  { id: "asset_depletion", name: "Asset Depletion", category: "non_qm" },
+  { id: "foreign_national", name: "Foreign National", category: "non_qm" },
+  { id: "interest_only", name: "Interest Only", category: "non_qm" },
+  { id: "jumbo_non_qm", name: "Jumbo Non-QM", category: "non_qm" },
 ];
 
 function normalizeStringArray(value: string[]) {
-  return Array.from(new Set((value || []).map((x) => String(x ?? "").trim()).filter(Boolean)));
+  return Array.from(
+    new Set((value || []).map((x) => String(x ?? "").trim()).filter(Boolean))
+  );
 }
 
 function normalizeStateArray(value: string[]) {
   return Array.from(
-    new Set((value || []).map((x) => String(x ?? "").trim().toUpperCase()).filter(Boolean))
+    new Set(
+      (value || [])
+        .map((x) => String(x ?? "").trim().toUpperCase())
+        .filter(Boolean)
+    )
   ).sort();
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function sectionLabel(category: string) {
@@ -59,7 +103,7 @@ function sectionLabel(category: string) {
   return "Shared Other Products";
 }
 
-function exclusiveCategoryLabel(category: string) {
+function exclusiveCategoryLabel(category: string | null) {
   if (category === "agency") return "Agency Products";
   if (category === "government") return "Government Products";
   if (category === "second_lien") return "Second Lien / Equity Products";
@@ -77,12 +121,13 @@ export default function LenderDetailClient({
   initialSecondHomeStates = [],
   initialHelocStates = [],
   initialNotes = "",
-  initialSharedAssignedProductIds = [],
-  initialSharedProductTypes = [],
-  initialExclusiveProducts = [],
+  initialProductAssignments = [],
+  initialCustomProductTypes = [],
 }: Props) {
   const [name, setName] = useState(initialName);
-  const [channels, setChannels] = useState<string[]>(normalizeStringArray(initialChannels));
+  const [channels, setChannels] = useState<string[]>(
+    normalizeStringArray(initialChannels)
+  );
   const [ownerOccupiedStates, setOwnerOccupiedStates] = useState<string[]>(
     normalizeStateArray(initialOwnerOccupiedStates)
   );
@@ -97,34 +142,46 @@ export default function LenderDetailClient({
   );
   const [notes, setNotes] = useState(initialNotes);
 
-  const [sharedAssignedProductIds, setSharedAssignedProductIds] = useState<string[]>(
-    normalizeStringArray(initialSharedAssignedProductIds)
+  const [exclusiveProducts, setExclusiveProducts] = useState<ExclusiveProductInput[]>(
+    (initialCustomProductTypes || []).map((item) => ({
+      id: String(item.id ?? "").trim(),
+      name: String(item.name ?? "").trim(),
+      category:
+        item.category === null || item.category === undefined
+          ? null
+          : String(item.category).trim() || null,
+    }))
   );
-  const [sharedProductTypes] = useState<SharedProductType[]>(initialSharedProductTypes);
-  const [exclusiveProducts, setExclusiveProducts] =
-    useState<ExclusiveProductType[]>(initialExclusiveProducts);
 
   const [exclusiveName, setExclusiveName] = useState("");
   const [exclusiveCategory, setExclusiveCategory] = useState("non_qm");
 
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"success" | "error" | "">("");
+  const exclusiveIdSet = useMemo(() => {
+    return new Set(exclusiveProducts.map((item) => item.id));
+  }, [exclusiveProducts]);
 
-  const channelOptions = ["Retail", "Wholesale", "Correspondent"];
+  const [sharedAssignedProductIds, setSharedAssignedProductIds] = useState<string[]>(
+    normalizeStringArray(
+      (initialProductAssignments || [])
+        .filter((item) => !exclusiveIdSet.has(item.productId))
+        .map((item) => item.productId)
+    )
+  );
 
   const groupedSharedProducts = useMemo(() => {
     const groups = new Map<string, SharedProductType[]>();
 
-    for (const product of sharedProductTypes) {
+    for (const product of SHARED_PRODUCT_TYPES) {
       const key = product.category || "other";
       const existing = groups.get(key) || [];
       existing.push(product);
       groups.set(key, existing);
     }
 
-    return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [sharedProductTypes]);
+    return Array.from(groups.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+  }, []);
 
   const mergedLegacyStates = useMemo(() => {
     return normalizeStateArray([
@@ -151,59 +208,44 @@ export default function LenderDetailClient({
     ]).size;
   }, [ownerOccupiedStates, nonOwnerOccupiedStates, secondHomeStates, helocStates]);
 
-  async function saveAll() {
-    setSaving(true);
-    setMessage("");
-    setMessageType("");
+  const sharedAssignments = useMemo<ProductAssignmentInput[]>(() => {
+    return SHARED_PRODUCT_TYPES
+      .filter((product) => sharedAssignedProductIds.includes(product.id))
+      .map((product) => ({
+        productId: product.id,
+        productName: product.name,
+        categories: [product.category],
+      }));
+  }, [sharedAssignedProductIds]);
 
-    try {
-      const response = await fetch(`/api/admin/lenders/${lenderId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name,
-          channels,
-          states: mergedLegacyStates,
-          ownerOccupiedStates,
-          nonOwnerOccupiedStates,
-          secondHomeStates,
-          helocStates,
-          notes,
-          sharedAssignedProductIds,
-          exclusiveProducts,
-        }),
-      });
+  const allAssignments = useMemo<ProductAssignmentInput[]>(() => {
+    const exclusiveAssignments = exclusiveProducts.map((product) => ({
+      productId: product.id,
+      productName: product.name,
+      categories: [product.category || "non_qm"],
+    }));
 
-      const data = await response.json();
+    return [...sharedAssignments, ...exclusiveAssignments];
+  }, [sharedAssignments, exclusiveProducts]);
 
-      if (!response.ok) {
-        throw new Error(data?.error || "Request failed with PATCH.");
-      }
-
-      setMessage("Saved successfully.");
-      setMessageType("success");
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Request failed with PATCH."
-      );
-      setMessageType("error");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error" | "">("");
 
   function handleMultiSelect(
     event: React.ChangeEvent<HTMLSelectElement>,
     setter: React.Dispatch<React.SetStateAction<string[]>>
   ) {
-    const selected = Array.from(event.target.selectedOptions).map((option) => option.value);
+    const selected = Array.from(event.target.selectedOptions).map(
+      (option) => option.value
+    );
     setter(normalizeStateArray(selected));
   }
 
   function handleChannelSelect(event: React.ChangeEvent<HTMLSelectElement>) {
-    const selected = Array.from(event.target.selectedOptions).map((option) => option.value);
+    const selected = Array.from(event.target.selectedOptions).map(
+      (option) => option.value
+    );
     setChannels(normalizeStringArray(selected));
   }
 
@@ -220,7 +262,7 @@ export default function LenderDetailClient({
     const cleanName = exclusiveName.trim();
     if (!cleanName) return;
 
-    const existsShared = sharedProductTypes.some(
+    const existsShared = SHARED_PRODUCT_TYPES.some(
       (product) => product.name.toLowerCase() === cleanName.toLowerCase()
     );
 
@@ -242,9 +284,17 @@ export default function LenderDetailClient({
       return;
     }
 
+    const normalizedId = `exclusive_${slugify(cleanName)}`;
+    if (!normalizedId.replace("exclusive_", "").trim()) {
+      setMessage("Please enter a valid exclusive product name.");
+      setMessageType("error");
+      return;
+    }
+
     setExclusiveProducts((current) => [
       ...current,
       {
+        id: normalizedId,
         name: cleanName,
         category: exclusiveCategory,
       },
@@ -255,19 +305,13 @@ export default function LenderDetailClient({
     setMessageType("");
   }
 
-  function removeExclusiveProduct(nameToRemove: string) {
+  function removeExclusiveProduct(idToRemove: string) {
     setExclusiveProducts((current) =>
-      current.filter((item) => item.name.toLowerCase() !== nameToRemove.toLowerCase())
+      current.filter((item) => item.id !== idToRemove)
     );
   }
 
-  function unassignExclusiveProduct(nameToUnassign: string) {
-    setExclusiveProducts((current) =>
-      current.filter((item) => item.name.toLowerCase() !== nameToUnassign.toLowerCase())
-    );
-  }
-
-  async function promoteExclusiveProduct(product: ExclusiveProductType) {
+  async function promoteExclusiveProduct(product: ExclusiveProductInput) {
     setSaving(true);
     setMessage("");
     setMessageType("");
@@ -281,7 +325,7 @@ export default function LenderDetailClient({
         body: JSON.stringify({
           lenderId,
           productName: product.name,
-          category: product.category,
+          category: product.category || "non_qm",
         }),
       });
 
@@ -292,12 +336,14 @@ export default function LenderDetailClient({
       }
 
       setExclusiveProducts((current) =>
-        current.filter((item) => item.name.toLowerCase() !== product.name.toLowerCase())
+        current.filter((item) => item.id !== product.id)
       );
 
-      setSharedAssignedProductIds((current) =>
-        normalizeStringArray([...current, data.promoted.sharedProductId])
-      );
+      if (data?.promoted?.sharedProductId) {
+        setSharedAssignedProductIds((current) =>
+          normalizeStringArray([...current, String(data.promoted.sharedProductId)])
+        );
+      }
 
       setMessage(`Promoted "${product.name}" to shared product catalog.`);
       setMessageType("success");
@@ -309,9 +355,63 @@ export default function LenderDetailClient({
     }
   }
 
-  const sharedAssignedNames = sharedProductTypes
-    .filter((product) => sharedAssignedProductIds.includes(product.id))
-    .map((product) => product.name);
+  async function saveAll() {
+    setSaving(true);
+    setMessage("");
+    setMessageType("");
+
+    try {
+      const payload = {
+        name: name.trim(),
+        channels: normalizeStringArray(channels),
+        states: mergedLegacyStates,
+        ownerOccupiedStates: normalizeStateArray(ownerOccupiedStates),
+        nonOwnerOccupiedStates: normalizeStateArray(nonOwnerOccupiedStates),
+        secondHomeStates: normalizeStateArray(secondHomeStates),
+        helocStates: normalizeStateArray(helocStates),
+        notes: notes.trim(),
+        productAssignments: allAssignments.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          categories: normalizeStringArray(item.categories),
+        })),
+        customProductTypes: exclusiveProducts.map((item) => ({
+          id: item.id,
+          name: item.name,
+          category: item.category,
+        })),
+        sharedAssignedProductIds: normalizeStringArray(sharedAssignedProductIds),
+        exclusiveProducts: exclusiveProducts.map((item) => ({
+          name: item.name,
+          category: item.category || "non_qm",
+        })),
+      };
+
+      const response = await fetch(`/api/admin/lenders/${lenderId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Request failed with PATCH.");
+      }
+
+      setMessage("Saved successfully.");
+      setMessageType("success");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Request failed with PATCH."
+      );
+      setMessageType("error");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
@@ -322,16 +422,7 @@ export default function LenderDetailClient({
 
         <div style={{ display: "grid", gap: 16 }}>
           <div>
-            <label
-              style={{
-                display: "block",
-                fontWeight: 800,
-                color: "#263366",
-                marginBottom: 8,
-              }}
-            >
-              Lender Name
-            </label>
+            <label style={labelStyle}>Lender Name</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -340,23 +431,14 @@ export default function LenderDetailClient({
           </div>
 
           <div>
-            <label
-              style={{
-                display: "block",
-                fontWeight: 800,
-                color: "#263366",
-                marginBottom: 8,
-              }}
-            >
-              Channels
-            </label>
+            <label style={labelStyle}>Channels</label>
             <select
               multiple
               value={channels}
               onChange={handleChannelSelect}
               style={multiSelectStyle}
             >
-              {channelOptions.map((channel) => (
+              {CHANNEL_OPTIONS.map((channel) => (
                 <option key={channel} value={channel}>
                   {channel}
                 </option>
@@ -376,7 +458,7 @@ export default function LenderDetailClient({
               style={multiSelectStyle}
             >
               {ALL_STATES.map((state) => (
-                <option key={state} value={state}>
+                <option key={`owner-${state}`} value={state}>
                   {state}
                 </option>
               ))}
@@ -395,7 +477,7 @@ export default function LenderDetailClient({
               style={multiSelectStyle}
             >
               {ALL_STATES.map((state) => (
-                <option key={state} value={state}>
+                <option key={`nonowner-${state}`} value={state}>
                   {state}
                 </option>
               ))}
@@ -414,7 +496,7 @@ export default function LenderDetailClient({
               style={multiSelectStyle}
             >
               {ALL_STATES.map((state) => (
-                <option key={state} value={state}>
+                <option key={`secondhome-${state}`} value={state}>
                   {state}
                 </option>
               ))}
@@ -433,7 +515,7 @@ export default function LenderDetailClient({
               style={multiSelectStyle}
             >
               {ALL_STATES.map((state) => (
-                <option key={state} value={state}>
+                <option key={`heloc-${state}`} value={state}>
                   {state}
                 </option>
               ))}
@@ -466,160 +548,168 @@ export default function LenderDetailClient({
               style={textareaStyle}
             />
           </div>
+        </div>
+      </div>
 
-          {groupedSharedProducts.map(([category, products]) => (
-            <div key={category} style={{ display: "grid", gap: 10 }}>
-              <div style={sectionPillStyle}>{sectionLabel(category)}</div>
+      <div style={{ display: "grid", gap: 18 }}>
+        {groupedSharedProducts.map(([category, products]) => (
+          <div key={category} style={{ display: "grid", gap: 10 }}>
+            <div style={sectionPillStyle}>{sectionLabel(category)}</div>
 
-              {products.map((product) => {
-                const checked = sharedAssignedProductIds.includes(product.id);
+            {products.map((product) => {
+              const checked = sharedAssignedProductIds.includes(product.id);
 
-                return (
-                  <label key={product.id} style={productRowStyle}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleSharedProduct(product.id)}
-                    />
-                    <span style={{ fontWeight: 800, color: "#263366" }}>
-                      {product.name}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
+              return (
+                <label key={product.id} style={productRowStyle}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleSharedProduct(product.id)}
+                  />
+                  <span style={{ fontWeight: 800, color: "#263366" }}>
+                    {product.name}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #D9E1EC",
+          borderRadius: 22,
+          padding: 18,
+          display: "grid",
+          gap: 14,
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 16, color: "#263366" }}>
+          Add Exclusive Product
+        </h3>
+
+        <input
+          value={exclusiveName}
+          onChange={(e) => setExclusiveName(e.target.value)}
+          placeholder="Example: Dual Core"
+          style={inputStyle}
+        />
+
+        <div>
+          <label style={labelStyle}>Category</label>
+          <select
+            value={exclusiveCategory}
+            onChange={(e) => setExclusiveCategory(e.target.value)}
+            style={inputStyle}
+          >
+            <option value="non_qm">Non-QM</option>
+            <option value="agency">Agency</option>
+            <option value="government">Government</option>
+            <option value="second_lien">Second Lien / Equity</option>
+          </select>
+        </div>
+
+        <button type="button" onClick={addExclusiveProduct} style={secondaryButtonStyle}>
+          Add Exclusive Product
+        </button>
+
+        <div style={helperStyle}>
+          Exclusive products belong to this lender only. If a product later becomes reusable across multiple lenders, it should be promoted into the shared product catalog.
+        </div>
+
+        {exclusiveProducts.length > 0 && (
+          <div style={{ display: "grid", gap: 12 }}>
+            {exclusiveProducts.map((product) => (
+              <div key={product.id} style={exclusiveCardStyle}>
+                <div>
+                  <div style={{ fontWeight: 800, color: "#263366", fontSize: 16 }}>
+                    {product.name}
+                  </div>
+                  <div style={{ color: "#6A7A94", fontSize: 14 }}>
+                    {exclusiveCategoryLabel(product.category)}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    marginTop: 10,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => promoteExclusiveProduct(product)}
+                    style={smallBlueButtonStyle}
+                  >
+                    Promote to Shared
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => removeExclusiveProduct(product.id)}
+                    style={smallDangerButtonStyle}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label style={labelStyle}>Legacy States Column</label>
+        <select
+          multiple
+          value={mergedLegacyStates}
+          disabled
+          style={{
+            ...multiSelectStyle,
+            background: "#F8FBFF",
+            color: "#7A8AA6",
+            cursor: "not-allowed",
+          }}
+        >
+          {mergedLegacyStates.map((state) => (
+            <option key={state} value={state}>
+              {state}
+            </option>
           ))}
+        </select>
+        <div style={helperStyle}>
+          This is kept in sync for backward compatibility and summary display.
+        </div>
+      </div>
 
+      <div>
+        <button
+          type="button"
+          onClick={saveAll}
+          disabled={saving}
+          style={{
+            ...primaryButtonStyle,
+            opacity: saving ? 0.7 : 1,
+            cursor: saving ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving ? "Saving..." : "Save Changes"}
+        </button>
+
+        {message ? (
           <div
             style={{
-              border: "1px solid #D9E1EC",
-              borderRadius: 22,
-              padding: 18,
-              display: "grid",
-              gap: 14,
+              marginTop: 12,
+              color: messageType === "error" ? "#C43221" : "#14803C",
+              fontWeight: 800,
             }}
           >
-            <h3 style={{ margin: 0, fontSize: 16, color: "#263366" }}>
-              Add Exclusive Product
-            </h3>
-
-            <input
-              value={exclusiveName}
-              onChange={(e) => setExclusiveName(e.target.value)}
-              placeholder="Example: Dual Core"
-              style={inputStyle}
-            />
-
-            <div>
-              <label style={labelStyle}>Category</label>
-              <select
-                value={exclusiveCategory}
-                onChange={(e) => setExclusiveCategory(e.target.value)}
-                style={inputStyle}
-              >
-                <option value="non_qm">Non-QM</option>
-                <option value="agency">Agency</option>
-                <option value="government">Government</option>
-                <option value="second_lien">Second Lien / Equity</option>
-              </select>
-            </div>
-
-            <button type="button" onClick={addExclusiveProduct} style={secondaryButtonStyle}>
-              Add Exclusive Product
-            </button>
-
-            <div style={helperStyle}>
-              Exclusive products belong to this lender only. If a product later becomes reusable across multiple lenders, it should be promoted into the shared product catalog.
-            </div>
-
-            {exclusiveProducts.length > 0 && (
-              <div style={{ display: "grid", gap: 12 }}>
-                {exclusiveProducts.map((product) => (
-                  <div key={product.name} style={exclusiveCardStyle}>
-                    <div>
-                      <div style={{ fontWeight: 800, color: "#263366", fontSize: 16 }}>
-                        {product.name}
-                      </div>
-                      <div style={{ color: "#6A7A94", fontSize: 14 }}>
-                        {exclusiveCategoryLabel(product.category)}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                      <button
-                        type="button"
-                        onClick={() => unassignExclusiveProduct(product.name)}
-                        style={smallOutlineButtonStyle}
-                      >
-                        Unassign
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => promoteExclusiveProduct(product)}
-                        style={smallBlueButtonStyle}
-                      >
-                        Promote to Shared
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => removeExclusiveProduct(product.name)}
-                        style={smallDangerButtonStyle}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {message}
           </div>
-
-          <div>
-            <label style={labelStyle}>Legacy States Column</label>
-            <select
-              multiple
-              value={mergedLegacyStates}
-              disabled
-              style={{
-                ...multiSelectStyle,
-                background: "#F8FBFF",
-                color: "#7A8AA6",
-                cursor: "not-allowed",
-              }}
-            >
-              {mergedLegacyStates.map((state) => (
-                <option key={state} value={state}>
-                  {state}
-                </option>
-              ))}
-            </select>
-            <div style={helperStyle}>
-              This is kept in sync for backward compatibility and summary display.
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={saveAll}
-            disabled={saving}
-            style={primaryButtonStyle}
-          >
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
-
-          {message ? (
-            <div
-              style={{
-                color: messageType === "error" ? "#C43221" : "#14803C",
-                fontWeight: 800,
-              }}
-            >
-              {message}
-            </div>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
       <style jsx>{`
@@ -649,8 +739,9 @@ const helperStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  borderRadius: 18,
+  boxSizing: "border-box",
   border: "1px solid #BED0E6",
+  borderRadius: 18,
   background: "#FFFFFF",
   color: "#263366",
   padding: "14px 16px",
@@ -660,21 +751,24 @@ const inputStyle: React.CSSProperties = {
 
 const textareaStyle: React.CSSProperties = {
   width: "100%",
-  borderRadius: 18,
+  boxSizing: "border-box",
   border: "1px solid #BED0E6",
+  borderRadius: 18,
   background: "#FFFFFF",
   color: "#263366",
   padding: "14px 16px",
   fontSize: 16,
   outline: "none",
   resize: "vertical",
+  fontFamily: "Arial, Helvetica, sans-serif",
 };
 
 const multiSelectStyle: React.CSSProperties = {
   width: "100%",
   minHeight: 110,
-  borderRadius: 18,
+  boxSizing: "border-box",
   border: "1px solid #BED0E6",
+  borderRadius: 18,
   background: "#FFFFFF",
   color: "#263366",
   padding: 12,
@@ -690,6 +784,7 @@ const primaryButtonStyle: React.CSSProperties = {
   fontWeight: 800,
   fontSize: 16,
   cursor: "pointer",
+  width: "100%",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
@@ -717,12 +812,12 @@ const sectionPillStyle: React.CSSProperties = {
 const productRowStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
   gap: 14,
+  padding: "16px 18px",
   border: "1px solid #D9E1EC",
   borderRadius: 18,
-  padding: "16px 18px",
   background: "#FFFFFF",
+  cursor: "pointer",
 };
 
 const exclusiveCardStyle: React.CSSProperties = {
@@ -730,16 +825,6 @@ const exclusiveCardStyle: React.CSSProperties = {
   borderRadius: 18,
   padding: 16,
   background: "#FFFFFF",
-};
-
-const smallOutlineButtonStyle: React.CSSProperties = {
-  background: "#FFFFFF",
-  color: "#2E3E86",
-  border: "2px solid #2E3E86",
-  borderRadius: 14,
-  padding: "10px 14px",
-  fontWeight: 800,
-  cursor: "pointer",
 };
 
 const smallBlueButtonStyle: React.CSSProperties = {
