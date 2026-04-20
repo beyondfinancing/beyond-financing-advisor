@@ -190,7 +190,7 @@ function stageColor(stage: FileStage) {
       return { bg: "#F3F4F6", text: "#374151", border: "#E5E7EB" };
     default:
       return { bg: "#F8FAFC", text: "#334155", border: "#E2E8F0" };
-  }
+    }
 }
 
 function priorityColor(priority: PriorityLevel) {
@@ -211,9 +211,9 @@ function formatDate(value: string) {
 }
 
 function metricCard(
-  label: string,
-  value: string,
-  subtext: string
+  _label: string,
+  _value: string,
+  _subtext: string
 ): React.CSSProperties {
   return {
     background: "rgba(255,255,255,0.72)",
@@ -611,25 +611,49 @@ export default function TeamPage() {
             marginBottom: 18,
           }}
         >
-          <div style={metricCard("Processing Active", String(kpis.activeProcessing), "Files currently in execution")}>
+          <div
+            style={metricCard(
+              "Processing Active",
+              String(kpis.activeProcessing),
+              "Files currently in execution"
+            )}
+          >
             <div style={styles.metricLabel}>Processing Active</div>
             <div style={styles.metricValue}>{kpis.activeProcessing}</div>
             <div style={styles.metricSubtext}>Files currently in execution</div>
           </div>
 
-          <div style={metricCard("Nearing Close", String(kpis.nearingClose), "Conditional approval or better")}>
+          <div
+            style={metricCard(
+              "Nearing Close",
+              String(kpis.nearingClose),
+              "Conditional approval or better"
+            )}
+          >
             <div style={styles.metricLabel}>Nearing Close</div>
             <div style={styles.metricValue}>{kpis.nearingClose}</div>
             <div style={styles.metricSubtext}>Conditional approval or better</div>
           </div>
 
-          <div style={metricCard("Rush Files", String(kpis.rush), "Priority oversight required")}>
+          <div
+            style={metricCard(
+              "Rush Files",
+              String(kpis.rush),
+              "Priority oversight required"
+            )}
+          >
             <div style={styles.metricLabel}>Rush Files</div>
             <div style={styles.metricValue}>{kpis.rush}</div>
             <div style={styles.metricSubtext}>Priority oversight required</div>
           </div>
 
-          <div style={metricCard("Average Age", `${kpis.avgAge}d`, "Average file age in command center")}>
+          <div
+            style={metricCard(
+              "Average Age",
+              `${kpis.avgAge}d`,
+              "Average file age in command center"
+            )}
+          >
             <div style={styles.metricLabel}>Average Age</div>
             <div style={styles.metricValue}>{kpis.avgAge}d</div>
             <div style={styles.metricSubtext}>Average file age in command center</div>
@@ -679,6 +703,7 @@ export default function TeamPage() {
           >
             {pipelineCounts.map((item) => {
               const tone = stageColor(item.stage);
+
               return (
                 <div
                   key={item.stage}
@@ -704,11 +729,11 @@ export default function TeamPage() {
                   </div>
                 </div>
               );
-            ))}
+            })}
           </div>
         </section>
 
-        <div style={styles.card}>
+        <div style={{ ...styles.card, marginBottom: 18 }}>
           <div style={styles.sectionEyebrow}>CLOSED LOANS</div>
           <h2 style={styles.sectionTitle}>2026</h2>
 
@@ -839,7 +864,9 @@ export default function TeamPage() {
                         </div>
                         <div style={styles.detailMiniBox}>
                           <div style={styles.detailMiniLabel}>Target Close</div>
-                          <div style={styles.detailMiniValue}>{formatDate(file.targetCloseDate)}</div>
+                          <div style={styles.detailMiniValue}>
+                            {formatDate(file.targetCloseDate)}
+                          </div>
                         </div>
                         <div style={styles.detailMiniBox}>
                           <div style={styles.detailMiniLabel}>File Age</div>
@@ -931,7 +958,9 @@ export default function TeamPage() {
                     </div>
                     <div style={styles.commandBox}>
                       <div style={styles.commandLabel}>Target Close</div>
-                      <div style={styles.commandValue}>{formatDate(selectedFile.targetCloseDate)}</div>
+                      <div style={styles.commandValue}>
+                        {formatDate(selectedFile.targetCloseDate)}
+                      </div>
                     </div>
                     <div style={styles.commandBox}>
                       <div style={styles.commandLabel}>Loan Purpose</div>
@@ -1001,7 +1030,7 @@ export default function TeamPage() {
                       {item}
                     </span>
 
-                        <button
+                    <button
                       type="button"
                       style={{
                         ...styles.secondaryButton,
@@ -1021,7 +1050,6 @@ export default function TeamPage() {
               <div style={styles.sectionEyebrow}>PROCESSING HANDOFF</div>
               <h2 style={styles.sectionTitle}>Trigger and alert processing</h2>
 
-              <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
               <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
                 <div>
                   <label style={styles.label}>Assign processor</label>
