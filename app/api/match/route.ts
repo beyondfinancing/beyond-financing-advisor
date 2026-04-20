@@ -62,23 +62,19 @@ type QualificationInput = {
   available_reserves_months: number | null;
 };
 
-type RawProgramRelation =
-  | {
-      id?: unknown;
-      name?: unknown;
-      slug?: unknown;
-      loan_category?: unknown;
-      lender_id?: unknown;
-      lenders?: unknown;
-    }
-  | null;
+type RawProgramRelation = {
+  id?: unknown;
+  name?: unknown;
+  slug?: unknown;
+  loan_category?: unknown;
+  lender_id?: unknown;
+  lenders?: unknown;
+} | null;
 
-type RawLenderRelation =
-  | {
-      id?: unknown;
-      name?: unknown;
-    }
-  | null;
+type RawLenderRelation = {
+  id?: unknown;
+  name?: unknown;
+} | null;
 
 type RawProgramGuidelineRow = {
   id?: unknown;
@@ -121,13 +117,11 @@ type RawLenderProductAssignmentRow = {
   loan_product_types?: unknown;
 };
 
-type RawLoanProductTypeRelation =
-  | {
-      id?: unknown;
-      name?: unknown;
-      category?: unknown;
-    }
-  | null;
+type RawLoanProductTypeRelation = {
+  id?: unknown;
+  name?: unknown;
+  category?: unknown;
+} | null;
 
 type ProgramRelation = {
   id: string;
@@ -203,22 +197,6 @@ type MatchBucket = {
   concerns: string[];
   explanation: string;
   score: number;
-  matched_product_ids: string[];
-  matched_product_names: string[];
-};
-
-type LenderDirection = {
-  lender_id: string;
-  lender_name: string;
-  best_score: number;
-  strong_program_count: number;
-  conditional_program_count: number;
-  top_program_name: string;
-  top_program_slug: string;
-  loan_categories: string[];
-  top_strengths: string[];
-  top_concerns: string[];
-  top_notes: string[];
 };
 
 type OpenAiEnhancement = {
@@ -274,87 +252,14 @@ function normalizeState(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
-function normalizeString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean)));
-}
-
-function normalizeArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return uniqueStrings(
-      value
-        .map((item) =>
-          typeof item === "string" ? item.trim() : String(item ?? "").trim()
-        )
-        .filter(Boolean)
-    );
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        return uniqueStrings(
-          parsed
-            .map((item) =>
-              typeof item === "string" ? item.trim() : String(item ?? "").trim()
-            )
-            .filter(Boolean)
-        );
-      }
-    } catch {
-      // ignore
-    }
-
-    return uniqueStrings(
-      trimmed
-        .split(",")
-        .map((part) => part.trim())
-        .filter(Boolean)
-    );
-  }
-
-  return [];
-}
-
-function parseJsonSafely<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
-function isMissing(value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  if (typeof value === "string") return value.trim() === "";
-  return false;
-}
-
 function mapBorrowerStatus(value: unknown): BorrowerStatus {
   const v = normalizeText(value);
 
   if (!v) return "";
-  if (
-    v === "citizen" ||
-    v === "us citizen" ||
-    v === "u s citizen" ||
-    v === "american citizen"
-  ) {
+  if (v === "citizen" || v === "us citizen" || v === "u s citizen" || v === "american citizen") {
     return "citizen";
   }
-  if (
-    v === "permanent_resident" ||
-    v === "permanent resident" ||
-    v === "green card" ||
-    v === "green card holder"
-  ) {
+  if (v === "permanent_resident" || v === "permanent resident" || v === "green card" || v === "green card holder") {
     return "permanent_resident";
   }
   if (
@@ -370,12 +275,10 @@ function mapBorrowerStatus(value: unknown): BorrowerStatus {
   if (v === "itin_borrower" || v === "itin borrower" || v === "itin") {
     return "itin_borrower";
   }
-  if (v === "daca") return "daca";
-  if (
-    v === "foreign_national" ||
-    v === "foreign national" ||
-    v === "foreign"
-  ) {
+  if (v === "daca") {
+    return "daca";
+  }
+  if (v === "foreign_national" || v === "foreign national" || v === "foreign") {
     return "foreign_national";
   }
 
@@ -470,20 +373,11 @@ function mapIncomeType(value: unknown): IncomeType {
   }
   if (v === "1099") return "1099";
   if (v === "pnl" || v === "p and l" || v === "profit and loss") return "pnl";
-  if (
-    v === "asset_utilization" ||
-    v === "asset utilization" ||
-    v === "asset depletion"
-  ) {
+  if (v === "asset_utilization" || v === "asset utilization" || v === "asset depletion") {
     return "asset_utilization";
   }
   if (v === "dscr") return "dscr";
-  if (
-    v === "no_ratio" ||
-    v === "no ratio" ||
-    v === "stated" ||
-    v === "stated income"
-  ) {
+  if (v === "no_ratio" || v === "no ratio" || v === "stated" || v === "stated income") {
     return "no_ratio";
   }
   if (v === "wvoe" || v === "written verification of employment") {
@@ -512,20 +406,11 @@ function mapPropertyType(value: unknown): PropertyType {
   if (v === "2_unit" || v === "2 unit" || v === "duplex" || v === "two unit") {
     return "2_unit";
   }
-  if (
-    v === "3_unit" ||
-    v === "3 unit" ||
-    v === "triplex" ||
-    v === "three unit"
-  ) {
+  if (v === "3_unit" || v === "3 unit" || v === "triplex" || v === "three unit") {
     return "3_unit";
   }
   if (v === "4_unit" || v === "4 unit" || v === "four unit") return "4_unit";
-  if (
-    v === "mixed_use" ||
-    v === "mixed use" ||
-    v === "mixed use property"
-  ) {
+  if (v === "mixed_use" || v === "mixed use" || v === "mixed use property") {
     return "mixed_use";
   }
   if (
@@ -619,6 +504,51 @@ function normalizeBody(body: unknown): QualificationInput {
   };
 }
 
+function isMissing(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value.trim() === "";
+  return false;
+}
+
+function normalizeString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function normalizeArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) =>
+        typeof item === "string" ? item.trim() : String(item ?? "").trim()
+      )
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) =>
+            typeof item === "string" ? item.trim() : String(item ?? "").trim()
+          )
+          .filter(Boolean);
+      }
+    } catch {
+      // ignore parse error
+    }
+
+    return trimmed
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 function normalizeProgramRelation(value: unknown): ProgramRelation {
   let programRaw: RawProgramRelation = null;
 
@@ -671,9 +601,7 @@ function normalizeGuidelineRow(raw: RawProgramGuidelineRow): ProgramGuidelineRow
     max_loan_amount: toNumber(raw.max_loan_amount),
     min_units: toNumber(raw.min_units),
     max_units: toNumber(raw.max_units),
-    first_time_homebuyer_allowed: toBooleanOrNull(
-      raw.first_time_homebuyer_allowed
-    ),
+    first_time_homebuyer_allowed: toBooleanOrNull(raw.first_time_homebuyer_allowed),
     reserves_required_months: toNumber(raw.reserves_required_months),
     guideline_notes:
       raw.guideline_notes === null || raw.guideline_notes === undefined
@@ -729,6 +657,7 @@ function normalizeLenderProductAssignmentRow(
 
 function detectEligibleProductTypeIds(input: QualificationInput): string[] {
   const ids: string[] = [];
+
   const ownerOccupied =
     input.occupancy_type === "primary_residence" ||
     input.occupancy_type === "second_home";
@@ -763,28 +692,20 @@ function detectEligibleProductTypeIds(input: QualificationInput): string[] {
     ids.push("usda");
   }
 
-  if (input.borrower_status === "itin_borrower") {
-    ids.push("itin");
+  if (input.transaction_type === "second_lien") {
+    ids.push("heloc");
   }
 
-  if (input.borrower_status === "foreign_national") {
-    ids.push("foreign_national");
+  if (input.borrower_status === "itin_borrower") {
+    ids.push("itin");
   }
 
   if (input.income_type === "bank_statements") {
     ids.push("bank_statement");
   }
 
-  if (input.income_type === "1099") {
-    ids.push("1099");
-  }
-
   if (input.income_type === "pnl") {
     ids.push("pnl");
-  }
-
-  if (input.income_type === "asset_utilization") {
-    ids.push("asset_depletion");
   }
 
   if (input.income_type === "dscr") {
@@ -795,22 +716,98 @@ function detectEligibleProductTypeIds(input: QualificationInput): string[] {
     ids.push("stated_income");
   }
 
-  if (input.transaction_type === "second_lien") {
-    ids.push("interest_only");
+  return uniqueStrings(ids);
+}
+
+function applyProductAssignmentAwareness(
+  bucket: MatchBucket,
+  input: QualificationInput,
+  assignmentsByLender: Map<string, LenderProductAssignment[]>
+) {
+  const lenderAssignments = assignmentsByLender.get(bucket.lender_id) || [];
+  if (lenderAssignments.length === 0) return;
+
+  const ownerOccupied =
+    input.occupancy_type === "primary_residence" ||
+    input.occupancy_type === "second_home";
+
+  const eligibleProductIds = detectEligibleProductTypeIds(input);
+
+  const matchingAssignments = lenderAssignments.filter((assignment) => {
+    if (!eligibleProductIds.includes(assignment.product_type_id)) return false;
+
+    if (input.transaction_type === "second_lien") {
+      return true;
+    }
+
+    if (ownerOccupied && !assignment.owner_occupied_allowed) return false;
+    if (!ownerOccupied && !assignment.non_owner_occupied_allowed) return false;
+
+    return true;
+  });
+
+  if (matchingAssignments.length === 0) return;
+
+  const productNames = uniqueStrings(
+    matchingAssignments
+      .map((item) => item.loan_product_types?.name || "")
+      .filter(Boolean)
+  );
+
+  const productIds = matchingAssignments.map((item) => item.product_type_id);
+
+  bucket.score += 8;
+  bucket.notes.push(
+    `Lender product assignment match: ${productNames.join(", ")}.`
+  );
+
+  if (productIds.includes("conventional")) {
+    bucket.score += 8;
+    bucket.strengths.push(
+      "This scenario appears eligible for conventional execution, which may fall within Fannie Mae / Freddie Mac agency direction subject to AUS and full guideline review."
+    );
+  }
+
+  if (productIds.includes("fha")) {
+    bucket.score += 5;
+    bucket.strengths.push("Lender appears assigned for FHA execution.");
+  }
+
+  if (productIds.includes("va")) {
+    bucket.score += 5;
+    bucket.strengths.push("Lender appears assigned for VA execution.");
+  }
+
+  if (productIds.includes("usda")) {
+    bucket.score += 5;
+    bucket.strengths.push("Lender appears assigned for USDA execution.");
+  }
+
+  if (productIds.includes("heloc")) {
+    bucket.score += 8;
+    bucket.strengths.push(
+      "Lender appears assigned for HELOC / second-lien execution."
+    );
   }
 
   if (
-    input.loan_amount !== null &&
-    input.loan_amount >= 766550 &&
-    (input.income_type === "bank_statements" ||
-      input.income_type === "pnl" ||
-      input.income_type === "asset_utilization" ||
-      input.income_type === "no_ratio")
+    productIds.includes("itin") ||
+    productIds.includes("bank_statement") ||
+    productIds.includes("stated_income") ||
+    productIds.includes("pnl") ||
+    productIds.includes("dscr")
   ) {
-    ids.push("jumbo_non_qm");
+    bucket.score += 6;
+    bucket.strengths.push(
+      "Lender appears assigned for a matching non-QM execution path."
+    );
   }
 
-  return uniqueStrings(ids);
+  for (const assignment of matchingAssignments) {
+    if (assignment.notes) {
+      bucket.notes.push(`Product assignment note: ${assignment.notes}`);
+    }
+  }
 }
 
 function includesOrEmpty(list: string[], value: string): boolean {
@@ -818,13 +815,16 @@ function includesOrEmpty(list: string[], value: string): boolean {
   return list.includes(value);
 }
 
-function getOccupancyEligibilityMode(
-  occupancy: OccupancyType
-): "owner" | "second_home" | "non_owner" | null {
-  if (occupancy === "primary_residence") return "owner";
-  if (occupancy === "second_home") return "second_home";
-  if (occupancy === "investment_property") return "non_owner";
-  return null;
+function parseJsonSafely<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
@@ -843,15 +843,10 @@ function buildBaseBucket(row: ProgramGuidelineRow): MatchBucket {
     concerns: [],
     explanation: "",
     score: 50,
-    matched_product_ids: [],
-    matched_product_names: [],
   };
 }
 
-function addProgramIdentityScoring(
-  bucket: MatchBucket,
-  input: QualificationInput
-) {
+function addProgramIdentityScoring(bucket: MatchBucket, input: QualificationInput) {
   const slug = bucket.program_slug.toLowerCase();
   const name = bucket.program_name.toLowerCase();
   const combined = `${slug} ${name}`;
@@ -861,18 +856,7 @@ function addProgramIdentityScoring(
     bucket.strengths.push("Direct ITIN borrower fit.");
   }
 
-  if (
-    input.borrower_status === "foreign_national" &&
-    combined.includes("foreign")
-  ) {
-    bucket.score += 18;
-    bucket.strengths.push("Direct foreign national fit.");
-  }
-
-  if (
-    input.income_type === "bank_statements" &&
-    combined.includes("bank")
-  ) {
+  if (input.income_type === "bank_statements" && combined.includes("bank")) {
     bucket.score += 16;
     bucket.strengths.push(
       "Program identity directly aligns with bank-statement qualification."
@@ -890,30 +874,24 @@ function addProgramIdentityScoring(
   }
 
   if (
-    input.income_type === "pnl" &&
-    (combined.includes("pnl") || combined.includes("profit"))
-  ) {
-    bucket.score += 12;
-    bucket.strengths.push(
-      "Program identity directly aligns with P&L qualification."
-    );
-  }
-
-  if (
-    input.income_type === "1099" &&
-    combined.includes("1099")
-  ) {
-    bucket.score += 12;
-    bucket.strengths.push("Program identity directly aligns with 1099 income.");
-  }
-
-  if (
     input.occupancy_type === "investment_property" &&
     combined.includes("investor")
   ) {
     bucket.score += 10;
     bucket.strengths.push(
       "Program identity strongly fits investment-property direction."
+    );
+  }
+
+  if (
+    input.transaction_type === "second_lien" &&
+    (combined.includes("heloc") ||
+      combined.includes("second lien") ||
+      combined.includes("home equity"))
+  ) {
+    bucket.score += 16;
+    bucket.strengths.push(
+      "Program identity directly aligns with HELOC / second-lien direction."
     );
   }
 
@@ -1001,12 +979,12 @@ function addBoundaryScoring(
   }
 
   if (input.first_time_homebuyer !== null) {
-    if (row.first_time_homebuyer_allowed === true && input.first_time_homebuyer) {
+    if (row.first_time_homebuyer_allowed === true && input.first_time_homebuyer === true) {
       bucket.score += 3;
       bucket.strengths.push("Program appears open to first-time-homebuyer layering.");
     } else if (
       row.first_time_homebuyer_allowed === false &&
-      input.first_time_homebuyer
+      input.first_time_homebuyer === true
     ) {
       bucket.score -= 2;
       bucket.concerns.push(
@@ -1091,18 +1069,6 @@ function applyGenericCategoryBlockers(
       "Purchase scenarios should not be matched to HELOC or second-lien products."
     );
   }
-
-  if (
-    input.transaction_type === "second_lien" &&
-    loanCategory &&
-    !loanCategory.includes("heloc") &&
-    !loanCategory.includes("second")
-  ) {
-    bucket.concerns.push(
-      "Scenario is second-lien oriented, but this program category does not appear to be a second-lien path."
-    );
-    bucket.score -= 4;
-  }
 }
 
 function applyLenderStateEligibility(
@@ -1114,30 +1080,22 @@ function applyLenderStateEligibility(
   if (!input.subject_state || !row.programs?.lender_id) return;
 
   const eligibility = lenderEligibilityMap.get(row.programs.lender_id);
-  if (!eligibility) {
-    bucket.concerns.push(
-      `${bucket.lender_name} has no state-eligibility record loaded for ${input.subject_state}.`
-    );
-    bucket.score -= 8;
-    return;
-  }
+  if (!eligibility) return;
 
-  const occupancyMode = getOccupancyEligibilityMode(input.occupancy_type);
-
-  if (occupancyMode === "owner" && !eligibility.owner_occupied_allowed) {
+  if (input.occupancy_type === "primary_residence" && !eligibility.owner_occupied_allowed) {
     bucket.blockers.push(
       `${bucket.lender_name} is not eligible for owner-occupied lending in ${input.subject_state}.`
     );
   }
 
-  if (occupancyMode === "second_home" && !eligibility.second_home_allowed) {
+  if (input.occupancy_type === "second_home" && !eligibility.second_home_allowed) {
     bucket.blockers.push(
       `${bucket.lender_name} is not eligible for second-home lending in ${input.subject_state}.`
     );
   }
 
   if (
-    occupancyMode === "non_owner" &&
+    input.occupancy_type === "investment_property" &&
     !eligibility.non_owner_occupied_allowed
   ) {
     bucket.blockers.push(
@@ -1147,16 +1105,12 @@ function applyLenderStateEligibility(
 
   const loanCategory = (row.programs?.loan_category || "").toLowerCase();
   if (
-    input.transaction_type === "second_lien" ||
-    loanCategory === "heloc" ||
-    loanCategory === "second"
+    (loanCategory === "heloc" || input.transaction_type === "second_lien") &&
+    !eligibility.heloc_allowed
   ) {
-    if (!eligibility.heloc_allowed) {
-      bucket.concerns.push(
-        `${bucket.lender_name} does not show HELOC / second-lien eligibility in ${input.subject_state}.`
-      );
-      bucket.score -= 6;
-    }
+    bucket.blockers.push(
+      `${bucket.lender_name} is not eligible for HELOC lending in ${input.subject_state}.`
+    );
   }
 
   if (eligibility.notes) {
@@ -1164,113 +1118,10 @@ function applyLenderStateEligibility(
   }
 }
 
-function applyProductAssignmentAwareness(
-  bucket: MatchBucket,
-  input: QualificationInput,
-  assignmentsByLender: Map<string, LenderProductAssignment[]>
-) {
-  const lenderAssignments = assignmentsByLender.get(bucket.lender_id) || [];
-  if (lenderAssignments.length === 0) return;
-
-  const ownerOccupied =
-    input.occupancy_type === "primary_residence" ||
-    input.occupancy_type === "second_home";
-
-  const eligibleProductIds = detectEligibleProductTypeIds(input);
-  if (eligibleProductIds.length === 0) return;
-
-  const matchingAssignments = lenderAssignments.filter((assignment) => {
-    if (!eligibleProductIds.includes(assignment.product_type_id)) return false;
-
-    if (ownerOccupied && !assignment.owner_occupied_allowed) return false;
-    if (!ownerOccupied && !assignment.non_owner_occupied_allowed) return false;
-
-    return true;
-  });
-
-  if (matchingAssignments.length === 0) {
-    bucket.concerns.push(
-      "No direct lender product assignment match was detected for the current scenario profile."
-    );
-    bucket.score -= 3;
-    return;
-  }
-
-  const productNames = uniqueStrings(
-    matchingAssignments
-      .map((item) => item.loan_product_types?.name || "")
-      .filter(Boolean)
-  );
-
-  const productIds = uniqueStrings(
-    matchingAssignments.map((item) => item.product_type_id)
-  );
-
-  bucket.matched_product_ids = uniqueStrings([
-    ...bucket.matched_product_ids,
-    ...productIds,
-  ]);
-  bucket.matched_product_names = uniqueStrings([
-    ...bucket.matched_product_names,
-    ...productNames,
-  ]);
-
-  bucket.score += 8;
-  bucket.notes.push(
-    `Lender product assignment match: ${productNames.join(", ")}.`
-  );
-
-  if (productIds.includes("conventional")) {
-    bucket.score += 8;
-    bucket.strengths.push(
-      "This scenario appears eligible for conventional execution, which may fall within Fannie Mae / Freddie Mac agency direction subject to AUS and full guideline review."
-    );
-  }
-
-  if (productIds.includes("fha")) {
-    bucket.score += 5;
-    bucket.strengths.push("Lender appears assigned for FHA execution.");
-  }
-
-  if (productIds.includes("va")) {
-    bucket.score += 5;
-    bucket.strengths.push("Lender appears assigned for VA execution.");
-  }
-
-  if (productIds.includes("usda")) {
-    bucket.score += 5;
-    bucket.strengths.push("Lender appears assigned for USDA execution.");
-  }
-
-  if (
-    productIds.includes("itin") ||
-    productIds.includes("bank_statement") ||
-    productIds.includes("stated_income") ||
-    productIds.includes("pnl") ||
-    productIds.includes("dscr") ||
-    productIds.includes("1099") ||
-    productIds.includes("asset_depletion") ||
-    productIds.includes("foreign_national") ||
-    productIds.includes("jumbo_non_qm")
-  ) {
-    bucket.score += 6;
-    bucket.strengths.push(
-      "Lender appears assigned for a matching non-QM execution path."
-    );
-  }
-
-  for (const assignment of matchingAssignments) {
-    if (assignment.notes) {
-      bucket.notes.push(`Product assignment note: ${assignment.notes}`);
-    }
-  }
-}
-
 function evaluateRow(
   row: ProgramGuidelineRow,
   input: QualificationInput,
-  lenderEligibilityMap: Map<string, LenderStateEligibility>,
-  lenderProductAssignmentsMap: Map<string, LenderProductAssignment[]>
+  lenderEligibilityMap: Map<string, LenderStateEligibility>
 ): { bucket: MatchBucket; status: "strong" | "conditional" | "eliminated" } {
   const bucket = buildBaseBucket(row);
   const requiredAskFields = row.ask_before_match || [];
@@ -1378,7 +1229,7 @@ function evaluateRow(
   if (
     input.first_time_homebuyer !== null &&
     row.first_time_homebuyer_allowed === false &&
-    input.first_time_homebuyer
+    input.first_time_homebuyer === true
   ) {
     bucket.concerns.push("Program may not be ideal for first-time-homebuyer layering.");
     bucket.score -= 3;
@@ -1386,11 +1237,6 @@ function evaluateRow(
 
   addProgramIdentityScoring(bucket, input);
   addBoundaryScoring(bucket, row, input);
-  applyProductAssignmentAwareness(
-    bucket,
-    input,
-    lenderProductAssignmentsMap
-  );
 
   if (row.guideline_notes) {
     bucket.notes.push(row.guideline_notes);
@@ -1401,8 +1247,6 @@ function evaluateRow(
   bucket.blockers = uniqueStrings(bucket.blockers);
   bucket.strengths = uniqueStrings(bucket.strengths);
   bucket.concerns = uniqueStrings(bucket.concerns);
-  bucket.matched_product_ids = uniqueStrings(bucket.matched_product_ids);
-  bucket.matched_product_names = uniqueStrings(bucket.matched_product_names);
 
   bucket.score = Math.max(1, Math.min(100, bucket.score));
   bucket.explanation = buildExplanation(bucket);
@@ -1471,97 +1315,7 @@ function nextMissingQuestion(input: QualificationInput): string {
     return "How many months of PITIA reserves are available?";
   }
 
-  if (
-    input.income_type === "bank_statements" &&
-    input.available_reserves_months !== null &&
-    input.available_reserves_months < 6
-  ) {
-    return "Can the borrower document additional liquid reserves beyond what has been disclosed so far?";
-  }
-
-  if (
-    input.occupancy_type === "investment_property" &&
-    input.income_type !== "dscr"
-  ) {
-    return "Will the borrower qualify this investment property through traditional income, bank statements, or DSCR?";
-  }
-
   return "What compensating factor is strongest here: reserves, lower LTV, stronger credit, stronger income documentation, or property flexibility?";
-}
-
-function rollupLenderDirections(
-  strongMatches: MatchBucket[],
-  conditionalMatches: MatchBucket[]
-): LenderDirection[] {
-  const grouped = new Map<
-    string,
-    {
-      lender_id: string;
-      lender_name: string;
-      rows: MatchBucket[];
-      strongCount: number;
-      conditionalCount: number;
-    }
-  >();
-
-  for (const row of strongMatches) {
-    const key = row.lender_id || row.lender_name;
-    const existing = grouped.get(key) || {
-      lender_id: row.lender_id,
-      lender_name: row.lender_name,
-      rows: [],
-      strongCount: 0,
-      conditionalCount: 0,
-    };
-
-    existing.rows.push(row);
-    existing.strongCount += 1;
-    grouped.set(key, existing);
-  }
-
-  for (const row of conditionalMatches) {
-    const key = row.lender_id || row.lender_name;
-    const existing = grouped.get(key) || {
-      lender_id: row.lender_id,
-      lender_name: row.lender_name,
-      rows: [],
-      strongCount: 0,
-      conditionalCount: 0,
-    };
-
-    existing.rows.push(row);
-    existing.conditionalCount += 1;
-    grouped.set(key, existing);
-  }
-
-  return Array.from(grouped.values())
-    .map((group) => {
-      const sorted = [...group.rows].sort((a, b) => b.score - a.score);
-      const top = sorted[0];
-
-      return {
-        lender_id: group.lender_id,
-        lender_name: group.lender_name,
-        best_score: top?.score || 0,
-        strong_program_count: group.strongCount,
-        conditional_program_count: group.conditionalCount,
-        top_program_name: top?.program_name || "",
-        top_program_slug: top?.program_slug || "",
-        loan_categories: uniqueStrings(
-          sorted.map((item) => item.loan_category || "").filter(Boolean)
-        ),
-        top_strengths: uniqueStrings(
-          sorted.flatMap((item) => item.strengths).slice(0, 8)
-        ),
-        top_concerns: uniqueStrings(
-          sorted.flatMap((item) => item.concerns).slice(0, 8)
-        ),
-        top_notes: uniqueStrings(
-          sorted.flatMap((item) => item.notes).slice(0, 8)
-        ),
-      };
-    })
-    .sort((a, b) => b.best_score - a.best_score);
 }
 
 async function getOpenAiEnhancement(args: {
@@ -1569,7 +1323,6 @@ async function getOpenAiEnhancement(args: {
   strongMatches: MatchBucket[];
   conditionalMatches: MatchBucket[];
   eliminatedPaths: MatchBucket[];
-  lenderDirections: LenderDirection[];
   defaultNextQuestion: string;
 }): Promise<OpenAiEnhancement> {
   if (!process.env.OPENAI_API_KEY) return null;
@@ -1579,7 +1332,6 @@ async function getOpenAiEnhancement(args: {
     strongMatches,
     conditionalMatches,
     eliminatedPaths,
-    lenderDirections,
     defaultNextQuestion,
   } = args;
 
@@ -1594,7 +1346,6 @@ async function getOpenAiEnhancement(args: {
     strengths: item.strengths,
     concerns: item.concerns,
     reserves_required_months: item.reserves_required_months,
-    matched_product_names: item.matched_product_names,
   }));
 
   const compactConditional = conditionalMatches.slice(0, 5).map((item) => ({
@@ -1606,7 +1357,6 @@ async function getOpenAiEnhancement(args: {
     explanation: item.explanation,
     notes: item.notes,
     reserves_required_months: item.reserves_required_months,
-    matched_product_names: item.matched_product_names,
   }));
 
   const compactEliminated = eliminatedPaths.slice(0, 5).map((item) => ({
@@ -1614,17 +1364,6 @@ async function getOpenAiEnhancement(args: {
     program_name: item.program_name,
     program_slug: item.program_slug,
     blockers: item.blockers,
-  }));
-
-  const compactLenderDirections = lenderDirections.slice(0, 5).map((item) => ({
-    lender_name: item.lender_name,
-    best_score: item.best_score,
-    strong_program_count: item.strong_program_count,
-    conditional_program_count: item.conditional_program_count,
-    top_program_name: item.top_program_name,
-    loan_categories: item.loan_categories,
-    top_strengths: item.top_strengths,
-    top_concerns: item.top_concerns,
   }));
 
   const prompt = `
@@ -1641,12 +1380,13 @@ Return strict JSON only in this exact shape:
 Rules:
 - Be practical, mortgage-specific, and concise
 - Do not promise approval
-- Base your answer only on the structured scenario and ranked match results below
-- If strong matches exist, explain the best current direction
-- If no strong matches exist, explain the best conditional direction
+- Base your answer only on the structured scenario and the ranked match results below
+- If the structured results already show strong matches, explain the best current direction
+- If there are no strong matches, explain the best conditional direction
 - nextBestQuestion should be the single most useful follow-up question for narrowing the file
 - do not ask for fields already present in the scenario
-- explicitly consider reserves, state eligibility, and product-direction clues when relevant
+- Do NOT ask for subject state if it is already provided in the scenario
+- explicitly consider reserves and state eligibility when relevant
 
 Scenario:
 ${JSON.stringify(input, null, 2)}
@@ -1659,9 +1399,6 @@ ${JSON.stringify(compactConditional, null, 2)}
 
 Eliminated paths:
 ${JSON.stringify(compactEliminated, null, 2)}
-
-Lender directions:
-${JSON.stringify(compactLenderDirections, null, 2)}
 
 Fallback next question:
 ${defaultNextQuestion}
@@ -1850,22 +1587,17 @@ export async function POST(req: Request) {
     const eliminated_paths: MatchBucket[] = [];
 
     for (const row of rows) {
-      const result = evaluateRow(
-        row,
+      const result = evaluateRow(row, input, lenderEligibilityMap);
+
+      applyProductAssignmentAwareness(
+        result.bucket,
         input,
-        lenderEligibilityMap,
         lenderProductAssignmentsMap
       );
 
       result.bucket.notes = uniqueStrings(result.bucket.notes);
       result.bucket.strengths = uniqueStrings(result.bucket.strengths);
       result.bucket.concerns = uniqueStrings(result.bucket.concerns);
-      result.bucket.matched_product_ids = uniqueStrings(
-        result.bucket.matched_product_ids
-      );
-      result.bucket.matched_product_names = uniqueStrings(
-        result.bucket.matched_product_names
-      );
       result.bucket.score = Math.max(1, Math.min(100, result.bucket.score));
       result.bucket.explanation = buildExplanation(result.bucket);
 
@@ -1878,11 +1610,6 @@ export async function POST(req: Request) {
     conditional_matches.sort((a, b) => b.score - a.score);
     eliminated_paths.sort((a, b) => b.score - a.score);
 
-    const lender_directions = rollupLenderDirections(
-      strong_matches,
-      conditional_matches
-    );
-
     const defaultNextQuestion = nextMissingQuestion(input);
 
     const openai = await getOpenAiEnhancement({
@@ -1890,7 +1617,6 @@ export async function POST(req: Request) {
       strongMatches: strong_matches,
       conditionalMatches: conditional_matches,
       eliminatedPaths: eliminated_paths,
-      lenderDirections: lender_directions,
       defaultNextQuestion,
     });
 
@@ -1927,7 +1653,6 @@ export async function POST(req: Request) {
         active_lender_count: activeLendersChecked.length,
         active_lenders_checked: activeLendersChecked,
         matched_lenders_in_results: matchedLendersInResults,
-        lender_directions,
       },
       next_question: openai?.nextBestQuestion || defaultNextQuestion,
       top_recommendation: topRecommendation,
