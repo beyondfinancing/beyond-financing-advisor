@@ -189,6 +189,16 @@ const COPY = {
     loginError: "Invalid credential or password.",
     missingLead:
       "Please complete borrower full name, email, phone, preferred language, and start the review first.",
+    passwordResetUnavailable:
+      "Password reset help is not available until a valid credential is entered.",
+    passwordResetSecureMessage:
+      "For security, the password cannot be displayed here. Please contact the system administrator for credential assistance.",
+    reviewStartError:
+      "There was an error starting the professional review.",
+    reviewContinueError:
+      "There was an error continuing the review.",
+    summarySuccess: "Summary email sent successfully.",
+    summaryError: "There was an error sending the summary email.",
     resetHintPrefix: "Credential reminder:",
     loggedInAs: "Logged in as",
     routeTo: "Summary emails route to",
@@ -264,6 +274,16 @@ const COPY = {
     loginError: "Credencial ou senha inválida.",
     missingLead:
       "Preencha nome completo, email, telefone, idioma preferido e inicie a análise primeiro.",
+    passwordResetUnavailable:
+      "A ajuda de redefinição de senha não está disponível até que uma credencial válida seja informada.",
+    passwordResetSecureMessage:
+      "Por segurança, a senha não pode ser exibida aqui. Entre em contato com o administrador do sistema para assistência de credenciais.",
+    reviewStartError:
+      "Ocorreu um erro ao iniciar a análise profissional.",
+    reviewContinueError:
+      "Ocorreu um erro ao continuar a análise.",
+    summarySuccess: "Email resumo enviado com sucesso.",
+    summaryError: "Ocorreu um erro ao enviar o email resumo.",
     resetHintPrefix: "Lembrete da credencial:",
     loggedInAs: "Logado como",
     routeTo: "Os emails resumo serão enviados para",
@@ -339,6 +359,16 @@ const COPY = {
     loginError: "Credencial o contraseña inválida.",
     missingLead:
       "Complete nombre, correo, teléfono, idioma preferido e inicie la revisión primero.",
+    passwordResetUnavailable:
+      "La ayuda de restablecimiento de contraseña no está disponible hasta que se ingrese una credencial válida.",
+    passwordResetSecureMessage:
+      "Por seguridad, la contraseña no puede mostrarse aquí. Comuníquese con el administrador del sistema para recibir ayuda con las credenciales.",
+    reviewStartError:
+      "Hubo un error al iniciar la revisión profesional.",
+    reviewContinueError:
+      "Hubo un error al continuar la revisión.",
+    summarySuccess: "Resumen enviado por correo con éxito.",
+    summaryError: "Hubo un error al enviar el resumen por correo.",
     resetHintPrefix: "Recordatorio de credencial:",
     loggedInAs: "Conectado como",
     routeTo: "Los emails resumen se enviarán a",
@@ -730,15 +760,11 @@ export default function TeamPage() {
     const matched = resolveUserByCredential(credential);
 
     if (!matched) {
-      setPasswordHint(
-        "Password reset help is not available until a valid credential is entered."
-      );
+      setPasswordHint(t.passwordResetUnavailable);
       return;
     }
 
-    setPasswordHint(
-      "For security, the password cannot be displayed here. Please contact the system administrator for credential assistance."
-    );
+    setPasswordHint(t.passwordResetSecureMessage);
   };
 
   const handleSignOut = () => {
@@ -818,9 +844,7 @@ Please begin the internal professional review.
       setReviewStarted(true);
     } catch (error) {
       setChatError(
-        error instanceof Error
-          ? error.message
-          : "There was an error starting the professional review."
+        error instanceof Error ? error.message : t.reviewStartError
       );
       setReviewStarted(false);
     } finally {
@@ -889,9 +913,7 @@ Continue the internal professional review. Be practical, concise, and action-ori
     } catch (error) {
       setConversation((prev) => prev.slice(0, -1));
       setChatError(
-        error instanceof Error
-          ? error.message
-          : "There was an error continuing the review."
+        error instanceof Error ? error.message : t.reviewContinueError
       );
     } finally {
       setReviewLoading(false);
@@ -963,12 +985,10 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
         );
       }
 
-      setSummaryStatus("Summary email sent successfully.");
+      setSummaryStatus(t.summarySuccess);
     } catch (error) {
       setSummaryStatus(
-        error instanceof Error
-          ? error.message
-          : "There was an error sending the summary email."
+        error instanceof Error ? error.message : t.summaryError
       );
     } finally {
       setSummaryLoading(false);
