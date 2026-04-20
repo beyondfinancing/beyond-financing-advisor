@@ -782,7 +782,7 @@ function applyProductAssignmentAwareness(
 
   const productNames = uniqueStrings(
     matchingAssignments
-      .map((item) => item.loan_product_type?.name || "")
+      .map((item) => item.loan_product_types?.name || "")
       .filter(Boolean)
   );
 
