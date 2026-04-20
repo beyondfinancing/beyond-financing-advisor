@@ -1186,7 +1186,6 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
                 </div>
 
                 <div>
-                <div>
                   <label style={styles.label}>{t.phone}</label>
                   <input
                     style={styles.input}
