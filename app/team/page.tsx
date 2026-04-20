@@ -1022,6 +1022,7 @@ export default function TeamPage() {
               <h2 style={styles.sectionTitle}>Trigger and alert processing</h2>
 
               <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
+              <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
                 <div>
                   <label style={styles.label}>Assign processor</label>
                   <select
