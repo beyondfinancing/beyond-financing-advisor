@@ -8,7 +8,7 @@ type ProductAssignmentInput = {
   categories: string[];
 };
 
-type CustomProductTypeInput = {
+type ExclusiveProductInput = {
   id: string;
   name: string;
   category: string | null;
@@ -23,7 +23,7 @@ type Props = {
   initialNonOwnerOccupiedStates: string[];
   initialNotes?: string;
   initialProductAssignments?: ProductAssignmentInput[];
-  initialCustomProductTypes?: CustomProductTypeInput[];
+  initialCustomProductTypes?: ExclusiveProductInput[];
 };
 
 type ProductDefinition = {
@@ -35,64 +35,21 @@ type ProductDefinition = {
 const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
 
 const STATE_OPTIONS = [
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DC",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "IA",
-  "ID",
-  "IL",
-  "IN",
-  "KS",
-  "KY",
-  "LA",
-  "MA",
-  "MD",
-  "ME",
-  "MI",
-  "MN",
-  "MO",
-  "MS",
-  "MT",
-  "NC",
-  "ND",
-  "NE",
-  "NH",
-  "NJ",
-  "NM",
-  "NV",
-  "NY",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VA",
-  "VT",
-  "WA",
-  "WI",
-  "WV",
-  "WY",
+  "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN",
+  "KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ",
+  "NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VA","VT","WA",
+  "WI","WV","WY",
 ];
 
 const BUILT_IN_PRODUCTS: ProductDefinition[] = [
   { id: "conventional", name: "Conventional", category: "agency" },
+
   { id: "fha", name: "FHA", category: "government" },
   { id: "va", name: "VA", category: "government" },
   { id: "usda", name: "USDA", category: "government" },
+
+  { id: "heloc", name: "HELOC", category: "equity" },
+
   { id: "itin", name: "ITIN", category: "non_qm" },
   { id: "bank_statement", name: "Bank Statement", category: "non_qm" },
   { id: "stated_income", name: "Stated Income", category: "non_qm" },
@@ -139,8 +96,10 @@ function prettyCategoryLabel(category: string | null | undefined) {
   const map: Record<string, string> = {
     agency: "Agency Products",
     government: "Government Products",
+    equity: "Second Lien / Equity Products",
     non_qm: "Non-QM Products",
-    custom: "Custom Products",
+    exclusive: "Exclusive Products",
+    custom: "Exclusive Products",
   };
 
   return map[category] || category;
@@ -162,9 +121,7 @@ async function saveLenderDetail(
     try {
       const response = await fetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -172,9 +129,7 @@ async function saveLenderDetail(
       const isJson = contentType.includes("application/json");
       const data = isJson ? await response.json() : null;
 
-      if (response.ok) {
-        return data;
-      }
+      if (response.ok) return data;
 
       lastError = String(
         data?.error || data?.message || `Request failed with ${method}.`
@@ -226,8 +181,8 @@ export default function LenderDetailClient({
     }))
   );
 
-  const [customProductTypes, setCustomProductTypes] = useState<
-    CustomProductTypeInput[]
+  const [exclusiveProducts, setExclusiveProducts] = useState<
+    ExclusiveProductInput[]
   >(
     initialCustomProductTypes.map((item) => ({
       id: String(item.id ?? "").trim(),
@@ -239,21 +194,19 @@ export default function LenderDetailClient({
     }))
   );
 
-  const [customProductName, setCustomProductName] = useState("");
-  const [customProductCategory, setCustomProductCategory] =
+  const [exclusiveProductName, setExclusiveProductName] = useState("");
+  const [exclusiveProductCategory, setExclusiveProductCategory] =
     useState<string>("non_qm");
 
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const builtInAssignmentMap = useMemo(() => {
+  const assignmentMap = useMemo(() => {
     const map = new Map<string, ProductAssignmentInput>();
-
     for (const item of productAssignments) {
       map.set(item.productId, item);
     }
-
     return map;
   }, [productAssignments]);
 
@@ -263,10 +216,7 @@ export default function LenderDetailClient({
     ).length;
   }, [ownerOccupiedStates, nonOwnerOccupiedStates]);
 
-  function syncLegacyStates(
-    ownerStates: string[],
-    nonOwnerStates: string[]
-  ): string[] {
+  function syncLegacyStates(ownerStates: string[], nonOwnerStates: string[]) {
     return normalizeStateArray([...ownerStates, ...nonOwnerStates]);
   }
 
@@ -309,56 +259,56 @@ export default function LenderDetailClient({
     });
   }
 
-  function addCustomProduct() {
-    const trimmedName = customProductName.trim();
+  function addExclusiveProduct() {
+    const trimmedName = exclusiveProductName.trim();
 
     if (!trimmedName) {
-      setErrorMessage("Custom product name is required.");
+      setErrorMessage("Exclusive product name is required.");
       setSuccessMessage("");
       return;
     }
 
     const idBase = slugify(trimmedName);
     if (!idBase) {
-      setErrorMessage("Enter a valid custom product name.");
+      setErrorMessage("Enter a valid exclusive product name.");
       setSuccessMessage("");
       return;
     }
 
-    const nextId = `custom_${idBase}`;
+    const nextId = `exclusive_${idBase}`;
 
-    const existsInCustom = customProductTypes.some((item) => item.id === nextId);
+    const existsInExclusive = exclusiveProducts.some((item) => item.id === nextId);
     const existsInBuiltIn = BUILT_IN_PRODUCTS.some((item) => item.id === nextId);
 
-    if (existsInCustom || existsInBuiltIn) {
-      setErrorMessage("A custom product with this name already exists.");
+    if (existsInExclusive || existsInBuiltIn) {
+      setErrorMessage("An exclusive product with this name already exists.");
       setSuccessMessage("");
       return;
     }
 
-    const nextCustomType: CustomProductTypeInput = {
+    const nextExclusive: ExclusiveProductInput = {
       id: nextId,
       name: trimmedName,
-      category: customProductCategory || "custom",
+      category: exclusiveProductCategory || "exclusive",
     };
 
-    setCustomProductTypes((prev) => [...prev, nextCustomType]);
+    setExclusiveProducts((prev) => [...prev, nextExclusive]);
     setProductAssignments((prev) => [
       ...prev,
       {
-        productId: nextCustomType.id,
-        productName: nextCustomType.name,
-        categories: [nextCustomType.category || "custom"],
+        productId: nextExclusive.id,
+        productName: nextExclusive.name,
+        categories: [nextExclusive.category || "exclusive"],
       },
     ]);
 
-    setCustomProductName("");
-    setCustomProductCategory("non_qm");
+    setExclusiveProductName("");
+    setExclusiveProductCategory("non_qm");
     setErrorMessage("");
     setSuccessMessage("");
   }
 
-  function toggleCustomProductAssignment(item: CustomProductTypeInput) {
+  function toggleExclusiveProductAssignment(item: ExclusiveProductInput) {
     setProductAssignments((prev) => {
       const exists = prev.some((entry) => entry.productId === item.id);
 
@@ -371,14 +321,14 @@ export default function LenderDetailClient({
         {
           productId: item.id,
           productName: item.name,
-          categories: [item.category || "custom"],
+          categories: [item.category || "exclusive"],
         },
       ];
     });
   }
 
-  function removeCustomProduct(item: CustomProductTypeInput) {
-    setCustomProductTypes((prev) => prev.filter((entry) => entry.id !== item.id));
+  function removeExclusiveProduct(item: ExclusiveProductInput) {
+    setExclusiveProducts((prev) => prev.filter((entry) => entry.id !== item.id));
     setProductAssignments((prev) =>
       prev.filter((entry) => entry.productId !== item.id)
     );
@@ -409,7 +359,7 @@ export default function LenderDetailClient({
           productName: item.productName,
           categories: normalizeStringArray(item.categories),
         })),
-        customProductTypes: customProductTypes.map((item) => ({
+        customProductTypes: exclusiveProducts.map((item) => ({
           id: item.id,
           name: item.name,
           category: item.category,
@@ -436,6 +386,7 @@ export default function LenderDetailClient({
     const groups: Record<string, ProductDefinition[]> = {
       agency: [],
       government: [],
+      equity: [],
       non_qm: [],
     };
 
@@ -530,10 +481,10 @@ export default function LenderDetailClient({
       </section>
 
       <section>
-        <div style={pillLabelStyle}>Agency Products</div>
+        <div style={pillLabelStyle}>Shared Agency Products</div>
         <div style={productGridStyle}>
           {groupedBuiltInProducts.agency.map((product) => {
-            const checked = builtInAssignmentMap.has(product.id);
+            const checked = assignmentMap.has(product.id);
 
             return (
               <label key={product.id} style={productCardStyle}>
@@ -549,11 +500,11 @@ export default function LenderDetailClient({
         </div>
 
         <div style={{ ...pillLabelStyle, marginTop: 18 }}>
-          Government Products
+          Shared Government Products
         </div>
         <div style={productGridStyle}>
           {groupedBuiltInProducts.government.map((product) => {
-            const checked = builtInAssignmentMap.has(product.id);
+            const checked = assignmentMap.has(product.id);
 
             return (
               <label key={product.id} style={productCardStyle}>
@@ -568,10 +519,32 @@ export default function LenderDetailClient({
           })}
         </div>
 
-        <div style={{ ...pillLabelStyle, marginTop: 18 }}>Non-QM Products</div>
+        <div style={{ ...pillLabelStyle, marginTop: 18 }}>
+          Shared Second Lien / Equity Products
+        </div>
+        <div style={productGridStyle}>
+          {groupedBuiltInProducts.equity.map((product) => {
+            const checked = assignmentMap.has(product.id);
+
+            return (
+              <label key={product.id} style={productCardStyle}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleBuiltInProduct(product)}
+                />
+                <span style={productNameStyle}>{product.name}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        <div style={{ ...pillLabelStyle, marginTop: 18 }}>
+          Shared Non-QM Products
+        </div>
         <div style={productGridStyle}>
           {groupedBuiltInProducts.non_qm.map((product) => {
-            const checked = builtInAssignmentMap.has(product.id);
+            const checked = assignmentMap.has(product.id);
 
             return (
               <label key={product.id} style={productCardStyle}>
@@ -589,46 +562,47 @@ export default function LenderDetailClient({
 
       <section style={customBoxStyle}>
         <h3 style={{ margin: "0 0 16px", fontSize: 16, color: "#263366" }}>
-          Add Custom Product Type
+          Add Exclusive Product
         </h3>
 
         <input
-          value={customProductName}
-          onChange={(event) => setCustomProductName(event.target.value)}
-          placeholder="Example: 1-Year Tax Return Only"
+          value={exclusiveProductName}
+          onChange={(event) => setExclusiveProductName(event.target.value)}
+          placeholder="Example: Dual Core"
           style={inputStyle}
         />
 
         <label style={{ ...labelStyle, marginTop: 16 }}>Category</label>
         <select
-          value={customProductCategory}
-          onChange={(event) => setCustomProductCategory(event.target.value)}
+          value={exclusiveProductCategory}
+          onChange={(event) => setExclusiveProductCategory(event.target.value)}
           style={inputStyle}
         >
+          <option value="non_qm">Non-QM</option>
           <option value="agency">Agency</option>
           <option value="government">Government</option>
-          <option value="non_qm">Non-QM</option>
-          <option value="custom">Custom</option>
+          <option value="equity">Second Lien / Equity</option>
+          <option value="exclusive">Exclusive</option>
         </select>
 
         <button
           type="button"
-          onClick={addCustomProduct}
+          onClick={addExclusiveProduct}
           style={secondaryButtonStyle}
         >
-          Add Custom Product
+          Add Exclusive Product
         </button>
 
         <div style={{ ...helperTextStyle, marginTop: 12 }}>
-          Custom products added here can be selected immediately for this lender
-          and can later be promoted into reusable platform-wide options through
-          the admin API.
+          Exclusive products belong to this lender only. If a product later
+          becomes reusable across multiple lenders, it should be promoted into
+          the shared product catalog.
         </div>
 
-        {customProductTypes.length > 0 && (
+        {exclusiveProducts.length > 0 && (
           <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
-            {customProductTypes.map((item) => {
-              const assigned = builtInAssignmentMap.has(item.id);
+            {exclusiveProducts.map((item) => {
+              const assigned = assignmentMap.has(item.id);
 
               return (
                 <div key={item.id} style={customItemStyle}>
@@ -644,7 +618,7 @@ export default function LenderDetailClient({
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button
                       type="button"
-                      onClick={() => toggleCustomProductAssignment(item)}
+                      onClick={() => toggleExclusiveProductAssignment(item)}
                       style={miniOutlineButtonStyle}
                     >
                       {assigned ? "Unassign" : "Assign"}
@@ -652,7 +626,7 @@ export default function LenderDetailClient({
 
                     <button
                       type="button"
-                      onClick={() => removeCustomProduct(item)}
+                      onClick={() => removeExclusiveProduct(item)}
                       style={miniDangerButtonStyle}
                     >
                       Remove
