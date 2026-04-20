@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -62,8 +62,6 @@ function formatPhoneNumber(value: string): string {
 
 export default function BorrowerPage() {
   const [accepted, setAccepted] = useState(false);
-export default function BorrowerPage() {
-  const [accepted, setAccepted] = useState(false);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -71,11 +69,10 @@ export default function BorrowerPage() {
   const [realtorName, setRealtorName] = useState("");
   const [realtorPhone, setRealtorPhone] = useState("");
 
-  const [loanOfficer, setLoanOfficer] = useState<LoanOfficer>(DEFAULT_LO);
+  const [loanOfficer] = useState<LoanOfficer>(DEFAULT_LO);
 
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
-
   const [loading, setLoading] = useState(false);
 
   const resetSession = () => {
@@ -109,7 +106,7 @@ export default function BorrowerPage() {
       console.error("Summary error:", err);
     }
   };
-    const sendMessage = async () => {
+
   const sendMessage = async () => {
     if (!chatInput.trim()) return;
 
@@ -125,6 +122,9 @@ export default function BorrowerPage() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           messages: updated,
         }),
@@ -150,11 +150,12 @@ export default function BorrowerPage() {
             "I will organize this for your loan officer and guide next steps.\n\nTo move forward efficiently, I recommend clicking Apply Now.\n\nNext question:\nWhat type of property are you considering?",
         },
       ]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
-    const handleApply = async () => {
+
+  const handleApply = async () => {
     await sendSummary("apply");
     window.open(loanOfficer.applyUrl, "_blank");
     resetSession();
@@ -171,7 +172,8 @@ export default function BorrowerPage() {
     window.location.href = `mailto:${loanOfficer.email}`;
     resetSession();
   };
-    return (
+
+  return (
     <main style={{ padding: 40 }}>
       <h1>Finley Beyond</h1>
 
@@ -182,9 +184,7 @@ export default function BorrowerPage() {
             by a licensed loan officer.
           </p>
 
-          <button onClick={() => setAccepted(true)}>
-            Accept & Continue
-          </button>
+          <button onClick={() => setAccepted(true)}>Accept & Continue</button>
         </>
       )}
 
@@ -236,7 +236,7 @@ export default function BorrowerPage() {
           />
 
           <button onClick={sendMessage} disabled={loading}>
-            Send
+            {loading ? "Sending..." : "Send"}
           </button>
 
           <hr />
