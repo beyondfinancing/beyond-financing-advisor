@@ -93,10 +93,16 @@ function buildFallbackSummary(
       "Lead submitted with full contact details.",
       "Borrower engaged in a meaningful mortgage conversation.",
       `Preferred language: ${lead.preferredLanguage || "Not provided"}.`,
+      lead.realtorName
+        ? `Realtor identified: ${lead.realtorName}.`
+        : "Realtor not identified yet.",
     ],
     openQuestions: [
       "Confirm final documentation package.",
       "Confirm property details, occupancy, and down payment funds if still pending.",
+      lead.realtorPhone
+        ? `Confirm coordination details with realtor at ${lead.realtorPhone}.`
+        : "Confirm whether a realtor is involved and collect contact information if applicable.",
     ],
     provisionalPrograms: [
       "Conventional financing review",
@@ -189,6 +195,8 @@ Lead details:
 - Full Name: ${fullName}
 - Email: ${email}
 - Phone: ${phone}
+- Realtor Name: ${realtorName || "Not provided"}
+- Realtor Phone: ${realtorPhone || "Not provided"}
 - Preferred Language: ${preferredLanguage}
 - Selected Loan Officer: ${loanOfficer}
 - Assigned Email: ${selectedEmail}
