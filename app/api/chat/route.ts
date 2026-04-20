@@ -5,37 +5,76 @@ type IncomingMessage = {
   content: string;
 };
 
-type RoutingPayload = {
-  borrower?: {
-    name?: string;
-    email?: string;
-    credit?: string;
-    income?: string;
-    debt?: string;
-  };
-  scenario?: {
-    homePrice?: string;
-    downPayment?: string;
-    estimatedLoanAmount?: string;
-    estimatedLtv?: string;
-  };
-  selectedOfficer?: {
-    id?: string;
-    name?: string;
-    nmls?: string;
-    email?: string;
-    assistantEmail?: string;
-    mobile?: string;
-    assistantMobile?: string;
-    applyUrl?: string;
-    scheduleUrl?: string;
-  };
-  language?: string;
+type BorrowerPayload = {
+  name?: string;
+  email?: string;
+  credit?: string;
+  income?: string;
+  debt?: string;
+};
+
+type ScenarioPayload = {
+  homePrice?: string;
+  downPayment?: string;
+  estimatedLoanAmount?: string;
+  estimatedLtv?: string;
+};
+
+type SelectedOfficerPayload = {
+  id?: string;
+  name?: string;
+  nmls?: string;
+  email?: string;
+  assistantEmail?: string;
+  mobile?: string;
+  assistantMobile?: string;
+  applyUrl?: string;
+  scheduleUrl?: string;
+};
+
+type TeamCommandRoutingPayload = {
+  source?: string;
+  fileId?: string;
+  borrowerName?: string;
+  loanOfficer?: string;
+  processor?: string;
+  purpose?: string;
+  occupancy?: string;
+  amount?: string;
+  targetCloseDate?: string;
+  stageLabel?: string;
+  priority?: string;
+  blocker?: string;
+  nextInternalAction?: string;
+  nextBorrowerAction?: string;
   conversation?: IncomingMessage[];
 };
 
+type RoutingPayload = {
+  borrower?: BorrowerPayload;
+  scenario?: ScenarioPayload;
+  selectedOfficer?: SelectedOfficerPayload;
+  language?: string;
+  conversation?: IncomingMessage[];
+
+  source?: string;
+  fileId?: string;
+  borrowerName?: string;
+  loanOfficer?: string;
+  processor?: string;
+  purpose?: string;
+  occupancy?: string;
+  amount?: string;
+  targetCloseDate?: string;
+  stageLabel?: string;
+  priority?: string;
+  blocker?: string;
+  nextInternalAction?: string;
+  nextBorrowerAction?: string;
+};
+
 type RequestBody = {
-  stage?: "initial_review" | "scenario_review" | "follow_up";
+  stage?: "initial_review" | "scenario_review" | "follow_up" | "team_command";
   routing?: RoutingPayload;
   messages?: IncomingMessage[];
 };
@@ -117,12 +156,18 @@ function buildStageInstruction(stage?: string) {
     case "scenario_review":
       return "This is the property scenario review.";
     case "follow_up":
-    default:
       return "This is a follow-up borrower conversation.";
+    case "team_command":
+      return "This is an internal Team Command Center mortgage operations conversation.";
+    default:
+      return "This is a borrower mortgage conversation.";
   }
 }
 
-function buildSystemPrompt(stage: string | undefined, routing?: RoutingPayload) {
+function buildBorrowerSystemPrompt(
+  stage: string | undefined,
+  routing?: RoutingPayload
+) {
   const facts = buildCollectedFacts(routing);
   const missingItems = buildMissingItems(facts);
 
@@ -181,6 +226,87 @@ Response instructions:
   `.trim();
 }
 
+function buildTeamCommandFacts(routing?: RoutingPayload | TeamCommandRoutingPayload) {
+  return {
+    source: safeString(routing?.source),
+    fileId: safeString(routing?.fileId),
+    borrowerName: safeString(routing?.borrowerName),
+    loanOfficer: safeString(routing?.loanOfficer),
+    processor: safeString(routing?.processor),
+    purpose: safeString(routing?.purpose),
+    occupancy: safeString(routing?.occupancy),
+    amount: safeString(routing?.amount),
+    targetCloseDate: safeString(routing?.targetCloseDate),
+    stageLabel: safeString(routing?.stageLabel),
+    priority: safeString(routing?.priority),
+    blocker: safeString(routing?.blocker),
+    nextInternalAction: safeString(routing?.nextInternalAction),
+    nextBorrowerAction: safeString(routing?.nextBorrowerAction),
+  };
+}
+
+function buildTeamCommandSystemPrompt(
+  stage: string | undefined,
+  routing?: RoutingPayload
+) {
+  const facts = buildTeamCommandFacts(routing);
+
+  return `
+You are Finley Beyond inside the Beyond Intelligence Team Command Center.
+
+${buildStageInstruction(stage)}
+
+You are now assisting internal mortgage professionals, not borrowers.
+
+Non-negotiable rules:
+- Be practical, concise, and operational.
+- Never promise loan approval.
+- Never issue a final underwriting decision.
+- Never guarantee lender eligibility.
+- Never present rates, terms, or approvals as final.
+- Do not invent missing facts.
+- If the file information is incomplete, say so clearly.
+- Speak like an experienced mortgage operations strategist helping a loan officer, processor, assistant, or production manager.
+
+Current internal file context:
+- Source: ${facts.source || "team command center"}
+- File ID: ${facts.fileId || "missing"}
+- Borrower Name: ${facts.borrowerName || "missing"}
+- Loan Officer: ${facts.loanOfficer || "missing"}
+- Processor: ${facts.processor || "missing"}
+- Purpose: ${facts.purpose || "missing"}
+- Occupancy: ${facts.occupancy || "missing"}
+- Amount: ${facts.amount || "missing"}
+- Target Close Date: ${facts.targetCloseDate || "missing"}
+- Stage: ${facts.stageLabel || "missing"}
+- Priority: ${facts.priority || "missing"}
+- Blocker: ${facts.blocker || "missing"}
+- Next Internal Action: ${facts.nextInternalAction || "missing"}
+- Next Borrower Action: ${facts.nextBorrowerAction || "missing"}
+
+Response instructions:
+- Respond for internal team use.
+- Focus on:
+  1. immediate read of the file
+  2. risk or delay points
+  3. missing documentation or weak areas
+  4. best next internal action
+  5. borrower-facing wording if useful
+  6. possible mortgage direction only at a high level
+- Keep the answer structured and concise.
+- Prefer short paragraphs and compact bullets when useful.
+- If asked about program direction, speak preliminarily and say final fit depends on guidelines, overlays, and review.
+  `.trim();
+}
+
+function buildSystemPrompt(stage: string | undefined, routing?: RoutingPayload) {
+  if (stage === "team_command") {
+    return buildTeamCommandSystemPrompt(stage, routing);
+  }
+
+  return buildBorrowerSystemPrompt(stage, routing);
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as RequestBody;
@@ -220,7 +346,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.3,
+        temperature: stage === "team_command" ? 0.2 : 0.3,
         messages: [
           {
             role: "system",
@@ -248,7 +374,9 @@ export async function POST(req: Request) {
 
     const reply =
       data?.choices?.[0]?.message?.content?.trim() ||
-      "Thank you. Your assigned loan officer will review the scenario and advise the next steps.";
+      (stage === "team_command"
+        ? "Finley reviewed the file and recommends a tighter internal review before the next step."
+        : "Thank you. Your assigned loan officer will review the scenario and advise the next steps.");
 
     return NextResponse.json({
       success: true,
