@@ -450,7 +450,7 @@ const PROGRAMS: LenderProgram[] = [
     ],
   },
 ];
-const ALL_PROGRAMS = [...PROGRAMS, ...MORE_PROGRAMS];
+const ALL_PROGRAMS = [...PROGRAMS];
 
 function evaluateProgram(
   payload: Required<MatchRequestPayload>,
