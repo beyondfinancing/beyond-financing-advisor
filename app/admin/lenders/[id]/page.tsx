@@ -198,7 +198,9 @@ export default async function LenderDetailPage({ params }: PageProps) {
     )
   ).sort();
 
-  const channels = normalizeStringArray(lenderRow.channel);
+  const channels = Array.isArray(lenderRow.channel)
+  ? lenderRow.channel.filter(Boolean).map((c) => String(c).trim())
+  : [];
   const legacyStates = normalizeStringArray(lenderRow.states).map((state) =>
     state.toUpperCase()
   );
