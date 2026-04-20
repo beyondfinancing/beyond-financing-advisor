@@ -497,12 +497,19 @@ function formatPlainNumber(value: string) {
   return new Intl.NumberFormat("en-US").format(Number(cleaned));
 }
 
+function getEstimatedDti(income: string, debt: string) {
+  const incomeValue = Number(income.replace(/,/g, "") || 0);
+  const debtValue = Number(debt.replace(/,/g, "") || 0);
+
+  if (!incomeValue || !debtValue) return "";
+  return `${Math.round((debtValue / incomeValue) * 1000) / 10}%`;
+}
+
 function normalizeOccupancyForMatch(value: string, purpose: LoanPurpose) {
   const lower = value.trim().toLowerCase();
 
   if (lower.includes("primary")) return "primary residence";
   if (lower.includes("second")) return "second home";
-  if (lower.includes("investment")) return "investment property";
 
   if (purpose === "Investment") return "investment property";
   return "";
@@ -585,6 +592,62 @@ function findOfficer(query: string): LoanOfficerRecord | null {
     ) || null;
 
   return partial;
+}
+function getResolvedNextQuestion(
+  rawQuestion: string | undefined,
+  intake: IntakeFormState,
+  scenario: ScenarioFormState
+) {
+  const question = (rawQuestion || "").trim();
+  if (!question) return "";
+
+  const lower = question.toLowerCase();
+
+  const hasIncome = !!intake.income.trim();
+  const hasDebt = !!intake.debt.trim();
+  const hasHomePrice = !!scenario.homePrice.trim();
+  const hasDownPayment = !!scenario.downPayment.trim();
+  const hasOccupancy = !!scenario.occupancy.trim();
+
+  const asksDti =
+    lower.includes("dti") ||
+    lower.includes("debt-to-income") ||
+    lower.includes("debt to income");
+
+  const asksIncome =
+    lower.includes("monthly income") ||
+    lower.includes("gross monthly income") ||
+    lower.includes("income");
+
+  const asksDebt =
+    lower.includes("monthly debt") ||
+    lower.includes("debt obligations") ||
+    lower.includes("liabilities") ||
+    lower.includes("debt");
+
+  const asksHomePrice =
+    lower.includes("home price") ||
+    lower.includes("property price") ||
+    lower.includes("purchase price");
+
+  const asksDownPayment =
+    lower.includes("down payment") ||
+    lower.includes("downpayment");
+
+  const asksOccupancy =
+    lower.includes("occupancy") ||
+    lower.includes("primary residence") ||
+    lower.includes("second home") ||
+    lower.includes("investment property");
+
+  if (asksDti && hasIncome && hasDebt) return "";
+  if (asksIncome && hasIncome) return "";
+  if (asksDebt && hasDebt) return "";
+  if (asksHomePrice && hasHomePrice) return "";
+  if (asksDownPayment && hasDownPayment) return "";
+  if (asksOccupancy && hasOccupancy) return "";
+
+  return question;
 }
 
 function sanitizeBorrowerVisibleDirection(text: string | undefined, companyName: string) {
@@ -715,6 +778,9 @@ const downPayment = Number(scenario.downPayment.replace(/,/g, "") || 0);
     if (intake.credit.trim()) facts.push(`Estimated credit score: ${intake.credit.trim()}`);
     if (intake.income.trim()) facts.push(`Gross monthly income: ${intake.income.trim()}`);
     if (intake.debt.trim()) facts.push(`Monthly debt: ${intake.debt.trim()}`);
+    if (getEstimatedDti(intake.income, intake.debt)) {
+      facts.push(`Estimated DTI: ${getEstimatedDti(intake.income, intake.debt)}`);
+    }
     if (intake.currentState.trim()) facts.push(`Current state: ${intake.currentState.trim()}`);
     if (intake.targetState.trim()) {
       facts.push(`Target state: ${intake.targetState.trim()}`);
@@ -782,8 +848,11 @@ Rules for borrower-facing response:
 - Encourage Apply Now naturally when useful, not mechanically every time.
 - If asking a next question, ask only one question.
 - Ask the most useful unanswered qualification question, not a question that is already answered.
+- If gross monthly income and monthly debt are already provided, do not ask for DTI. Estimate DTI from those values instead.
+- If home price and down payment are already provided, do not ask for them again.
+- If occupancy is already provided, do not ask for occupancy again.
+- If the borrower challenges a question because the answer is already in the file, acknowledge that and use the information already collected.
 `.trim();
-
   const preferredLanguageLabel = useMemo(() => {
     if (language === "pt") return "Português";
     if (language === "es") return "Español";
@@ -1097,6 +1166,7 @@ ${borrowerChatRules}
 Start the borrower conversation.
 Acknowledge the scenario briefly.
 Do not ask for any field that is already in the known facts list.
+If gross monthly income and monthly debt are already present, do not ask for DTI because it can be derived.
 If a next question is needed, ask one useful unanswered question only.
               `.trim(),
             },
@@ -1186,6 +1256,7 @@ ${borrowerChatRules}
 
 Acknowledge the scenario briefly.
 Do not ask for any field already collected.
+If gross monthly income and monthly debt are already present, do not ask for DTI because it can be derived.
 If a next question is needed, ask only one useful unanswered question.
               `.trim(),
             },
@@ -1260,6 +1331,7 @@ ${borrowerChatRules}
 
 Answer naturally.
 Do not ask for any field already collected.
+If gross monthly income and monthly debt are already present, do not ask for DTI because it can be derived.
 If appropriate, ask only one useful unanswered question.
               `.trim(),
             },
@@ -1410,6 +1482,14 @@ If appropriate, ask only one useful unanswered question.
       matchResult?.top_recommendation ||
       "No strong direction yet",
     selectedOfficer.companyName
+  );
+
+  const borrowerVisibleNextQuestion = getResolvedNextQuestion(
+    matchResult?.openai_enhancement?.nextBestQuestion ||
+      matchResult?.next_question ||
+      "",
+    intake,
+    scenario
   );
 
   return (
@@ -2093,10 +2173,8 @@ If appropriate, ask only one useful unanswered question.
                     >
                       {t.nextQuestion}
                     </div>
-                    <div style={{ lineHeight: 1.7, color: "#263366" }}>
-                      {matchResult.openai_enhancement?.nextBestQuestion ||
-                        matchResult.next_question ||
-                        t.notProvided}
+                     <div style={{ lineHeight: 1.7, color: "#263366" }}>
+                      {borrowerVisibleNextQuestion || "No additional clarification needed right now."}
                     </div>
                   </div>
                 </div>
