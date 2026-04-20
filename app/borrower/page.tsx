@@ -48,11 +48,28 @@ const LOAN_OFFICERS: LoanOfficer[] = [
 ];
 
 const DEFAULT_LO = LOAN_OFFICERS[2];
+
+function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  }
+
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
+}
+
+export default function BorrowerPage() {
+  const [accepted, setAccepted] = useState(false);
 export default function BorrowerPage() {
   const [accepted, setAccepted] = useState(false);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [realtorName, setRealtorName] = useState("");
+  const [realtorPhone, setRealtorPhone] = useState("");
 
   const [loanOfficer, setLoanOfficer] = useState<LoanOfficer>(DEFAULT_LO);
 
@@ -70,14 +87,19 @@ export default function BorrowerPage() {
     try {
       await fetch("/api/chat-summary", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           lead: {
             fullName: name,
             email,
-            phone: "Not provided",
+            phone,
             preferredLanguage: "English",
             loanOfficer: loanOfficer.id,
             assignedEmail: loanOfficer.email,
+            realtorName,
+            realtorPhone,
           },
           messages: conversation,
           trigger,
@@ -88,9 +110,10 @@ export default function BorrowerPage() {
     }
   };
     const sendMessage = async () => {
+  const sendMessage = async () => {
     if (!chatInput.trim()) return;
 
-    const updated = [
+    const updated: ChatMessage[] = [
       ...conversation,
       { role: "user", content: chatInput },
     ];
@@ -177,6 +200,24 @@ export default function BorrowerPage() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+          />
+
+          <input
+            placeholder="Phone"
+            value={phone}
+            onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+          />
+
+          <input
+            placeholder="Realtor Name"
+            value={realtorName}
+            onChange={(e) => setRealtorName(e.target.value)}
+          />
+
+          <input
+            placeholder="Realtor Phone"
+            value={realtorPhone}
+            onChange={(e) => setRealtorPhone(formatPhoneNumber(e.target.value))}
           />
 
           <h3>Conversation</h3>
