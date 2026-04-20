@@ -704,9 +704,25 @@ export default function TeamPage() {
                   </div>
                 </div>
               );
-            })}
+            ))}
           </div>
         </section>
+
+        <div style={styles.card}>
+          <div style={styles.sectionEyebrow}>CLOSED LOANS</div>
+          <h2 style={styles.sectionTitle}>2026</h2>
+
+          <div
+            style={{
+              color: "#64748B",
+              lineHeight: 1.7,
+              marginTop: 12,
+            }}
+          >
+            Closed loans will be archived here by year. Loans remain in the active
+            pipeline until the file is fully closed.
+          </div>
+        </div>
 
         <section
           className="tc-main-grid"
@@ -954,6 +970,54 @@ export default function TeamPage() {
             </div>
 
             <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>AUDIT & DATES</div>
+              <h2 style={styles.sectionTitle}>Execution Tracking</h2>
+
+              <div style={{ display: "grid", gap: 0, marginTop: 16 }}>
+                {[
+                  "Submitted to UW",
+                  "Approved w/ Conditions",
+                  "Clear to Close",
+                  "Docs Out",
+                  "Docs Signed",
+                  "Loan Funded",
+                  "Initial CD Sent",
+                  "Intent to Proceed",
+                  "Appraisal Ordered",
+                  "Title Ordered",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "12px 0",
+                      borderBottom: "1px solid #E2E8F0",
+                    }}
+                  >
+                    <span style={{ color: "#334155", fontWeight: 700 }}>
+                      {item}
+                    </span>
+
+                    <button
+                      type="button"
+                      style={{
+                        ...styles.secondaryButton,
+                        minHeight: 40,
+                        padding: "8px 14px",
+                        fontSize: 13,
+                      }}
+                    >
+                      Mark Complete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={styles.card}>
               <div style={styles.sectionEyebrow}>PROCESSING HANDOFF</div>
               <h2 style={styles.sectionTitle}>Trigger and alert processing</h2>
 
@@ -1013,6 +1077,33 @@ export default function TeamPage() {
                 >
                   Send to Processing
                 </button>
+              </div>
+            </div>
+
+            <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>FINLEY BEYOND™</div>
+              <h2 style={styles.sectionTitle}>Command Intelligence</h2>
+
+              <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                <textarea
+                  placeholder="Ask Finley about this file... (risk, missing docs, next steps, program direction)"
+                  style={styles.textarea}
+                />
+
+                <button type="button" style={styles.secondaryButton}>
+                  Ask Finley
+                </button>
+              </div>
+
+              <div style={{ marginTop: 18 }}>
+                <div style={styles.statusNote}>
+                  Finley will analyze:
+                  <br />• Borrower structure
+                  <br />• File stage
+                  <br />• Missing documentation
+                  <br />• Risk of delay
+                  <br />• Possible program direction
+                </div>
               </div>
             </div>
           </div>
