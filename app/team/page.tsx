@@ -560,6 +560,7 @@ export default function TeamPage() {
   const [authLoading, setAuthLoading] = useState(false);
   const [passwordHint, setPasswordHint] = useState("");
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
+  const [authCheckLoading, setAuthCheckLoading] = useState(true);
 
   const [leadForm, setLeadForm] = useState<TeamLeadForm>({
     fullName: "",
@@ -599,15 +600,17 @@ export default function TeamPage() {
       try {
         const response = await fetch("/api/team-auth/me");
 
-        if (!response.ok) return;
+        if (response.ok) {
+          const data = await response.json();
 
-        const data = await response.json();
-
-        if (data?.authenticated && data?.user) {
-          setActiveUser(data.user);
+          if (data?.authenticated && data?.user) {
+            setActiveUser(data.user);
+          }
         }
       } catch {
         // no-op
+      } finally {
+        setAuthCheckLoading(false);
       }
     };
 
@@ -697,6 +700,8 @@ export default function TeamPage() {
     await fetch("/api/team-auth/logout", { method: "POST" });
 
     setActiveUser(null);
+    setCredential("");
+    setPassword("");
     setConversation([]);
     setReviewStarted(false);
     setChatInput("");
@@ -953,6 +958,22 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
     setChatError("");
     setSummaryStatus("");
   };
+
+  if (authCheckLoading) {
+    return (
+      <main style={styles.page}>
+        <style>{responsiveCss}</style>
+
+        <div className="bf-team-wrap" style={styles.wrap}>
+          <div style={styles.hero}>
+            <div style={styles.eyebrow}>Beyond Intelligence™</div>
+            <h1 style={styles.heroTitle}>{t.title}</h1>
+            <p style={styles.heroText}>{t.signingIn}</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (!activeUser) {
     return (
