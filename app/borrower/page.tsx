@@ -244,6 +244,12 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatNumberInput(value: string) {
+  const digits = value.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  return new Intl.NumberFormat("en-US").format(Number(digits));
+}
+
 function formatPhoneNumber(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 10);
   if (digits.length <= 3) return digits;
@@ -362,6 +368,9 @@ export default function BorrowerPage() {
   const [chatInput, setChatInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const [completedAction, setCompletedAction] = useState<
+    null | "review" | "scenario" | "apply" | "schedule" | "email" | "call"
+  >(null);
 
   const t = COPY[language];
 
@@ -393,14 +402,14 @@ export default function BorrowerPage() {
     }).slice(0, 5);
   }, [loanOfficerQuery, selectedOfficer]);
 
-  const estimatedLoanAmount = useMemo(() => {
-    const price = Number(homePrice) || 0;
-    const down = Number(downPayment) || 0;
-    return Math.max(price - down, 0);
-  }, [homePrice, downPayment]);
+const estimatedLoanAmount = useMemo(() => {
+  const price = Number(homePrice.replace(/,/g, "")) || 0;
+  const down = Number(downPayment.replace(/,/g, "")) || 0;
+  return Math.max(price - down, 0);
+}, [homePrice, downPayment]);
 
   const estimatedLtv = useMemo(() => {
-    const price = Number(homePrice) || 0;
+    const price = Number(homePrice.replace(/,/g, "")) || 0;
     if (price <= 0) return "";
     return `${Math.round((estimatedLoanAmount / price) * 100)}%`;
   }, [estimatedLoanAmount, homePrice]);
@@ -447,6 +456,32 @@ export default function BorrowerPage() {
     conversation,
   });
 
+  const resetBorrowerSession = () => {
+    setAccepted(false);
+    setTransactionType("purchase");
+    setRealtorStatus("not_sure");
+    setBorrowerName("");
+    setEmail("");
+    setPhone("");
+    setRealtorName("");
+    setRealtorPhone("");
+    setCredit("");
+    setIncome("");
+    setDebt("");
+    setCurrentState("");
+    setTargetState("");
+    setLoanOfficerQuery("");
+    setSelectedOfficer(null);
+    setHomePrice("");
+    setDownPayment("");
+    setOccupancy("");
+    setScenarioDirection("");
+    setConversation([]);
+    setChatInput("");
+    setLoading(false);
+    setChatLoading(false);
+  };
+  
   const sendBorrowerSummary = async (trigger: SummaryTrigger) => {
     const officerForSummary =
       activeOfficer.id === "sandro-pansini-souza"
@@ -922,6 +957,7 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
                 disabled={!accepted || loading}
                 style={{
                   ...styles.runButton,
+                  ...(completedAction === "review" ? styles.completedButton : {}),
                   opacity: !accepted || loading ? 0.6 : 1,
                 }}
               >
@@ -933,18 +969,20 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
               <h2 style={styles.cardTitle}>{t.scenarioTitle}</h2>
 
               <div style={styles.formGrid}>
-                <input
-                  style={styles.input}
-                  placeholder={t.homePrice}
-                  value={homePrice}
-                  onChange={(e) => setHomePrice(e.target.value)}
-                />
-                <input
-                  style={styles.input}
-                  placeholder={t.downPayment}
-                  value={downPayment}
-                  onChange={(e) => setDownPayment(e.target.value)}
-                />
+<input
+  style={styles.input}
+  placeholder={t.homePrice}
+  value={homePrice}
+  onChange={(e) => setHomePrice(formatNumberInput(e.target.value))}
+/>
+<input
+  style={styles.input}
+  placeholder={t.downPayment}
+  value={downPayment}
+  onChange={(e) =>
+    setDownPayment(formatNumberInput(e.target.value))
+  }
+/>
                 <select
                   style={styles.input}
                   value={occupancy}
@@ -973,6 +1011,7 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
                 disabled={chatLoading}
                 style={{
                   ...styles.scenarioButton,
+                  ...(completedAction === "scenario" ? styles.completedButton : {}),
                   opacity: chatLoading ? 0.6 : 1,
                 }}
               >
@@ -1030,46 +1069,81 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
               <h2 style={styles.cardTitle}>{t.nextActions}</h2>
 
               <div style={styles.actionButtons}>
-                <a
-                  href={activeOfficer.applyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={styles.primaryAction}
-                  onClick={() => {
-                    void sendBorrowerSummary("apply");
+                <button
+                  type="button"
+                  style={{
+                    ...styles.primaryActionButton,
+                    ...(completedAction === "apply"
+                      ? styles.actionCompletedButton
+                      : {}),
+                  }}
+                  onClick={async () => {
+                    setCompletedAction("apply");
+                    await sendBorrowerSummary("apply");
+                    window.open(activeOfficer.applyUrl, "_blank", "noopener,noreferrer");
+                    resetBorrowerSession();
                   }}
                 >
                   {t.applyNow}
-                </a>
-                <a
-                  href={activeOfficer.scheduleUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={styles.secondaryAction}
-                  onClick={() => {
-                    void sendBorrowerSummary("schedule");
+                </button>
+
+                <button
+                  type="button"
+                  style={{
+                    ...styles.secondaryActionButton,
+                    ...(completedAction === "schedule"
+                      ? styles.actionCompletedButton
+                      : {}),
+                  }}
+                  onClick={async () => {
+                    setCompletedAction("schedule");
+                    await sendBorrowerSummary("schedule");
+                    window.open(
+                      activeOfficer.scheduleUrl,
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                    resetBorrowerSession();
                   }}
                 >
                   {t.scheduleLoanOfficer}
-                </a>
-                <a
-                  href={emailHref}
-                  style={styles.outlineAction}
-                  onClick={() => {
-                    void sendBorrowerSummary("contact");
+                </button>
+
+                <button
+                  type="button"
+                  style={{
+                    ...styles.outlineActionButton,
+                    ...(completedAction === "email"
+                      ? styles.actionCompletedOutlineButton
+                      : {}),
+                  }}
+                  onClick={async () => {
+                    setCompletedAction("email");
+                    await sendBorrowerSummary("contact");
+                    window.location.href = emailHref;
+                    resetBorrowerSession();
                   }}
                 >
                   {t.emailLoanOfficer}
-                </a>
-                <a
-                  href={callHref}
-                  style={styles.outlineAction}
-                  onClick={() => {
-                    void sendBorrowerSummary("contact");
+                </button>
+
+                <button
+                  type="button"
+                  style={{
+                    ...styles.outlineActionButton,
+                    ...(completedAction === "call"
+                      ? styles.actionCompletedOutlineButton
+                      : {}),
+                  }}
+                  onClick={async () => {
+                    setCompletedAction("call");
+                    await sendBorrowerSummary("contact");
+                    window.location.href = callHref;
+                    resetBorrowerSession();
                   }}
                 >
                   {t.callLoanOfficer}
-                </a>
+                </button>
               </div>
             </div>
           </div>
