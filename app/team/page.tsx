@@ -17,7 +17,6 @@ type TeamUser = {
   email: string;
   nmls: string;
   role: TeamRole;
-  password: string;
   calendly?: string;
   assistantEmail?: string;
   phone?: string;
@@ -64,68 +63,6 @@ type ProgramMatch = {
 const APP_URL = "https://www.beyondfinancing.com/apply-now";
 const CONTACT_URL = "https://www.beyondfinancing.com/contact-us";
 
-const TEAM_USERS: TeamUser[] = [
-  {
-    id: "sandro-pansini-souza",
-    name: "Sandro Pansini Souza",
-    email: "pansini@beyondfinancing.com",
-    nmls: "1625542",
-    role: "Loan Officer",
-    password: "1625542",
-    calendly: "https://calendly.com/sandropansini",
-    assistantEmail: "myloan@beyondfinancing.com",
-    phone: "857-615-0836",
-  },
-  {
-    id: "warren-wendt",
-    name: "Warren Wendt",
-    email: "warren@beyondfinancing.com",
-    nmls: "18959",
-    role: "Loan Officer",
-    password: "18959",
-    calendly: "https://www.beyondfinancing.com",
-    assistantEmail: "myloan@beyondfinancing.com",
-    phone: "978-821-2250",
-  },
-  {
-    id: "amarilis-santos",
-    name: "Amarilis Santos",
-    email: "amarilis@beyondfinancing.com",
-    nmls: "2394496AS",
-    role: "Processor",
-    password: "2394496AS",
-    assistantEmail: "myloan@beyondfinancing.com",
-  },
-  {
-    id: "kyle-nicholson",
-    name: "Kyle Nicholson",
-    email: "kyle@beyondfinancing.com",
-    nmls: "2394496",
-    role: "Processor",
-    password: "2394496",
-    assistantEmail: "myloan@beyondfinancing.com",
-  },
-  {
-    id: "nate-hubley",
-    name: "Nate Hubley",
-    email: "nate@beyondfinancing.com",
-    nmls: "2749644",
-    role: "Loan Officer",
-    password: "2749644",
-    calendly: "https://www.beyondfinancing.com",
-    assistantEmail: "myloan@beyondfinancing.com",
-  },
-  {
-    id: "bia-marques",
-    name: "Bia Marques",
-    email: "bia@beyondfinancing.com",
-    nmls: "2394496BM",
-    role: "Loan Officer Assistant",
-    password: "2394496BM",
-    assistantEmail: "myloan@beyondfinancing.com",
-  },
-];
-
 const COPY = {
   en: {
     title: "Beyond Intelligence™ Team Workspace",
@@ -140,7 +77,7 @@ const COPY = {
     signingIn: "Signing in...",
     forgotPassword: "Forgot password?",
     forgotPasswordText:
-      "Use your NMLS or email in the credential field, then click Reset Password Help to display your current credential reminder for internal testing.",
+      "Use your NMLS or email in the credential field, then click Reset Password Help to request a secure reset link.",
     resetPasswordHelp: "Reset Password Help",
     signOut: "Sign Out",
     language: "Language",
@@ -199,6 +136,8 @@ const COPY = {
       "There was an error continuing the review.",
     summarySuccess: "Summary email sent successfully.",
     summaryError: "There was an error sending the summary email.",
+    resetLinkSent:
+      "If the credential matches an active user, a reset link has been sent.",
     resetHintPrefix: "Credential reminder:",
     loggedInAs: "Logged in as",
     routeTo: "Summary emails route to",
@@ -225,7 +164,7 @@ const COPY = {
     signingIn: "Entrando...",
     forgotPassword: "Esqueceu a senha?",
     forgotPasswordText:
-      "Use seu NMLS ou email no campo de credencial e clique em Ajuda de Senha para exibir o lembrete atual apenas para testes internos.",
+      "Use seu NMLS ou email no campo de credencial e clique em Ajuda de Senha para solicitar um link seguro de redefinição.",
     resetPasswordHelp: "Ajuda de Senha",
     signOut: "Sair",
     language: "Idioma",
@@ -284,6 +223,8 @@ const COPY = {
       "Ocorreu um erro ao continuar a análise.",
     summarySuccess: "Email resumo enviado com sucesso.",
     summaryError: "Ocorreu um erro ao enviar o email resumo.",
+    resetLinkSent:
+      "Se a credencial corresponder a um usuário ativo, um link de redefinição foi enviado.",
     resetHintPrefix: "Lembrete da credencial:",
     loggedInAs: "Logado como",
     routeTo: "Os emails resumo serão enviados para",
@@ -310,7 +251,7 @@ const COPY = {
     signingIn: "Ingresando...",
     forgotPassword: "¿Olvidó su contraseña?",
     forgotPasswordText:
-      "Use su NMLS o correo en el campo de credencial y haga clic en Ayuda de Contraseña para mostrar su recordatorio actual solo para pruebas internas.",
+      "Use su NMLS o correo en el campo de credencial y haga clic en Ayuda de Contraseña para solicitar un enlace seguro de restablecimiento.",
     resetPasswordHelp: "Ayuda de Contraseña",
     signOut: "Cerrar Sesión",
     language: "Idioma",
@@ -369,6 +310,8 @@ const COPY = {
       "Hubo un error al continuar la revisión.",
     summarySuccess: "Resumen enviado por correo con éxito.",
     summaryError: "Hubo un error al enviar el resumen por correo.",
+    resetLinkSent:
+      "Si la credencial coincide con un usuario activo, se ha enviado un enlace de restablecimiento.",
     resetHintPrefix: "Recordatorio de credencial:",
     loggedInAs: "Conectado como",
     routeTo: "Los emails resumen se enviarán a",
@@ -404,10 +347,6 @@ function formatPhoneNumber(value: string) {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
 }
 
-function normalizeText(value: string) {
-  return value.trim().toLowerCase();
-}
-
 function extractAiText(data: unknown): string {
   if (typeof data === "string") return data;
 
@@ -435,16 +374,7 @@ function extractAiText(data: unknown): string {
   return "";
 }
 
-function resolveUserByCredential(credential: string) {
-  const query = normalizeText(credential);
-
-  return (
-    TEAM_USERS.find((user) => normalizeText(user.nmls) === query) ||
-    TEAM_USERS.find((user) => normalizeText(user.email) === query) ||
-    TEAM_USERS.find((user) => normalizeText(user.name) === query) ||
-    TEAM_USERS.find((user) => normalizeText(user.name).includes(query))
-  );
-}
+function estimateDirectionalPrograms(snapshot: BorrowerSnapshot): ProgramMatch[] {
 
 function estimateDirectionalPrograms(snapshot: BorrowerSnapshot): ProgramMatch[] {
   const credit = Number(snapshot.creditScore) || 0;
@@ -759,13 +689,9 @@ export default function TeamPage() {
         body: JSON.stringify({ credential }),
       });
 
-      setPasswordHint(
-        "If the credential matches an active user, a reset link has been sent."
-      );
+      setPasswordHint(t.resetLinkSent);
     } catch {
-      setPasswordHint(
-        "If the credential matches an active user, a reset link has been sent."
-      );
+      setPasswordHint(t.resetLinkSent);
     }
   };
 
