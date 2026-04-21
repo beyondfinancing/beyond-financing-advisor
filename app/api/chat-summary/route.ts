@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
 import { sendSmsAlert } from "@/lib/twilio";
+import { supabaseAdmin } from "@/lib/supabase";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -53,7 +53,8 @@ function nl2br(value: string): string {
 function buildTranscriptHtml(messages: ChatMessage[]): string {
   return messages
     .map((msg, index) => {
-      const roleLabel = msg.role === "user" ? "Borrower" : "Finley Beyond Advisor";
+      const roleLabel =
+        msg.role === "user" ? "Borrower" : "Finley Beyond Advisor";
 
       return `
         <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;background:${
@@ -138,13 +139,13 @@ export async function POST(req: Request) {
       : [];
     const trigger = (body?.trigger || "ai") as SummaryTrigger;
 
-const fullName = String(lead.fullName || "").trim();
-const email = String(lead.email || "").trim();
-const phone = String(lead.phone || "").trim();
-const preferredLanguage = String(lead.preferredLanguage || "").trim();
-const loanOfficer = String(lead.loanOfficer || "").trim();
-const realtorName = String(lead.realtorName || "").trim();
-const realtorPhone = String(lead.realtorPhone || "").trim();
+    const fullName = String(lead.fullName || "").trim();
+    const email = String(lead.email || "").trim();
+    const phone = String(lead.phone || "").trim();
+    const preferredLanguage = String(lead.preferredLanguage || "").trim();
+    const loanOfficer = String(lead.loanOfficer || "").trim();
+    const realtorName = String(lead.realtorName || "").trim();
+    const realtorPhone = String(lead.realtorPhone || "").trim();
 
     if (!fullName || !email || !phone || !preferredLanguage || !loanOfficer) {
       return NextResponse.json(
@@ -160,26 +161,31 @@ const realtorPhone = String(lead.realtorPhone || "").trim();
       );
     }
 
-const selectedEmail =
-  String(lead.assignedEmail || "").trim() ||
-  loanOfficerMap[loanOfficer] ||
-  "finley@beyondfinancing.com";
+    const selectedEmail =
+      String(lead.assignedEmail || "").trim() ||
+      loanOfficerMap[loanOfficer] ||
+      "finley@beyondfinancing.com";
 
-let assignedLoanOfficerPhone = "";
+    let assignedLoanOfficerPhone = "";
 
-try {
-  const { data: teamUser } = await supabaseAdmin
-    .from("team_users")
-    .select("phone")
-    .eq("email", selectedEmail)
-    .maybeSingle();
+    try {
+      const { data: teamUser, error: teamUserError } = await supabaseAdmin
+        .from("team_users")
+        .select("phone")
+        .eq("email", selectedEmail)
+        .maybeSingle();
 
-  assignedLoanOfficerPhone = String(teamUser?.phone || "").trim();
-} catch {
-  assignedLoanOfficerPhone = "";
-}
+      if (teamUserError) {
+        console.error("TEAM USER LOOKUP ERROR:", teamUserError);
+      }
 
-let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
+      assignedLoanOfficerPhone = String(teamUser?.phone || "").trim();
+    } catch (lookupError) {
+      console.error("TEAM USER LOOKUP EXCEPTION:", lookupError);
+      assignedLoanOfficerPhone = "";
+    }
+
+    let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
 
     if (process.env.OPENAI_API_KEY && messages.length > 0) {
       const summaryPrompt = `
@@ -288,6 +294,9 @@ ${messages
                 : summary.loanOfficerActionPlan,
           };
         }
+      } else {
+        const openAiError = await summaryResponse.text();
+        console.error("OPENAI SUMMARY ERROR:", openAiError);
       }
     }
 
@@ -302,10 +311,16 @@ ${messages
           <p><strong>Full Name:</strong> ${escapeHtml(fullName)}</p>
           <p><strong>Email:</strong> ${escapeHtml(email)}</p>
           <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
-          <p><strong>Realtor Name:</strong> ${escapeHtml(realtorName || 'Not provided')}</p>
-          <p><strong>Realtor Phone:</strong> ${escapeHtml(realtorPhone || 'Not provided')}</p>
+          <p><strong>Realtor Name:</strong> ${escapeHtml(
+            realtorName || "Not provided"
+          )}</p>
+          <p><strong>Realtor Phone:</strong> ${escapeHtml(
+            realtorPhone || "Not provided"
+          )}</p>
           <p><strong>Language:</strong> ${escapeHtml(preferredLanguage)}</p>
-          <p><strong>Selected Loan Officer:</strong> ${escapeHtml(loanOfficer)}</p>
+          <p><strong>Selected Loan Officer:</strong> ${escapeHtml(
+            loanOfficer
+          )}</p>
           <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
           <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
         </div>
@@ -371,43 +386,49 @@ ${messages
       }),
     });
 
-if (!resendResponse.ok) {
-  const error = await resendResponse.text();
-  return NextResponse.json({ success: false, error }, { status: 500 });
-}
+    if (!resendResponse.ok) {
+      const error = await resendResponse.text();
+      console.error("RESEND ERROR:", error);
+      return NextResponse.json({ success: false, error }, { status: 500 });
+    }
 
-/**
- * ✅ SMS ALERTS (NEW)
- */
-try {
-  const smsMessage = `New Finley Beyond Lead:
+    try {
+      const smsMessage = `New Finley Beyond Lead:
 ${fullName}
-Borrower: ${phone}
+Borrower Phone: ${phone}
 Trigger: ${trigger}
 
-Check your email for full summary.`;
+Check your email for the full summary.`;
 
-  // Loan Officer SMS
-  if (assignedLoanOfficerPhone) {
-    await sendSmsAlert({
-      to: assignedLoanOfficerPhone,
-      body: smsMessage,
+      if (assignedLoanOfficerPhone) {
+        await sendSmsAlert({
+          to: assignedLoanOfficerPhone,
+          body: smsMessage,
+        });
+      } else {
+        console.log("NO LO PHONE FOUND FOR:", selectedEmail);
+      }
+
+      if (realtorPhone) {
+        await sendSmsAlert({
+          to: realtorPhone,
+          body: `Update: Your client ${fullName} has interacted with Finley Beyond. The assigned loan officer has been notified and will review the scenario shortly.`,
+        });
+      } else {
+        console.log("NO REALTOR PHONE FOUND");
+      }
+    } catch (smsError) {
+      console.error("SMS ERROR:", smsError);
+    }
+
+    return NextResponse.json({
+      success: true,
+      assignedEmail: selectedEmail,
+      assignedLoanOfficerPhone,
     });
-  }
+  } catch (error) {
+    console.error("CHAT SUMMARY ROUTE ERROR:", error);
 
-  // Realtor SMS
-  if (realtorPhone) {
-    await sendSmsAlert({
-      to: realtorPhone,
-      body: `Update: Your client ${fullName} has interacted with Finley Beyond. The assigned loan officer has been notified and will review the scenario shortly.`,
-    });
-  }
-} catch (smsError) {
-  console.error("SMS ERROR:", smsError);
-}
-
-return NextResponse.json({ success: true });
-  } catch {
     return NextResponse.json(
       { success: false, error: "Server error." },
       { status: 500 }
