@@ -971,22 +971,23 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
               <h2 style={styles.cardTitle}>{t.scenarioTitle}</h2>
 
               <div style={styles.formGrid}>
-<input
-  style={styles.input}
-  placeholder={t.homePrice}
-  value={homePrice}
-  onChange={(e) => setHomePrice(formatNumberInput(e.target.value))}
-/>
-<input
-  style={styles.input}
-  placeholder={t.downPayment}
-  value={downPayment}
-  onChange={(e) =>
-    setDownPayment(formatNumberInput(e.target.value))
-  }
-/>
-                <select
+              <div style={styles.formGrid}>
+                <input
                   style={styles.input}
+                  placeholder={t.homePrice}
+                  value={homePrice}
+                  onChange={(e) => setHomePrice(formatNumberInput(e.target.value))}
+                />
+                <input
+                  style={styles.input}
+                  placeholder={t.downPayment}
+                  value={downPayment}
+                  onChange={(e) =>
+                    setDownPayment(formatNumberInput(e.target.value))
+                  }
+                />
+                <select
+                  style={{ ...styles.input, gridColumn: "1 / -1" }}
                   value={occupancy}
                   onChange={(e) => setOccupancy(e.target.value)}
                 >
@@ -1016,7 +1017,9 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
                 disabled={chatLoading}
                 style={{
                   ...styles.scenarioButton,
-                  ...(completedAction === "scenario" ? styles.completedButton : {}),
+                  ...(completedAction === "scenario"
+                    ? styles.completedButton
+                    : {}),
                   opacity: chatLoading ? 0.6 : 1,
                 }}
               >
