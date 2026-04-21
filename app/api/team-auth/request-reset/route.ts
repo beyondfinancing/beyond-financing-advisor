@@ -17,8 +17,8 @@ export async function POST(req: Request) {
 
     const { data: users, error: userLookupError } = await supabaseAdmin
       .from("team_users")
-      .select("id, full_name, email, is_active, nmls")
-      .or(`email.eq.${credential},nmls.eq.${credential}`);
+      .select("id, full_name, email, is_active, credential")
+      .or(`email.eq.${credential},credential.eq.${credential}`);
 
     if (userLookupError) {
       return NextResponse.json(
@@ -28,7 +28,6 @@ export async function POST(req: Request) {
     }
 
     const user = users?.[0];
-
     if (!user || !user.is_active) {
       return NextResponse.json({ success: true });
     }
