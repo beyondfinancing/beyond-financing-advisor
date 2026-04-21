@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function TeamResetPasswordPage() {
+function TeamResetPasswordInner() {
   const params = useSearchParams();
   const token = params.get("token") || "";
 
@@ -123,5 +123,32 @@ export default function TeamResetPasswordPage() {
         ) : null}
       </div>
     </main>
+  );
+}
+
+export default function TeamResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <main style={{ minHeight: "100vh", background: "#F3F6FB", padding: 24 }}>
+          <div
+            style={{
+              maxWidth: 520,
+              margin: "40px auto",
+              background: "#fff",
+              borderRadius: 20,
+              padding: 24,
+              boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+              fontFamily: "Inter, Arial, sans-serif",
+            }}
+          >
+            <h1 style={{ marginTop: 0, color: "#263366" }}>Reset Team Password</h1>
+            <div style={{ color: "#334155", lineHeight: 1.6 }}>Loading reset form...</div>
+          </div>
+        </main>
+      }
+    >
+      <TeamResetPasswordInner />
+    </Suspense>
   );
 }
