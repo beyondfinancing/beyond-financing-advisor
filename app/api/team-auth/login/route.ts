@@ -9,6 +9,7 @@ import {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+
     const credential = normalizeCredential(String(body?.credential || ""));
     const password = String(body?.password || "").trim();
 
@@ -21,7 +22,9 @@ export async function POST(req: Request) {
 
     const { data: users, error } = await supabaseAdmin
       .from("team_users")
-      .select("id, full_name, email, credential, role, password_hash, calendly, assistant_email, phone, is_active")
+      .select(
+        "id, full_name, email, credential, role, password_hash, calendly, assistant_email, phone, is_active"
+      )
       .or(`credential.eq.${credential},email.eq.${credential}`);
 
     if (error) {
