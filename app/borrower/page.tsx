@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 
 type LanguageCode = "en" | "pt" | "es";
+type SummaryTrigger = "ai" | "apply" | "schedule" | "contact";
 
 type IntakeFormState = {
   name: string;
