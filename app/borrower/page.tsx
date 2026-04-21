@@ -292,6 +292,8 @@ function extractAiText(data: unknown): string {
     );
   }
 
+  }
+
   return "";
 }
 
@@ -299,19 +301,28 @@ function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return null;
 
-  const exact = LOAN_OFFICERS.find(
-    (officer) =>
+  const exact = LOAN_OFFICERS.find((officer) => {
+    const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
+
+    return (
       officer.name.toLowerCase() === trimmed ||
-      officer.nmls.toLowerCase() === trimmed
-  );
+      officer.nmls.toLowerCase() === trimmed ||
+      display === trimmed
+    );
+  });
+
   if (exact) return exact;
 
   return (
-    LOAN_OFFICERS.find(
-      (officer) =>
+    LOAN_OFFICERS.find((officer) => {
+      const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
+
+      return (
         officer.name.toLowerCase().includes(trimmed) ||
-        officer.nmls.toLowerCase().includes(trimmed)
-    ) || null
+        officer.nmls.toLowerCase().includes(trimmed) ||
+        display.includes(trimmed)
+      );
+    }) || null
   );
 }
 
@@ -611,7 +622,25 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
   };
 
   const confirmLoanOfficer = () => {
+    const query = loanOfficerQuery.trim().toLowerCase();
+
+    if (selectedOfficer) {
+      const selectedDisplay = `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`.toLowerCase();
+
+      if (
+        query === selectedDisplay ||
+        query === selectedOfficer.name.toLowerCase() ||
+        query === selectedOfficer.nmls.toLowerCase()
+      ) {
+        setLoanOfficerQuery(
+          `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`
+        );
+        return;
+      }
+    }
+
     const matched = resolveOfficerFromQuery(loanOfficerQuery);
+
     if (matched) {
       setSelectedOfficer(matched);
       setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
