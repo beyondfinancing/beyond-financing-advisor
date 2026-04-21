@@ -367,8 +367,11 @@ export default function BorrowerPage() {
     return `${Math.round((estimatedLoanAmount / price) * 100)}%`;
   }, [estimatedLoanAmount, homePrice]);
 
-  const activeOfficer = selectedOfficer || DEFAULT_LOAN_OFFICER;
-
+  const activeOfficer =
+    selectedOfficer ||
+    resolveOfficerFromQuery(loanOfficerQuery) ||
+    DEFAULT_LOAN_OFFICER;
+  
   const buildRoutingPayload = () => ({
     language,
     transactionType,
@@ -732,7 +735,6 @@ export default function BorrowerPage() {
                   value={loanOfficerQuery}
                   onChange={(e) => {
                     setLoanOfficerQuery(e.target.value);
-                    setSelectedOfficer(null);
                   }}
                 />
                 <div style={styles.helperText}>{t.loanOfficerHint}</div>
