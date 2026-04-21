@@ -89,8 +89,7 @@ const DEFAULT_LOAN_OFFICER =
 const COPY = {
   en: {
     heroTitle: "Finley Beyond Powered by Beyond Intelligence™",
-    heroText:
-      "Start your guided mortgage conversation with Finley Beyond.",
+    heroText: "Start your guided mortgage conversation with Finley Beyond.",
     disclaimerTitle: "Required Disclaimer",
     disclaimerText:
       "This system provides preliminary guidance only. It is not a loan approval, underwriting decision, commitment to lend, legal advice, tax advice, or final program determination. All scenarios remain subject to licensed loan officer review, documentation, verification, underwriting, title, appraisal, and current investor or agency guidelines.",
@@ -281,10 +280,10 @@ export default function BorrowerPage() {
     ).slice(0, 5);
   }, [loanOfficerQuery, loanOfficerConfirmed]);
 
-const matchedOfficerFromQuery = resolveOfficerFromQuery(loanOfficerQuery);
+  const matchedOfficerFromQuery = resolveOfficerFromQuery(loanOfficerQuery);
 
-const activeOfficer =
-  selectedOfficer || matchedOfficerFromQuery || DEFAULT_LOAN_OFFICER;
+  const activeOfficer =
+    selectedOfficer || matchedOfficerFromQuery || DEFAULT_LOAN_OFFICER;
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(String(scenario.homePrice).replace(/,/g, "")) || 0;
@@ -401,6 +400,8 @@ Instructions:
 
   const buildRoutingPayload = () => ({
     language: "en",
+    intakeComplete,
+    scenarioComplete,
     loanOfficerQuery,
     selectedOfficer: {
       id: activeOfficer.id,
@@ -471,7 +472,8 @@ Instructions:
   };
 
   const confirmOfficerSelection = () => {
-    const matched = resolveOfficerFromQuery(loanOfficerQuery) || DEFAULT_LOAN_OFFICER;
+    const matched =
+      resolveOfficerFromQuery(loanOfficerQuery) || DEFAULT_LOAN_OFFICER;
     setSelectedOfficer(matched);
     setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
     setLoanOfficerConfirmed(true);
@@ -485,34 +487,31 @@ Instructions:
     setLoanOfficerConfirmed(true);
   };
 
-const runPreliminaryReview = async () => {
-  if (!intakeComplete) {
-    setErrorMessage(
-      "Please complete the intake, realtor section, and loan officer confirmation before running the preliminary review."
-    );
-    return;
-  }
+  const runPreliminaryReview = async () => {
+    if (!intakeComplete) {
+      setErrorMessage(
+        "Please complete the intake, realtor section, and loan officer confirmation before running the preliminary review."
+      );
+      return;
+    }
 
-  setLoading(true);
-  setErrorMessage("");
+    setLoading(true);
+    setErrorMessage("");
 
-  try {
-    setTransactionLocked(true);
-    setRealtorLocked(true);
-    setPreliminaryReviewRan(true);
-
-    // ✅ CRITICAL FIX: do NOT start conversation here
-    setConversation([]);
-
-  } catch (error) {
-    setErrorMessage(
-      error instanceof Error ? error.message : "Unable to run review."
-    );
-    setPreliminaryReviewRan(false);
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      setTransactionLocked(true);
+      setRealtorLocked(true);
+      setPreliminaryReviewRan(true);
+      setConversation([]);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to run review."
+      );
+      setPreliminaryReviewRan(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const continueScenario = async () => {
     if (!preliminaryReviewRan || !scenarioComplete) {
@@ -529,11 +528,19 @@ const runPreliminaryReview = async () => {
       const prompt = `
 ${buildBorrowerContext()}
 
-The borrower has completed the full intake and property scenario.
-Acknowledge that the intake is complete.
-Do not ask again about transaction type, realtor, loan officer, home price, down payment, or occupancy because those items are already provided.
-Give a concise, professional next-step response.
-You may invite the borrower to ask any remaining questions and remind them that the assigned loan officer will review the file.
+The borrower has completed the full intake and full property scenario.
+
+Important rules:
+- Do not ask again about transaction type.
+- Do not ask again about realtor involvement.
+- Do not ask again about loan officer selection.
+- Do not ask again about home price.
+- Do not ask again about down payment.
+- Do not ask again about occupancy.
+- Acknowledge that the intake is complete.
+- Give a concise, professional next-step response.
+- Invite the borrower to ask any remaining questions.
+- Remind the borrower that the assigned licensed loan officer will review the file and advise next steps.
       `.trim();
 
       const response = await fetch("/api/chat", {
@@ -556,7 +563,7 @@ You may invite the borrower to ask any remaining questions and remind them that 
       const data = await response.json();
       const finalText =
         extractAiText(data) ||
-        "Thank you. Your scenario has been organized for review by the assigned loan officer.";
+        "Thank you. Your scenario has been organized for review by the assigned loan officer. You may now ask any remaining questions while the file is being reviewed.";
 
       setScenarioConfirmed(true);
       setConversation([
@@ -677,9 +684,7 @@ Keep the response practical and professional.`,
 
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      throw new Error(
-        data?.error || "Unable to send summary notification."
-      );
+      throw new Error(data?.error || "Unable to send summary notification.");
     }
 
     return response.json().catch(() => null);
@@ -981,9 +986,7 @@ Keep the response practical and professional.`,
                 )}
               </div>
 
-              <div style={styles.helperText}>
-                {t.loanOfficerPlaceholder}
-              </div>
+              <div style={styles.helperText}>{t.loanOfficerPlaceholder}</div>
 
               <div style={styles.buttonRow}>
                 <button
@@ -992,7 +995,9 @@ Keep the response practical and professional.`,
                   disabled={loanOfficerConfirmed}
                   style={{
                     ...styles.primaryButton,
-                    backgroundColor: loanOfficerConfirmed ? "#8BB7CC" : "#62B3D6",
+                    backgroundColor: loanOfficerConfirmed
+                      ? "#8BB7CC"
+                      : "#62B3D6",
                     cursor: loanOfficerConfirmed ? "default" : "pointer",
                     opacity: loanOfficerConfirmed ? 0.9 : 1,
                   }}
@@ -1099,7 +1104,7 @@ Keep the response practical and professional.`,
                 disabled={chatLoading || scenarioConfirmed}
                 style={{
                   ...styles.secondaryButton,
-                  backgroundColor: scenarioConfirmed ? "#8A95B8" : "#8A95B8",
+                  backgroundColor: "#8A95B8",
                   opacity: scenarioConfirmed ? 0.9 : 1,
                   cursor: scenarioConfirmed ? "default" : "pointer",
                 }}
