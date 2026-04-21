@@ -76,6 +76,28 @@ function parseJsonSafely<T>(value: string): T | null {
   }
 }
 
+function normalizeDigitsOnly(value: string): string {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function normalizePhoneForSms(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (raw.startsWith("+")) {
+    const plusNormalized = `+${raw.slice(1).replace(/\D/g, "")}`;
+    return plusNormalized === "+" ? "" : plusNormalized;
+  }
+
+  const digits = normalizeDigitsOnly(raw);
+
+  if (!digits) return "";
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  return `+${digits}`;
+}
+
 function buildFallbackSummary(
   lead: LeadPayload,
   messages: ChatMessage[],
@@ -161,12 +183,16 @@ export async function POST(req: Request) {
       );
     }
 
+    const normalizedBorrowerPhone = normalizePhoneForSms(phone);
+    const normalizedRealtorPhone = normalizePhoneForSms(realtorPhone);
+
     const selectedEmail =
       String(lead.assignedEmail || "").trim() ||
       loanOfficerMap[loanOfficer] ||
       "finley@beyondfinancing.com";
 
     let assignedLoanOfficerPhone = "";
+    let normalizedAssignedLoanOfficerPhone = "";
 
     try {
       const { data: teamUser, error: teamUserError } = await supabaseAdmin
@@ -180,9 +206,12 @@ export async function POST(req: Request) {
       }
 
       assignedLoanOfficerPhone = String(teamUser?.phone || "").trim();
+      normalizedAssignedLoanOfficerPhone =
+        normalizePhoneForSms(assignedLoanOfficerPhone);
     } catch (lookupError) {
       console.error("TEAM USER LOOKUP EXCEPTION:", lookupError);
       assignedLoanOfficerPhone = "";
+      normalizedAssignedLoanOfficerPhone = "";
     }
 
     let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
@@ -216,9 +245,9 @@ Rules:
 Lead details:
 - Full Name: ${fullName}
 - Email: ${email}
-- Phone: ${phone}
+- Phone: ${normalizedBorrowerPhone || phone}
 - Realtor Name: ${realtorName || "Not provided"}
-- Realtor Phone: ${realtorPhone || "Not provided"}
+- Realtor Phone: ${normalizedRealtorPhone || realtorPhone || "Not provided"}
 - Preferred Language: ${preferredLanguage}
 - Selected Loan Officer: ${loanOfficer}
 - Assigned Email: ${selectedEmail}
@@ -310,12 +339,14 @@ ${messages
           <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
           <p><strong>Full Name:</strong> ${escapeHtml(fullName)}</p>
           <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-          <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
+          <p><strong>Phone:</strong> ${escapeHtml(
+            normalizedBorrowerPhone || phone
+          )}</p>
           <p><strong>Realtor Name:</strong> ${escapeHtml(
             realtorName || "Not provided"
           )}</p>
           <p><strong>Realtor Phone:</strong> ${escapeHtml(
-            realtorPhone || "Not provided"
+            normalizedRealtorPhone || realtorPhone || "Not provided"
           )}</p>
           <p><strong>Language:</strong> ${escapeHtml(preferredLanguage)}</p>
           <p><strong>Selected Loan Officer:</strong> ${escapeHtml(
@@ -392,30 +423,89 @@ ${messages
       return NextResponse.json({ success: false, error }, { status: 500 });
     }
 
+    const smsResults: Array<{
+      target: "loan_officer" | "realtor";
+      phone: string;
+      success: boolean;
+      error?: string;
+    }> = [];
+
     try {
       const smsMessage = `New Finley Beyond Lead:
 ${fullName}
-Borrower Phone: ${phone}
+Borrower Phone: ${normalizedBorrowerPhone || phone}
 Trigger: ${trigger}
 
 Check your email for the full summary.`;
 
-      if (assignedLoanOfficerPhone) {
-        await sendSmsAlert({
-          to: assignedLoanOfficerPhone,
-          body: smsMessage,
-        });
+      if (normalizedAssignedLoanOfficerPhone) {
+        try {
+          await sendSmsAlert({
+            to: normalizedAssignedLoanOfficerPhone,
+            body: smsMessage,
+          });
+
+          smsResults.push({
+            target: "loan_officer",
+            phone: normalizedAssignedLoanOfficerPhone,
+            success: true,
+          });
+        } catch (loanOfficerSmsError) {
+          console.error("LOAN OFFICER SMS ERROR:", loanOfficerSmsError);
+
+          smsResults.push({
+            target: "loan_officer",
+            phone: normalizedAssignedLoanOfficerPhone,
+            success: false,
+            error:
+              loanOfficerSmsError instanceof Error
+                ? loanOfficerSmsError.message
+                : "Unknown SMS error",
+          });
+        }
       } else {
         console.log("NO LO PHONE FOUND FOR:", selectedEmail);
+        smsResults.push({
+          target: "loan_officer",
+          phone: "",
+          success: false,
+          error: "No normalized loan officer phone found",
+        });
       }
 
-      if (realtorPhone) {
-        await sendSmsAlert({
-          to: realtorPhone,
-          body: `Update: Your client ${fullName} has interacted with Finley Beyond. The assigned loan officer has been notified and will review the scenario shortly.`,
-        });
+      if (normalizedRealtorPhone) {
+        try {
+          await sendSmsAlert({
+            to: normalizedRealtorPhone,
+            body: `Update: Your client ${fullName} has interacted with Finley Beyond. The assigned loan officer has been notified and will review the scenario shortly.`,
+          });
+
+          smsResults.push({
+            target: "realtor",
+            phone: normalizedRealtorPhone,
+            success: true,
+          });
+        } catch (realtorSmsError) {
+          console.error("REALTOR SMS ERROR:", realtorSmsError);
+
+          smsResults.push({
+            target: "realtor",
+            phone: normalizedRealtorPhone,
+            success: false,
+            error:
+              realtorSmsError instanceof Error
+                ? realtorSmsError.message
+                : "Unknown SMS error",
+          });
+        }
       } else {
         console.log("NO REALTOR PHONE FOUND");
+        smsResults.push({
+          target: "realtor",
+          phone: "",
+          success: false,
+          error: "No normalized realtor phone found",
+        });
       }
     } catch (smsError) {
       console.error("SMS ERROR:", smsError);
@@ -424,7 +514,11 @@ Check your email for the full summary.`;
     return NextResponse.json({
       success: true,
       assignedEmail: selectedEmail,
-      assignedLoanOfficerPhone,
+      assignedLoanOfficerPhoneRaw: assignedLoanOfficerPhone,
+      assignedLoanOfficerPhoneNormalized: normalizedAssignedLoanOfficerPhone,
+      borrowerPhoneNormalized: normalizedBorrowerPhone,
+      realtorPhoneNormalized: normalizedRealtorPhone,
+      smsResults,
     });
   } catch (error) {
     console.error("CHAT SUMMARY ROUTE ERROR:", error);
