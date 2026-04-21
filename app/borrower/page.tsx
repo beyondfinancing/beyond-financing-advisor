@@ -281,7 +281,10 @@ export default function BorrowerPage() {
     ).slice(0, 5);
   }, [loanOfficerQuery, loanOfficerConfirmed]);
 
-  const activeOfficer = selectedOfficer || DEFAULT_LOAN_OFFICER;
+const matchedOfficerFromQuery = resolveOfficerFromQuery(loanOfficerQuery);
+
+const activeOfficer =
+  selectedOfficer || matchedOfficerFromQuery || DEFAULT_LOAN_OFFICER;
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(String(scenario.homePrice).replace(/,/g, "")) || 0;
@@ -482,36 +485,34 @@ Instructions:
     setLoanOfficerConfirmed(true);
   };
 
-  const runPreliminaryReview = async () => {
-    if (!intakeComplete) {
-      setErrorMessage(
-        "Please complete the intake, realtor section, and loan officer confirmation before running the preliminary review."
-      );
-      return;
-    }
+const runPreliminaryReview = async () => {
+  if (!intakeComplete) {
+    setErrorMessage(
+      "Please complete the intake, realtor section, and loan officer confirmation before running the preliminary review."
+    );
+    return;
+  }
 
-    setLoading(true);
-    setErrorMessage("");
+  setLoading(true);
+  setErrorMessage("");
 
-    try {
-      setTransactionLocked(true);
-      setRealtorLocked(true);
-      setPreliminaryReviewRan(true);
-      setConversation([
-        {
-          role: "assistant",
-          content: t.reviewReady,
-        },
-      ]);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to run review."
-      );
-      setPreliminaryReviewRan(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    setTransactionLocked(true);
+    setRealtorLocked(true);
+    setPreliminaryReviewRan(true);
+
+    // ✅ CRITICAL FIX: do NOT start conversation here
+    setConversation([]);
+
+  } catch (error) {
+    setErrorMessage(
+      error instanceof Error ? error.message : "Unable to run review."
+    );
+    setPreliminaryReviewRan(false);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const continueScenario = async () => {
     if (!preliminaryReviewRan || !scenarioComplete) {
