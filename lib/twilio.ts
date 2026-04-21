@@ -5,13 +5,20 @@ const authToken = process.env.TWILIO_AUTH_TOKEN;
 const fromNumber = process.env.TWILIO_FROM_NUMBER;
 const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
-function normalizePhone(value: string) {
-  const digits = value.replace(/\D/g, "");
+function normalizePhone(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (raw.startsWith("+")) {
+    const plusNormalized = `+${raw.slice(1).replace(/\D/g, "")}`;
+    return plusNormalized === "+" ? "" : plusNormalized;
+  }
+
+  const digits = raw.replace(/\D/g, "");
   if (!digits) return "";
 
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (value.startsWith("+")) return value;
 
   return `+${digits}`;
 }
@@ -29,9 +36,14 @@ export async function sendSmsAlert(params: {
   body: string;
 }) {
   const to = normalizePhone(params.to);
+  const normalizedFrom = fromNumber ? normalizePhone(fromNumber) : "";
 
   if (!to) {
     throw new Error("Missing or invalid destination phone number.");
+  }
+
+  if (!params.body?.trim()) {
+    throw new Error("Missing SMS body.");
   }
 
   const client = getClient();
@@ -43,18 +55,41 @@ export async function sendSmsAlert(params: {
     messagingServiceSid?: string;
   } = {
     to,
-    body: params.body,
+    body: params.body.trim(),
   };
 
-  if (messagingServiceSid) {
-    payload.messagingServiceSid = messagingServiceSid;
-  } else if (fromNumber) {
-    payload.from = normalizePhone(fromNumber);
+  if (messagingServiceSid?.trim()) {
+    payload.messagingServiceSid = messagingServiceSid.trim();
+  } else if (normalizedFrom) {
+    payload.from = normalizedFrom;
   } else {
     throw new Error(
       "Missing Twilio sender. Add TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID."
     );
   }
 
-  return client.messages.create(payload);
+  try {
+    const message = await client.messages.create(payload);
+
+    console.log("TWILIO SMS SENT:", {
+      sid: message.sid,
+      to: message.to,
+      from: message.from,
+      status: message.status,
+      messagingServiceSid: message.messagingServiceSid,
+      errorCode: message.errorCode,
+      errorMessage: message.errorMessage,
+    });
+
+    return message;
+  } catch (error) {
+    console.error("TWILIO SEND ERROR:", {
+      to,
+      usingMessagingServiceSid: !!payload.messagingServiceSid,
+      from: payload.from || null,
+      error,
+    });
+
+    throw error;
+  }
 }
