@@ -971,7 +971,6 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
               <h2 style={styles.cardTitle}>{t.scenarioTitle}</h2>
 
               <div style={styles.formGrid}>
-              <div style={styles.formGrid}>
                 <input
                   style={styles.input}
                   placeholder={t.homePrice}
