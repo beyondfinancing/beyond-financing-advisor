@@ -375,8 +375,6 @@ function extractAiText(data: unknown): string {
 }
 
 function estimateDirectionalPrograms(snapshot: BorrowerSnapshot): ProgramMatch[] {
-
-function estimateDirectionalPrograms(snapshot: BorrowerSnapshot): ProgramMatch[] {
   const credit = Number(snapshot.creditScore) || 0;
   const income = Number(snapshot.monthlyIncome) || 0;
   const debt = Number(snapshot.monthlyDebt) || 0;
