@@ -80,12 +80,18 @@ body: JSON.stringify({
   subject: "Reset your Beyond Intelligence™ Team Workspace Password",
   html: `
           <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:680px;margin:0 auto;padding:24px;">
-            <h1 style="margin:0 0 18px 0;">Hello ${user.full_name},</h1>
-            <p style="line-height:1.7;">We received a request to reset your team workspace password.</p>
-            <p style="line-height:1.7;">This link expires in 30 minutes.</p>
+<h1 style="margin:0 0 18px 0;">Hello ${user.full_name},</h1>
+
+<p style="line-height:1.7;">
+You requested to reset your <strong>Beyond Intelligence™ Team Workspace</strong> password.
+</p>
+
+<p style="line-height:1.7;">
+This secure link will expire in 30 minutes.
+</p>
             <p style="margin:24px 0;">
               <a href="${resetUrl}" style="display:inline-block;background:#263366;color:#ffffff;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">
-                Reset Password
+                Reset Secure Password
               </a>
             </p>
             <p style="line-height:1.7;">If you did not request this, you can ignore this email.</p>
