@@ -15,10 +15,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    const { data: users } = await supabaseAdmin
+    const { data: users, error: userLookupError } = await supabaseAdmin
       .from("team_users")
-      .select("id, full_name, email, is_active, nmls, credential")
-      .or(`credential.eq.${credential},email.eq.${credential},nmls.eq.${credential}`);
+      .select("id, full_name, email, is_active, nmls")
+      .or(`email.eq.${credential},nmls.eq.${credential}`);
+
+    if (userLookupError) {
+      return NextResponse.json(
+        { success: false, error: `User lookup failed: ${userLookupError.message}` },
+        { status: 500 }
+      );
+    }
 
     const user = users?.[0];
 
@@ -40,7 +47,7 @@ export async function POST(req: Request) {
 
     if (insertError) {
       return NextResponse.json(
-        { success: false, error: "Failed to create reset request." },
+        { success: false, error: `Failed to create reset request: ${insertError.message}` },
         { status: 500 }
       );
     }
@@ -90,11 +97,20 @@ export async function POST(req: Request) {
 
     if (!resendResponse.ok) {
       const error = await resendResponse.text();
-      return NextResponse.json({ success: false, error }, { status: 500 });
+      return NextResponse.json(
+        { success: false, error: `Resend failed: ${error}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown reset error.",
+      },
+      { status: 500 }
+    );
   }
 }
