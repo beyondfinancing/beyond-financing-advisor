@@ -17,8 +17,8 @@ export async function POST(req: Request) {
 
     const { data: users } = await supabaseAdmin
       .from("team_users")
-      .select("id, full_name, email, is_active")
-      .or(`credential.eq.${credential},email.eq.${credential}`);
+      .select("id, full_name, email, is_active, nmls, credential")
+      .or(`credential.eq.${credential},email.eq.${credential},nmls.eq.${credential}`);
 
     const user = users?.[0];
 
