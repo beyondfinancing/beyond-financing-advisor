@@ -74,11 +74,11 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       },
-      body: JSON.stringify({
-        from: "Beyond Financing <finley@beyondfinancing.com>",
-        to: [user.email],
-        subject: "Reset your Beyond Intelligence team password",
-        html: `
+body: JSON.stringify({
+  from: "Finley Beyond via Beyond Intelligence <finley@beyondfinancing.com>",
+  to: [user.email],
+  subject: "Reset your Beyond Intelligence™ Team Workspace Password",
+  html: `
           <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:680px;margin:0 auto;padding:24px;">
             <h1 style="margin:0 0 18px 0;">Hello ${user.full_name},</h1>
             <p style="line-height:1.7;">We received a request to reset your team workspace password.</p>
