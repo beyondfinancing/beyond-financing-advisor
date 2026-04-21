@@ -344,6 +344,8 @@ export default function BorrowerPage() {
   const [borrowerName, setBorrowerName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [realtorName, setRealtorName] = useState("");
+  const [realtorPhone, setRealtorPhone] = useState("");
   const [credit, setCredit] = useState("");
   const [income, setIncome] = useState("");
   const [debt, setDebt] = useState("");
@@ -366,6 +368,20 @@ export default function BorrowerPage() {
   const officerSuggestions = useMemo(() => {
     const query = loanOfficerQuery.trim().toLowerCase();
     if (!query) return [];
+
+    if (selectedOfficer) {
+      const selectedDisplay =
+        `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`.toLowerCase();
+
+      if (
+        query === selectedDisplay ||
+        query === selectedOfficer.name.toLowerCase() ||
+        query === selectedOfficer.nmls.toLowerCase()
+      ) {
+        return [];
+      }
+    }
+
     return LOAN_OFFICERS.filter((officer) => {
       const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
 
@@ -375,7 +391,7 @@ export default function BorrowerPage() {
         display.includes(query)
       );
     }).slice(0, 5);
-  }, [loanOfficerQuery]);
+  }, [loanOfficerQuery, selectedOfficer]);
 
   const estimatedLoanAmount = useMemo(() => {
     const price = Number(homePrice) || 0;
@@ -413,6 +429,8 @@ export default function BorrowerPage() {
       name: borrowerName,
       email,
       phone,
+      realtorName,
+      realtorPhone,
       credit,
       income,
       debt,
@@ -457,8 +475,11 @@ export default function BorrowerPage() {
               : "English",
           loanOfficer: officerForSummary,
           assignedEmail: activeOfficer.email,
-          realtorName: `Realtor Status: ${realtorLabel}`,
-          realtorPhone: "",
+          realtorName:
+            realtorStatus === "yes"
+              ? realtorName || `Realtor Status: ${realtorLabel}`
+              : `Realtor Status: ${realtorLabel}`,
+          realtorPhone: realtorStatus === "yes" ? realtorPhone : "",
         },
         trigger,
         messages: [
@@ -468,6 +489,8 @@ export default function BorrowerPage() {
             content: `Borrower intake summary:
 Transaction Type: ${transactionType}
 Realtor Status: ${realtorLabel}
+Realtor Name: ${realtorName || "Not provided"}
+Realtor Phone: ${realtorPhone || "Not provided"}
 Selected Loan Officer: ${activeOfficer.name} — NMLS ${activeOfficer.nmls}
 Current State: ${currentState || "Not provided"}
 Target State: ${targetState || "Not provided"}
@@ -811,6 +834,25 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
                     {t.notSure}
                   </button>
                 </div>
+
+                {realtorStatus === "yes" ? (
+                  <div style={{ ...styles.formGrid, marginTop: 12 }}>
+                    <input
+                      style={styles.input}
+                      placeholder="Realtor Name"
+                      value={realtorName}
+                      onChange={(e) => setRealtorName(e.target.value)}
+                    />
+                    <input
+                      style={styles.input}
+                      placeholder="Realtor Phone"
+                      value={realtorPhone}
+                      onChange={(e) =>
+                        setRealtorPhone(formatPhoneNumber(e.target.value))
+                      }
+                    />
+                  </div>
+                ) : null}
               </div>
 
               <div style={{ position: "relative", marginTop: 14 }}>
@@ -832,6 +874,7 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
                         key={officer.id}
                         type="button"
                         onClick={() => {
+                          setSelectedOfficer(officer);
                           setLoanOfficerQuery(
                             `${officer.name} — NMLS ${officer.nmls}`
                           );
