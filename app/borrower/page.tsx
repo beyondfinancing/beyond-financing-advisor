@@ -1428,7 +1428,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 18,
     borderRadius: 14,
     border: "none",
-    backgroundColor: "#A3ABC4",
+    backgroundColor: "#1495C2",
     color: "#FFFFFF",
     fontWeight: 700,
     fontSize: 14,
@@ -1464,7 +1464,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 14,
     borderRadius: 14,
     border: "none",
-    backgroundColor: "#A3ABC4",
+    backgroundColor: "#1495C2",
     color: "#FFFFFF",
     fontWeight: 700,
     fontSize: 14,
@@ -1568,3 +1568,4 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#FFFFFF",
     border: "1px solid #263366",
   },
+};
