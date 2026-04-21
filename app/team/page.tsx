@@ -667,27 +667,24 @@ export default function TeamPage() {
   const t = COPY[language];
 
   useEffect(() => {
-    const raw = typeof window !== "undefined" ? window.sessionStorage.getItem("bf-team-user") : null;
-    if (!raw) return;
+    const loadUser = async () => {
+      try {
+        const response = await fetch("/api/team-auth/me");
 
-    try {
-      const parsed = JSON.parse(raw) as TeamUser;
-      const matched = TEAM_USERS.find((user) => user.id === parsed.id);
-      if (matched) setActiveUser(matched);
-    } catch {
-      // no-op
-    }
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        if (data?.authenticated && data?.user) {
+          setActiveUser(data.user);
+        }
+      } catch {
+        // no-op
+      }
+    };
+
+    loadUser();
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    if (activeUser) {
-      window.sessionStorage.setItem("bf-team-user", JSON.stringify(activeUser));
-    } else {
-      window.sessionStorage.removeItem("bf-team-user");
-    }
-  }, [activeUser]);
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(snapshot.homePrice) || 0;
@@ -723,31 +720,25 @@ export default function TeamPage() {
     setPasswordHint("");
 
     try {
-      const normalizedCredential = normalizeText(credential);
-      const normalizedPassword = password.trim();
+      const response = await fetch("/api/team-auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          credential,
+          password,
+        }),
+      });
 
-      const matched =
-        TEAM_USERS.find((user) => normalizeText(user.nmls) === normalizedCredential) ||
-        TEAM_USERS.find((user) => normalizeText(user.email) === normalizedCredential) ||
-        TEAM_USERS.find((user) => normalizeText(user.name) === normalizedCredential);
+      const data = await response.json();
 
-      if (!matched) {
-        setAuthError(t.loginError);
+      if (!response.ok) {
+        setAuthError(data?.error || t.loginError);
         return;
       }
 
-      const validPasswords = [
-        matched.password.trim(),
-        matched.nmls.trim(),
-        matched.email.trim(),
-      ];
-
-      if (!validPasswords.includes(normalizedPassword)) {
-        setAuthError(t.loginError);
-        return;
-      }
-
-      setActiveUser(matched);
+      setActiveUser(data.user);
       setCredential("");
       setPassword("");
     } finally {
@@ -755,19 +746,32 @@ export default function TeamPage() {
     }
   };
 
-  const handleForgotPasswordHelp = () => {
+  const handleForgotPasswordHelp = async () => {
     setAuthError("");
-    const matched = resolveUserByCredential(credential);
+    setPasswordHint("");
 
-    if (!matched) {
-      setPasswordHint(t.passwordResetUnavailable);
-      return;
+    try {
+      await fetch("/api/team-auth/request-reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ credential }),
+      });
+
+      setPasswordHint(
+        "If the credential matches an active user, a reset link has been sent."
+      );
+    } catch {
+      setPasswordHint(
+        "If the credential matches an active user, a reset link has been sent."
+      );
     }
-
-    setPasswordHint(t.passwordResetSecureMessage);
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await fetch("/api/team-auth/logout", { method: "POST" });
+
     setActiveUser(null);
     setConversation([]);
     setReviewStarted(false);
