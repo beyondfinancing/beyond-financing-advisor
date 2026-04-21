@@ -5,6 +5,13 @@ import { NextRequest } from "next/server";
 const SESSION_COOKIE = "bf_team_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 
+type SessionPayload = {
+  userId: string;
+  email: string;
+  role: string;
+  exp: number;
+};
+
 function getSecret() {
   const secret = process.env.TEAM_AUTH_SECRET;
   if (!secret) {
@@ -35,13 +42,6 @@ export function verifyPassword(password: string, storedHash: string) {
   return crypto.timingSafeEqual(a, b);
 }
 
-type SessionPayload = {
-  userId: string;
-  email: string;
-  role: string;
-  exp: number;
-};
-
 export function signSession(payload: Omit<SessionPayload, "exp">) {
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
   const fullPayload: SessionPayload = { ...payload, exp };
@@ -66,11 +66,16 @@ export function verifySessionToken(token: string): SessionPayload | null {
   const a = Buffer.from(signature);
   const b = Buffer.from(expected);
 
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  if (a.length !== b.length) return null;
+  if (!crypto.timingSafeEqual(a, b)) return null;
 
-  const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SessionPayload;
+  const parsed = JSON.parse(
+    Buffer.from(encoded, "base64url").toString("utf8")
+  ) as SessionPayload;
 
-  if (!parsed.exp || parsed.exp < Math.floor(Date.now() / 1000)) return null;
+  if (!parsed.exp || parsed.exp < Math.floor(Date.now() / 1000)) {
+    return null;
+  }
 
   return parsed;
 }
@@ -90,6 +95,7 @@ export async function setTeamSessionCookie(payload: Omit<SessionPayload, "exp">)
 
 export async function clearTeamSessionCookie() {
   const store = await cookies();
+
   store.set(SESSION_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
