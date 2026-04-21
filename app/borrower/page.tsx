@@ -264,68 +264,61 @@ function formatPhoneNumber(value: string) {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
 }
 
-  const sendMessage = async () => {
-    if (!chatInput.trim()) return;
+function extractAiText(data: unknown): string {
+  if (typeof data === "string") return data;
 
-    const nextConversation = [
-      ...conversation,
-      { role: "user" as const, content: chatInput.trim() },
-    ];
-    setConversation(nextConversation);
-    setChatInput("");
-    setChatLoading(true);
+  if (typeof data === "object" && data !== null) {
+    const obj = data as {
+      choices?: Array<{ message?: { content?: string } }>;
+      reply?: string;
+      message?: string;
+      response?: string;
+      content?: string;
+      text?: string;
+      nextQuestion?: string;
+      internalDirection?: string;
+    };
 
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stage: "follow_up",
-          routing: { ...buildRoutingPayload(), conversation: nextConversation },
-          messages: nextConversation,
-        }),
-      });
+    return (
+      obj.reply ||
+      obj.message ||
+      obj.response ||
+      obj.content ||
+      obj.text ||
+      obj.nextQuestion ||
+      obj.internalDirection ||
+      obj.choices?.[0]?.message?.content ||
+      ""
+    );
+  }
 
-      const data = await response.json();
-      const reply =
-        extractAiText(data) ||
-        "Thank you. I will continue organizing your scenario for review.";
+  return "";
+}
 
-      setConversation((prev) => [...prev, { role: "assistant", content: reply }]);
-    } catch {
-      setConversation((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Thank you. I will continue organizing your scenario for review.",
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  };
+function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return null;
 
-  const confirmLoanOfficer = () => {
-    if (selectedOfficer && loanOfficerQuery.trim()) {
-      const selectedDisplay = `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`.toLowerCase();
-      if (loanOfficerQuery.trim().toLowerCase() === selectedDisplay) {
-        return;
-      }
-    }
+  const exact = LOAN_OFFICERS.find(
+    (officer) =>
+      officer.name.toLowerCase() === trimmed ||
+      officer.nmls.toLowerCase() === trimmed
+  );
+  if (exact) return exact;
 
-    const matched = resolveOfficerFromQuery(loanOfficerQuery);
-    if (matched) {
-      setSelectedOfficer(matched);
-      setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
-    } else {
-      setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-      setLoanOfficerQuery(
-        `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
-      );
-    }
-  };
+  return (
+    LOAN_OFFICERS.find(
+      (officer) =>
+        officer.name.toLowerCase().includes(trimmed) ||
+        officer.nmls.toLowerCase().includes(trimmed)
+    ) || null
+  );
+}
 
-  const useDefaultOfficer = () => {
+function getRealtorStatusLabel(
+  realtorStatus: "yes" | "no" | "not_sure",
+  language: LanguageCode
+) {
   if (language === "pt") {
     if (realtorStatus === "yes") return "Sim";
     if (realtorStatus === "no") return "Não";
