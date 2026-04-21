@@ -5,19 +5,6 @@ import React, { useMemo, useState } from "react";
 type LanguageCode = "en" | "pt" | "es";
 type SummaryTrigger = "ai" | "apply" | "schedule" | "contact";
 
-type IntakeFormState = {
-  name: string;
-  email: string;
-  credit: string;
-  income: string;
-  debt: string;
-};
-
-type ScenarioFormState = {
-  homePrice: string;
-  downPayment: string;
-};
-
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
@@ -292,8 +279,6 @@ function extractAiText(data: unknown): string {
     );
   }
 
-  }
-
   return "";
 }
 
@@ -366,7 +351,7 @@ export default function BorrowerPage() {
   const [targetState, setTargetState] = useState("");
   const [loanOfficerQuery, setLoanOfficerQuery] = useState("");
   const [selectedOfficer, setSelectedOfficer] =
-    useState<LoanOfficerRecord | null>(DEFAULT_LOAN_OFFICER);
+    useState<LoanOfficerRecord | null>(null);
   const [homePrice, setHomePrice] = useState("");
   const [downPayment, setDownPayment] = useState("");
   const [occupancy, setOccupancy] = useState("");
@@ -381,11 +366,15 @@ export default function BorrowerPage() {
   const officerSuggestions = useMemo(() => {
     const query = loanOfficerQuery.trim().toLowerCase();
     if (!query) return [];
-    return LOAN_OFFICERS.filter(
-      (officer) =>
+    return LOAN_OFFICERS.filter((officer) => {
+      const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
+
+      return (
         officer.name.toLowerCase().includes(query) ||
-        officer.nmls.toLowerCase().includes(query)
-    ).slice(0, 5);
+        officer.nmls.toLowerCase().includes(query) ||
+        display.includes(query)
+      );
+    }).slice(0, 5);
   }, [loanOfficerQuery]);
 
   const estimatedLoanAmount = useMemo(() => {
@@ -400,11 +389,11 @@ export default function BorrowerPage() {
     return `${Math.round((estimatedLoanAmount / price) * 100)}%`;
   }, [estimatedLoanAmount, homePrice]);
 
+  const matchedOfficerFromQuery = resolveOfficerFromQuery(loanOfficerQuery);
+
   const activeOfficer =
-    selectedOfficer ||
-    resolveOfficerFromQuery(loanOfficerQuery) ||
-    DEFAULT_LOAN_OFFICER;
-  
+    selectedOfficer ?? matchedOfficerFromQuery ?? DEFAULT_LOAN_OFFICER;
+
   const buildRoutingPayload = () => ({
     language,
     transactionType,
@@ -500,6 +489,7 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
 
   const runPreliminaryReview = async () => {
     setLoading(true);
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -544,6 +534,7 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
 
   const continueScenario = async () => {
     setChatLoading(true);
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -583,10 +574,11 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
   const sendMessage = async () => {
     if (!chatInput.trim()) return;
 
-    const nextConversation = [
+    const nextConversation: ChatMessage[] = [
       ...conversation,
-      { role: "user" as const, content: chatInput.trim() },
+      { role: "user", content: chatInput.trim() },
     ];
+
     setConversation(nextConversation);
     setChatInput("");
     setChatLoading(true);
@@ -622,34 +614,18 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
   };
 
   const confirmLoanOfficer = () => {
-    const query = loanOfficerQuery.trim().toLowerCase();
-
-    if (selectedOfficer) {
-      const selectedDisplay = `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`.toLowerCase();
-
-      if (
-        query === selectedDisplay ||
-        query === selectedOfficer.name.toLowerCase() ||
-        query === selectedOfficer.nmls.toLowerCase()
-      ) {
-        setLoanOfficerQuery(
-          `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`
-        );
-        return;
-      }
-    }
-
     const matched = resolveOfficerFromQuery(loanOfficerQuery);
 
     if (matched) {
       setSelectedOfficer(matched);
       setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
-    } else {
-      setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-      setLoanOfficerQuery(
-        `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
-      );
+      return;
     }
+
+    setSelectedOfficer(DEFAULT_LOAN_OFFICER);
+    setLoanOfficerQuery(
+      `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
+    );
   };
 
   const useDefaultOfficer = () => {
@@ -844,6 +820,7 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
                   value={loanOfficerQuery}
                   onChange={(e) => {
                     setLoanOfficerQuery(e.target.value);
+                    setSelectedOfficer(null);
                   }}
                 />
                 <div style={styles.helperText}>{t.loanOfficerHint}</div>
@@ -855,7 +832,6 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
                         key={officer.id}
                         type="button"
                         onClick={() => {
-                          setSelectedOfficer(officer);
                           setLoanOfficerQuery(
                             `${officer.name} — NMLS ${officer.nmls}`
                           );
@@ -870,10 +846,18 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
               </div>
 
               <div style={styles.officerButtons}>
-                <button type="button" onClick={confirmLoanOfficer} style={styles.confirmButton}>
+                <button
+                  type="button"
+                  onClick={confirmLoanOfficer}
+                  style={styles.confirmButton}
+                >
                   {t.confirmLoanOfficer}
                 </button>
-                <button type="button" onClick={useDefaultOfficer} style={styles.unknownButton}>
+                <button
+                  type="button"
+                  onClick={useDefaultOfficer}
+                  style={styles.unknownButton}
+                >
                   {t.unknownLoanOfficer}
                 </button>
               </div>
