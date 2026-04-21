@@ -69,10 +69,14 @@ export async function POST(req: Request) {
         phone: user.phone,
       },
     });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: "Server error." },
-      { status: 500 }
-    );
-  }
+} catch (error) {
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Unknown server error.",
+    },
+    { status: 500 }
+  );
+}
 }
