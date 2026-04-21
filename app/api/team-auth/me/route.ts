@@ -12,7 +12,9 @@ export async function GET(req: NextRequest) {
 
     const { data: user, error } = await supabaseAdmin
       .from("team_users")
-      .select("id, full_name, email, credential, role, calendly, assistant_email, phone, is_active")
+      .select(
+        "id, full_name, email, credential, role, calendly, assistant_email, phone, is_active"
+      )
       .eq("id", session.userId)
       .single();
 
