@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { createResetToken, hashResetToken, normalizeCredential } from "@/lib/team-auth";
+import {
+  createResetToken,
+  hashResetToken,
+  normalizeCredential,
+} from "@/lib/team-auth";
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +21,7 @@ export async function POST(req: Request) {
       .or(`credential.eq.${credential},email.eq.${credential}`);
 
     const user = users?.[0];
+
     if (!user || !user.is_active) {
       return NextResponse.json({ success: true });
     }
@@ -25,24 +30,39 @@ export async function POST(req: Request) {
     const tokenHash = hashResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 1000 * 60 * 30).toISOString();
 
-    await supabaseAdmin.from("team_password_resets").insert({
-      user_id: user.id,
-      token_hash: tokenHash,
-      expires_at: expiresAt,
-    });
+    const { error: insertError } = await supabaseAdmin
+      .from("team_password_resets")
+      .insert({
+        user_id: user.id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+      });
+
+    if (insertError) {
+      return NextResponse.json(
+        { success: false, error: "Failed to create reset request." },
+        { status: 500 }
+      );
+    }
 
     const baseUrl = process.env.APP_BASE_URL;
     if (!baseUrl) {
-      return NextResponse.json({ success: false, error: "Missing APP_BASE_URL." }, { status: 500 });
+      return NextResponse.json(
+        { success: false, error: "Missing APP_BASE_URL." },
+        { status: 500 }
+      );
+    }
+
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        { success: false, error: "Missing RESEND_API_KEY." },
+        { status: 500 }
+      );
     }
 
     const resetUrl = `${baseUrl}/team/reset-password?token=${rawToken}`;
 
-    if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json({ success: false, error: "Missing RESEND_API_KEY." }, { status: 500 });
-    }
-
-    await fetch("https://api.resend.com/emails", {
+    const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -67,6 +87,11 @@ export async function POST(req: Request) {
         `,
       }),
     });
+
+    if (!resendResponse.ok) {
+      const error = await resendResponse.text();
+      return NextResponse.json({ success: false, error }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true });
   } catch {
