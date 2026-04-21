@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 import { sendSmsAlert } from "@/lib/twilio";
 
 type ChatMessage = {
@@ -159,12 +160,26 @@ const realtorPhone = String(lead.realtorPhone || "").trim();
       );
     }
 
-    const selectedEmail =
-      String(lead.assignedEmail || "").trim() ||
-      loanOfficerMap[loanOfficer] ||
-      "finley@beyondfinancing.com";
+const selectedEmail =
+  String(lead.assignedEmail || "").trim() ||
+  loanOfficerMap[loanOfficer] ||
+  "finley@beyondfinancing.com";
 
-    let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
+let assignedLoanOfficerPhone = "";
+
+try {
+  const { data: teamUser } = await supabaseAdmin
+    .from("team_users")
+    .select("phone")
+    .eq("email", selectedEmail)
+    .maybeSingle();
+
+  assignedLoanOfficerPhone = String(teamUser?.phone || "").trim();
+} catch {
+  assignedLoanOfficerPhone = "";
+}
+
+let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
 
     if (process.env.OPENAI_API_KEY && messages.length > 0) {
       const summaryPrompt = `
@@ -367,25 +382,24 @@ if (!resendResponse.ok) {
 try {
   const smsMessage = `New Finley Beyond Lead:
 ${fullName}
-${phone}
-
+Borrower: ${phone}
 Trigger: ${trigger}
 
 Check your email for full summary.`;
 
-  // 📲 Loan Officer SMS
-  if (phone) {
+  // Loan Officer SMS
+  if (assignedLoanOfficerPhone) {
     await sendSmsAlert({
-      to: phone,
+      to: assignedLoanOfficerPhone,
       body: smsMessage,
     });
   }
 
-  // 📲 Realtor SMS (courtesy notification)
+  // Realtor SMS
   if (realtorPhone) {
     await sendSmsAlert({
       to: realtorPhone,
-      body: `Update: Your client ${fullName} has engaged with Finley Beyond. The assigned loan officer is reviewing the scenario and will follow up shortly.`,
+      body: `Update: Your client ${fullName} has interacted with Finley Beyond. The assigned loan officer has been notified and will review the scenario shortly.`,
     });
   }
 } catch (smsError) {
