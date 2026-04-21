@@ -314,6 +314,27 @@ function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
   );
 }
 
+function getRealtorStatusLabel(
+  realtorStatus: "yes" | "no" | "not_sure",
+  language: LanguageCode
+) {
+  if (language === "pt") {
+    if (realtorStatus === "yes") return "Sim";
+    if (realtorStatus === "no") return "Não";
+    return "Não Tenho Certeza";
+  }
+
+  if (language === "es") {
+    if (realtorStatus === "yes") return "Sí";
+    if (realtorStatus === "no") return "No";
+    return "No Estoy Seguro";
+  }
+
+  if (realtorStatus === "yes") return "Yes";
+  if (realtorStatus === "no") return "No";
+  return "Not Sure";
+}
+
 export default function BorrowerPage() {
   const [language, setLanguage] = useState<LanguageCode>("en");
   const [accepted, setAccepted] = useState(false);
@@ -406,6 +427,64 @@ export default function BorrowerPage() {
     },
     conversation,
   });
+
+  const sendBorrowerSummary = async (trigger: SummaryTrigger) => {
+    const officerForSummary =
+      activeOfficer.id === "sandro-pansini-souza"
+        ? "sandro"
+        : activeOfficer.id === "warren-wendt"
+        ? "warren"
+        : "finley";
+
+    const realtorLabel = getRealtorStatusLabel(realtorStatus, language);
+
+    await fetch("/api/chat-summary", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        lead: {
+          fullName: borrowerName,
+          email,
+          phone,
+          preferredLanguage:
+            language === "pt"
+              ? "Português"
+              : language === "es"
+              ? "Español"
+              : "English",
+          loanOfficer: officerForSummary,
+          assignedEmail: activeOfficer.email,
+          realtorName: `Realtor Status: ${realtorLabel}`,
+          realtorPhone: "",
+        },
+        trigger,
+        messages: [
+          ...conversation,
+          {
+            role: "user",
+            content: `Borrower intake summary:
+Transaction Type: ${transactionType}
+Realtor Status: ${realtorLabel}
+Selected Loan Officer: ${activeOfficer.name} — NMLS ${activeOfficer.nmls}
+Current State: ${currentState || "Not provided"}
+Target State: ${targetState || "Not provided"}
+Estimated Credit Score: ${credit || "Not provided"}
+Gross Monthly Income: ${income || "Not provided"}
+Monthly Debt: ${debt || "Not provided"}
+Home Price: ${homePrice || "Not provided"}
+Down Payment: ${downPayment || "Not provided"}
+Occupancy: ${occupancy || "Not provided"}
+Estimated Loan Amount: ${
+              estimatedLoanAmount ? String(estimatedLoanAmount) : "Not provided"
+            }
+Estimated LTV: ${estimatedLtv || "Not provided"}`,
+          },
+        ],
+      }),
+    });
+  };
 
   const runPreliminaryReview = async () => {
     setLoading(true);
@@ -894,16 +973,44 @@ export default function BorrowerPage() {
               <h2 style={styles.cardTitle}>{t.nextActions}</h2>
 
               <div style={styles.actionButtons}>
-                <a href={activeOfficer.applyUrl} target="_blank" rel="noreferrer" style={styles.primaryAction}>
+                <a
+                  href={activeOfficer.applyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.primaryAction}
+                  onClick={() => {
+                    void sendBorrowerSummary("apply");
+                  }}
+                >
                   {t.applyNow}
                 </a>
-                <a href={activeOfficer.scheduleUrl} target="_blank" rel="noreferrer" style={styles.secondaryAction}>
+                <a
+                  href={activeOfficer.scheduleUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.secondaryAction}
+                  onClick={() => {
+                    void sendBorrowerSummary("schedule");
+                  }}
+                >
                   {t.scheduleLoanOfficer}
                 </a>
-                <a href={emailHref} style={styles.outlineAction}>
+                <a
+                  href={emailHref}
+                  style={styles.outlineAction}
+                  onClick={() => {
+                    void sendBorrowerSummary("contact");
+                  }}
+                >
                   {t.emailLoanOfficer}
                 </a>
-                <a href={callHref} style={styles.outlineAction}>
+                <a
+                  href={callHref}
+                  style={styles.outlineAction}
+                  onClick={() => {
+                    void sendBorrowerSummary("contact");
+                  }}
+                >
                   {t.callLoanOfficer}
                 </a>
               </div>
