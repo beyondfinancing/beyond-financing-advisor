@@ -110,7 +110,7 @@ function TeamResetPasswordInner() {
     setStatus("");
 
     try {
-      const res = await fetch("/team/reset-password?token=...", {
+      const res = await fetch("/api/team-auth/reset-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -128,6 +128,10 @@ function TeamResetPasswordInner() {
       setStatus(t.success);
       setPassword("");
       setConfirmPassword("");
+
+      setTimeout(() => {
+        window.location.href = "/team";
+      }, 1500);
     } finally {
       setLoading(false);
     }
