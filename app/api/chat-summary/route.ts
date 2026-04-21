@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sendSmsAlert } from "@/lib/twilio";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -355,12 +356,43 @@ ${messages
       }),
     });
 
-    if (!resendResponse.ok) {
-      const error = await resendResponse.text();
-      return NextResponse.json({ success: false, error }, { status: 500 });
-    }
+if (!resendResponse.ok) {
+  const error = await resendResponse.text();
+  return NextResponse.json({ success: false, error }, { status: 500 });
+}
 
-    return NextResponse.json({ success: true });
+/**
+ * ✅ SMS ALERTS (NEW)
+ */
+try {
+  const smsMessage = `New Finley Beyond Lead:
+${fullName}
+${phone}
+
+Trigger: ${trigger}
+
+Check your email for full summary.`;
+
+  // 📲 Loan Officer SMS
+  if (phone) {
+    await sendSmsAlert({
+      to: phone,
+      body: smsMessage,
+    });
+  }
+
+  // 📲 Realtor SMS (courtesy notification)
+  if (realtorPhone) {
+    await sendSmsAlert({
+      to: realtorPhone,
+      body: `Update: Your client ${fullName} has engaged with Finley Beyond. The assigned loan officer is reviewing the scenario and will follow up shortly.`,
+    });
+  }
+} catch (smsError) {
+  console.error("SMS ERROR:", smsError);
+}
+
+return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json(
       { success: false, error: "Server error." },
