@@ -110,7 +110,7 @@ function TeamResetPasswordInner() {
     setStatus("");
 
     try {
-      const res = await fetch("/api/team-auth/reset-password", {
+      const res = await fetch("/team/reset-password?token=...", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
