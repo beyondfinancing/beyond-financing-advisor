@@ -236,10 +236,8 @@ const COPY = {
 } as const;
 
 function formatCurrency(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "$0";
+  if (!Number.isFinite(value) || value <= 0) return "0";
   return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
 }
@@ -480,6 +478,7 @@ const estimatedLoanAmount = useMemo(() => {
     setChatInput("");
     setLoading(false);
     setChatLoading(false);
+    setCompletedAction(null);
   };
   
   const sendBorrowerSummary = async (trigger: SummaryTrigger) => {
@@ -953,7 +952,10 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
 
               <button
                 type="button"
-                onClick={runPreliminaryReview}
+                onClick={async () => {
+                  setCompletedAction("review");
+                  await runPreliminaryReview();
+                }}
                 disabled={!accepted || loading}
                 style={{
                   ...styles.runButton,
@@ -1007,7 +1009,10 @@ Estimated LTV: ${estimatedLtv || "Not provided"}`,
 
               <button
                 type="button"
-                onClick={continueScenario}
+                onClick={async () => {
+                  setCompletedAction("scenario");
+                  await continueScenario();
+                }}
                 disabled={chatLoading}
                 style={{
                   ...styles.scenarioButton,
@@ -1514,38 +1519,52 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 12,
   },
-  primaryAction: {
-    display: "block",
+  primaryActionButton: {
+    width: "100%",
+    border: "none",
     textAlign: "center",
-    textDecoration: "none",
-    backgroundColor: "#263366",
-    color: "#FFFFFF",
-    borderRadius: 14,
-    padding: "14px 18px",
-    fontWeight: 700,
-    fontSize: 14,
-  },
-  secondaryAction: {
-    display: "block",
-    textAlign: "center",
-    textDecoration: "none",
     backgroundColor: "#1495C2",
     color: "#FFFFFF",
     borderRadius: 14,
     padding: "14px 18px",
     fontWeight: 700,
     fontSize: 14,
+    cursor: "pointer",
   },
-  outlineAction: {
-    display: "block",
+  secondaryActionButton: {
+    width: "100%",
+    border: "none",
     textAlign: "center",
-    textDecoration: "none",
-    backgroundColor: "#FFFFFF",
-    color: "#263366",
-    border: "1px solid #263366",
+    backgroundColor: "#1495C2",
+    color: "#FFFFFF",
     borderRadius: 14,
     padding: "14px 18px",
     fontWeight: 700,
     fontSize: 14,
+    cursor: "pointer",
   },
-};
+  outlineActionButton: {
+    width: "100%",
+    border: "1px solid #263366",
+    textAlign: "center",
+    backgroundColor: "#FFFFFF",
+    color: "#263366",
+    borderRadius: 14,
+    padding: "14px 18px",
+    fontWeight: 700,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  completedButton: {
+    backgroundColor: "#8B94B3",
+    color: "#FFFFFF",
+  },
+  actionCompletedButton: {
+    backgroundColor: "#263366",
+    color: "#FFFFFF",
+  },
+  actionCompletedOutlineButton: {
+    backgroundColor: "#263366",
+    color: "#FFFFFF",
+    border: "1px solid #263366",
+  },
