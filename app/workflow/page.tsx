@@ -108,6 +108,30 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatTargetClose(value: string) {
+  if (!value) return "";
+  const isoMatch = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!isoMatch) return value;
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("en-US").format(date);
+}
+
+function toDateInputValue(value: string) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getStatusLabel(status: WorkflowStatus) {
   switch (status) {
     case "new_scenario":
@@ -218,11 +242,12 @@ export default function WorkflowPage() {
   const [authCheckLoading, setAuthCheckLoading] = useState(true);
 
   const [files, setFiles] = useState<WorkflowFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(true);
   const [selectedFileId, setSelectedFileId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [assignedProcessor, setAssignedProcessor] =
-    useState("Amarilis Santos");
+    useState<string>("Amarilis Santos");
   const [targetCloseDate, setTargetCloseDate] = useState("");
   const [handoffUrgency, setHandoffUrgency] =
     useState<WorkflowUrgency>("Priority");
@@ -272,32 +297,41 @@ export default function WorkflowPage() {
   useEffect(() => {
     const loadFiles = async () => {
       try {
+        setFilesLoading(true);
+
         const res = await fetch("/api/workflow");
         const data = await res.json();
 
-        if (data?.files) {
-          setFiles(
-            (data.files as WorkflowApiFile[]).map((f) => ({
-              id: f.id,
-              borrowerName: f.borrower_name,
-              purpose: f.purpose,
-              amount: Number(f.amount || 0),
+        if (data?.files && Array.isArray(data.files)) {
+          const mappedFiles: WorkflowFile[] = (data.files as WorkflowApiFile[]).map(
+            (f) => ({
+              id: String(f.id ?? ""),
+              borrowerName: String(f.borrower_name ?? ""),
+              purpose: String(f.purpose ?? ""),
+              amount: Number(f.amount ?? 0),
               status: f.status,
               urgency: f.urgency,
-              loanOfficer: f.loan_officer,
-              processor: f.processor,
-              targetClose: f.target_close,
-              fileAgeDays: f.file_age_days,
-              occupancy: f.occupancy,
-              blocker: f.blocker,
-              nextInternalAction: f.next_internal_action,
-              nextBorrowerAction: f.next_borrower_action,
-              latestUpdate: f.latest_update,
-            }))
+              loanOfficer: String(f.loan_officer ?? ""),
+              processor: String(f.processor ?? ""),
+              targetClose: String(f.target_close ?? ""),
+              fileAgeDays: Number(f.file_age_days ?? 0),
+              occupancy: String(f.occupancy ?? ""),
+              blocker: String(f.blocker ?? ""),
+              nextInternalAction: String(f.next_internal_action ?? ""),
+              nextBorrowerAction: String(f.next_borrower_action ?? ""),
+              latestUpdate: String(f.latest_update ?? ""),
+            })
           );
+
+          setFiles(mappedFiles);
+        } else {
+          setFiles([]);
         }
       } catch (err) {
         console.error("Failed to load workflow files", err);
+        setFiles([]);
+      } finally {
+        setFilesLoading(false);
       }
     };
 
@@ -350,6 +384,14 @@ export default function WorkflowPage() {
     }
   }, [filteredFiles, selectedFile, selectedFileId]);
 
+  useEffect(() => {
+    if (!selectedFile) return;
+
+    setAssignedProcessor(selectedFile.processor || "Amarilis Santos");
+    setHandoffUrgency(selectedFile.urgency || "Priority");
+    setTargetCloseDate(toDateInputValue(selectedFile.targetClose));
+  }, [selectedFile]);
+
   const pipelineCounts = useMemo(() => {
     return {
       newScenario: files.filter((f) => f.status === "new_scenario").length,
@@ -399,8 +441,7 @@ export default function WorkflowPage() {
   const submitProcessingHandoff = () => {
     if (!selectedFile) return;
 
-    const effectiveTargetClose =
-      targetCloseDate.trim() || selectedFile.targetClose;
+    const effectiveTargetClose = targetCloseDate.trim() || selectedFile.targetClose;
 
     setFiles((prev) =>
       prev.map((file) =>
@@ -439,7 +480,6 @@ export default function WorkflowPage() {
 
     setHandoffStatus("Processing handoff triggered successfully.");
     setHandoffNote("");
-    setTargetCloseDate("");
   };
 
   const addInternalUpdate = () => {
@@ -688,91 +728,96 @@ export default function WorkflowPage() {
               <div style={styles.sectionEyebrow}>ACTIVE FILES</div>
               <h2 style={styles.sectionTitle}>Processing and handoff queue</h2>
 
-              <div style={styles.fileList}>
-                {filteredFiles.map((file) => {
-                  const statusTone = getStatusTone(file.status);
-                  const urgencyTone = getUrgencyTone(file.urgency);
-                  const isSelected = selectedFile?.id === file.id;
+              {filesLoading ? (
+                <div style={styles.placeholderBox}>Loading workflow files...</div>
+              ) : (
+                <div style={styles.fileList}>
+                  {filteredFiles.map((file) => {
+                    const statusTone = getStatusTone(file.status);
+                    const urgencyTone = getUrgencyTone(file.urgency);
+                    const isSelected = selectedFile?.id === file.id;
 
-                  return (
-                    <button
-                      key={file.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedFileId(file.id);
-                        setAssignedProcessor(file.processor);
-                        setHandoffUrgency(file.urgency);
-                        setHandoffStatus("");
-                      }}
-                      style={{
-                        ...styles.fileCard,
-                        ...(isSelected ? styles.fileCardSelected : {}),
-                      }}
-                    >
-                      <div style={styles.fileCardTop}>
-                        <div>
-                          <div style={styles.fileBorrower}>
-                            {file.borrowerName}
+                    return (
+                      <button
+                        key={file.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedFileId(file.id);
+                          setAssignedProcessor(file.processor);
+                          setHandoffUrgency(file.urgency);
+                          setTargetCloseDate(toDateInputValue(file.targetClose));
+                          setHandoffStatus("");
+                        }}
+                        style={{
+                          ...styles.fileCard,
+                          ...(isSelected ? styles.fileCardSelected : {}),
+                        }}
+                      >
+                        <div style={styles.fileCardTop}>
+                          <div>
+                            <div style={styles.fileBorrower}>
+                              {file.borrowerName}
+                            </div>
+                            <div style={styles.fileMeta}>
+                              {file.id} · {file.purpose} ·{" "}
+                              {formatCurrency(file.amount)}
+                            </div>
                           </div>
-                          <div style={styles.fileMeta}>
-                            {file.id} · {file.purpose} ·{" "}
-                            {formatCurrency(file.amount)}
+
+                          <div style={styles.badgeRow}>
+                            <span
+                              style={{
+                                ...styles.badge,
+                                backgroundColor: statusTone.bg,
+                                borderColor: statusTone.border,
+                                color: statusTone.text,
+                              }}
+                            >
+                              {getStatusLabel(file.status)}
+                            </span>
+
+                            <span
+                              style={{
+                                ...styles.badge,
+                                backgroundColor: urgencyTone.bg,
+                                borderColor: urgencyTone.border,
+                                color: urgencyTone.text,
+                              }}
+                            >
+                              {file.urgency}
+                            </span>
                           </div>
                         </div>
 
-                        <div style={styles.badgeRow}>
-                          <span
-                            style={{
-                              ...styles.badge,
-                              backgroundColor: statusTone.bg,
-                              borderColor: statusTone.border,
-                              color: statusTone.text,
-                            }}
-                          >
-                            {getStatusLabel(file.status)}
-                          </span>
-
-                          <span
-                            style={{
-                              ...styles.badge,
-                              backgroundColor: urgencyTone.bg,
-                              borderColor: urgencyTone.border,
-                              color: urgencyTone.text,
-                            }}
-                          >
-                            {file.urgency}
-                          </span>
+                        <div className="bf-mini-grid" style={styles.miniGrid}>
+                          <MiniDataCard
+                            label="LOAN OFFICER"
+                            value={file.loanOfficer}
+                          />
+                          <MiniDataCard
+                            label="PROCESSOR"
+                            value={file.processor}
+                          />
+                          <MiniDataCard
+                            label="TARGET CLOSE"
+                            value={formatTargetClose(file.targetClose)}
+                          />
+                          <MiniDataCard
+                            label="FILE AGE"
+                            value={`${file.fileAgeDays} days`}
+                          />
                         </div>
-                      </div>
+                      </button>
+                    );
+                  })}
 
-                      <div className="bf-mini-grid" style={styles.miniGrid}>
-                        <MiniDataCard
-                          label="LOAN OFFICER"
-                          value={file.loanOfficer}
-                        />
-                        <MiniDataCard
-                          label="PROCESSOR"
-                          value={file.processor}
-                        />
-                        <MiniDataCard
-                          label="TARGET CLOSE"
-                          value={file.targetClose}
-                        />
-                        <MiniDataCard
-                          label="FILE AGE"
-                          value={`${file.fileAgeDays} days`}
-                        />
-                      </div>
-                    </button>
-                  );
-                })}
-
-                {filteredFiles.length === 0 ? (
-                  <div style={styles.placeholderBox}>
-                    No files match the current search.
-                  </div>
-                ) : null}
-              </div>
+                  {filteredFiles.length === 0 ? (
+                    <div style={styles.placeholderBox}>
+                      No files match the current search.
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div style={styles.card}>
@@ -780,20 +825,26 @@ export default function WorkflowPage() {
               <h2 style={styles.sectionTitle}>Files needing attention</h2>
 
               <div style={styles.attentionList}>
-                {urgentItems.map((item) => (
-                  <div key={`urgent-${item.id}`} style={styles.attentionCard}>
-                    <div>
-                      <div style={styles.attentionName}>
-                        {item.borrowerName}
-                      </div>
-                      <div style={styles.attentionMeta}>
-                        {getStatusLabel(item.status)} · {item.fileAgeDays} days
-                        in workflow
-                      </div>
-                    </div>
-                    <div style={styles.attentionIssue}>{item.blocker}</div>
+                {urgentItems.length === 0 ? (
+                  <div style={styles.placeholderBox}>
+                    No urgent items are currently flagged.
                   </div>
-                ))}
+                ) : (
+                  urgentItems.map((item) => (
+                    <div key={`urgent-${item.id}`} style={styles.attentionCard}>
+                      <div>
+                        <div style={styles.attentionName}>
+                          {item.borrowerName}
+                        </div>
+                        <div style={styles.attentionMeta}>
+                          {getStatusLabel(item.status)} · {item.fileAgeDays} days
+                          in workflow
+                        </div>
+                      </div>
+                      <div style={styles.attentionIssue}>{item.blocker}</div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -869,7 +920,7 @@ export default function WorkflowPage() {
                     />
                     <MiniDataCard
                       label="TARGET CLOSE"
-                      value={selectedFile.targetClose}
+                      value={formatTargetClose(selectedFile.targetClose)}
                     />
                     <MiniDataCard
                       label="LOAN PURPOSE"
@@ -1094,12 +1145,8 @@ function PipelineCard({
         borderColor: tone.border,
       }}
     >
-      <div style={{ ...styles.pipelineLabel, color: tone.text }}>
-        {label}
-      </div>
-      <div style={{ ...styles.pipelineValue, color: tone.text }}>
-        {value}
-      </div>
+      <div style={{ ...styles.pipelineLabel, color: tone.text }}>{label}</div>
+      <div style={{ ...styles.pipelineValue, color: tone.text }}>{value}</div>
     </div>
   );
 }
@@ -1495,6 +1542,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#64748B",
     fontSize: 14,
     lineHeight: 1.5,
+    wordBreak: "break-word",
   },
   badgeRow: {
     display: "flex",
@@ -1533,6 +1581,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     color: "#2D3B78",
     lineHeight: 1.5,
+    wordBreak: "break-word",
   },
   commandTopRow: {
     display: "flex",
@@ -1557,6 +1606,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     lineHeight: 1.65,
     marginTop: 12,
+    wordBreak: "break-word",
   },
   label: {
     display: "block",
