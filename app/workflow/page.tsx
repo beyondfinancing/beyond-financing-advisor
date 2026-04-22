@@ -6,6 +6,8 @@ type TeamRole =
   | "Loan Officer"
   | "Loan Officer Assistant"
   | "Processor"
+  | "Production Manager"
+  | "Branch Manager"
   | "Real Estate Agent";
 
 type TeamUser = {
@@ -46,6 +48,8 @@ type WorkflowFile = {
   urgency: WorkflowUrgency;
   loanOfficer: string;
   processor: string;
+  productionManager: string;
+  requestedProcessorNote: string;
   targetClose: string;
   fileAgeDays: number;
   occupancy: string;
@@ -63,7 +67,9 @@ type WorkflowApiFile = {
   status: WorkflowStatus;
   urgency: WorkflowUrgency;
   loan_officer: string;
-  processor: string;
+  processor: string | null;
+  production_manager?: string | null;
+  requested_processor_note?: string | null;
   target_close: string | null;
   file_age_days: number | null;
   occupancy: string;
@@ -335,7 +341,7 @@ export default function WorkflowPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [assignedProcessor, setAssignedProcessor] =
-    useState<string>("Amarilis Santos");
+    useState<string>("Unassigned");
   const [targetCloseDate, setTargetCloseDate] = useState("");
   const [handoffUrgency, setHandoffUrgency] =
     useState<WorkflowUrgency>("Priority");
@@ -349,17 +355,47 @@ export default function WorkflowPage() {
   const [createPurpose, setCreatePurpose] = useState("Purchase");
   const [createAmount, setCreateAmount] = useState("");
   const [createLoanOfficer, setCreateLoanOfficer] = useState("");
-  const [createProcessor, setCreateProcessor] = useState("Amarilis Santos");
+  const [createProcessor, setCreateProcessor] = useState("Unassigned");
   const [createTargetClose, setCreateTargetClose] = useState("");
   const [createUrgency, setCreateUrgency] =
     useState<WorkflowUrgency>("Priority");
   const [createOccupancy, setCreateOccupancy] =
     useState("Primary Residence");
   const [createBlocker, setCreateBlocker] = useState("None currently.");
+  const [createRequestedProcessorNote, setCreateRequestedProcessorNote] =
+    useState("");
   const [createStatusMessage, setCreateStatusMessage] = useState("");
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [isSavingFeed, setIsSavingFeed] = useState(false);
   const [isSavingHandoff, setIsSavingHandoff] = useState(false);
+  const [isSavingFileEdit, setIsSavingFileEdit] = useState(false);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
+  const [fileEditStatus, setFileEditStatus] = useState("");
+
+  const [editBorrowerName, setEditBorrowerName] = useState("");
+  const [editPurpose, setEditPurpose] = useState("Purchase");
+  const [editAmount, setEditAmount] = useState("");
+  const [editLoanOfficer, setEditLoanOfficer] = useState("");
+  const [editStatus, setEditStatus] = useState<WorkflowStatus>("new_scenario");
+  const [editUrgency, setEditUrgency] =
+    useState<WorkflowUrgency>("Priority");
+  const [editOccupancy, setEditOccupancy] = useState("Primary Residence");
+  const [editTargetClose, setEditTargetClose] = useState("");
+  const [editBlocker, setEditBlocker] = useState("");
+  const [editNextInternalAction, setEditNextInternalAction] = useState("");
+  const [editNextBorrowerAction, setEditNextBorrowerAction] = useState("");
+  const [editLatestUpdate, setEditLatestUpdate] = useState("");
+  const [editRequestedProcessorNote, setEditRequestedProcessorNote] =
+    useState("");
+  const [editProcessor, setEditProcessor] = useState("Unassigned");
+
+  const canManageProcessing =
+    activeUser?.role === "Production Manager" ||
+    activeUser?.name === "Amarilis Santos";
+
+  const canDeleteFile =
+    activeUser?.role === "Branch Manager" ||
+    activeUser?.name === "Sandro Pansini Souza";
 
   const loadFiles = useCallback(async (preferredSelectedFileId?: string) => {
     try {
@@ -377,7 +413,13 @@ export default function WorkflowPage() {
             status: f.status,
             urgency: f.urgency,
             loanOfficer: String(f.loan_officer ?? ""),
-            processor: String(f.processor ?? ""),
+            processor: String(f.processor ?? "Unassigned"),
+            productionManager: String(
+              f.production_manager ?? "Pending Assignment"
+            ),
+            requestedProcessorNote: String(
+              f.requested_processor_note ?? ""
+            ),
             targetClose: String(f.target_close ?? ""),
             fileAgeDays: Number(f.file_age_days ?? 0),
             occupancy: String(f.occupancy ?? ""),
@@ -476,6 +518,7 @@ export default function WorkflowPage() {
         file.borrowerName,
         file.loanOfficer,
         file.processor,
+        file.productionManager,
         file.id,
         file.purpose,
         getStatusLabel(file.status),
@@ -514,9 +557,26 @@ export default function WorkflowPage() {
       return;
     }
 
-    setAssignedProcessor(selectedFile.processor || "Amarilis Santos");
+    setAssignedProcessor(selectedFile.processor || "Unassigned");
     setHandoffUrgency(selectedFile.urgency || "Priority");
     setTargetCloseDate(toDateInputValue(selectedFile.targetClose));
+
+    setEditBorrowerName(selectedFile.borrowerName);
+    setEditPurpose(selectedFile.purpose);
+    setEditAmount(String(selectedFile.amount || ""));
+    setEditLoanOfficer(selectedFile.loanOfficer);
+    setEditStatus(selectedFile.status);
+    setEditUrgency(selectedFile.urgency);
+    setEditOccupancy(selectedFile.occupancy);
+    setEditTargetClose(toDateInputValue(selectedFile.targetClose));
+    setEditBlocker(selectedFile.blocker);
+    setEditNextInternalAction(selectedFile.nextInternalAction);
+    setEditNextBorrowerAction(selectedFile.nextBorrowerAction);
+    setEditLatestUpdate(selectedFile.latestUpdate);
+    setEditRequestedProcessorNote(selectedFile.requestedProcessorNote || "");
+    setEditProcessor(selectedFile.processor || "Unassigned");
+    setFileEditStatus("");
+
     loadFeed(selectedFile.id);
   }, [selectedFile, loadFeed]);
 
@@ -606,6 +666,7 @@ export default function WorkflowPage() {
           urgency: createUrgency,
           occupancy: createOccupancy,
           blocker: createBlocker,
+          requestedProcessorNote: createRequestedProcessorNote,
           author: activeUser?.name || "Team User",
           role: activeUser?.role || "Professional",
         }),
@@ -625,11 +686,12 @@ export default function WorkflowPage() {
       setCreateBorrowerName("");
       setCreatePurpose("Purchase");
       setCreateAmount("");
-      setCreateProcessor("Amarilis Santos");
+      setCreateProcessor("Unassigned");
       setCreateTargetClose("");
       setCreateUrgency("Priority");
       setCreateOccupancy("Primary Residence");
       setCreateBlocker("None currently.");
+      setCreateRequestedProcessorNote("");
       setCreateStatusMessage("Workflow file created successfully.");
 
       await loadFiles(newId);
@@ -641,6 +703,104 @@ export default function WorkflowPage() {
       setCreateStatusMessage("Unable to create workflow file.");
     } finally {
       setIsCreatingFile(false);
+    }
+  };
+
+  const saveFileEdits = async () => {
+    if (!selectedFile) return;
+
+    try {
+      setIsSavingFileEdit(true);
+      setFileEditStatus("");
+
+      const response = await fetch("/api/workflow", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "update_file",
+          workflowFileId: selectedFile.id,
+          borrowerName: editBorrowerName,
+          purpose: editPurpose,
+          amount: Number(editAmount || 0),
+          loanOfficer: editLoanOfficer,
+          status: editStatus,
+          urgency: editUrgency,
+          occupancy: editOccupancy,
+          targetClose: editTargetClose,
+          blocker: editBlocker,
+          nextInternalAction: editNextInternalAction,
+          nextBorrowerAction: editNextBorrowerAction,
+          latestUpdate: editLatestUpdate,
+          requestedProcessorNote: editRequestedProcessorNote,
+          processor: editProcessor,
+          author: activeUser?.name || "Team User",
+          role: activeUser?.role || "Professional",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        setFileEditStatus(data?.error || "Unable to save file changes.");
+        return;
+      }
+
+      await loadFiles(selectedFile.id);
+      await loadFeed(selectedFile.id);
+      setFileEditStatus("File changes saved successfully.");
+    } catch (err) {
+      console.error(err);
+      setFileEditStatus("Unable to save file changes.");
+    } finally {
+      setIsSavingFileEdit(false);
+    }
+  };
+
+  const deleteSelectedFile = async () => {
+    if (!selectedFile) return;
+
+    const confirmed = window.confirm(
+      `Delete workflow file for ${selectedFile.borrowerName}? This cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsDeletingFile(true);
+      setFileEditStatus("");
+
+      const response = await fetch("/api/workflow", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workflowFileId: selectedFile.id,
+          author: activeUser?.name || "Team User",
+          role: activeUser?.role || "Professional",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        setFileEditStatus(data?.error || "Unable to delete file.");
+        return;
+      }
+
+      const remaining = files.filter((item) => item.id !== selectedFile.id);
+      const nextSelectedId = remaining[0]?.id || "";
+      await loadFiles(nextSelectedId);
+      setSelectedFileId(nextSelectedId);
+      setFeedItems([]);
+      setFileEditStatus("File deleted successfully.");
+    } catch (err) {
+      console.error(err);
+      setFileEditStatus("Unable to delete file.");
+    } finally {
+      setIsDeletingFile(false);
     }
   };
 
@@ -678,7 +838,11 @@ export default function WorkflowPage() {
       await loadFiles(selectedFile.id);
       await loadFeed(selectedFile.id);
 
-      setHandoffStatus("Processing handoff triggered successfully.");
+      setHandoffStatus(
+        canManageProcessing
+          ? "Processing handoff and processor assignment saved successfully."
+          : "Processing note sent successfully. Processor assignment remains under Production Manager control."
+      );
       setHandoffNote("");
     } catch (err) {
       console.error(err);
@@ -805,7 +969,7 @@ export default function WorkflowPage() {
                 through closing.
               </h1>
               <p style={styles.heroText}>
-                Built for loan officers, processors, assistants, and leadership
+                Built for loan officers, processors, assistants, leadership
                 teams who need one disciplined operating layer to manage file
                 handoff, milestone visibility, accountability, and internal
                 communication from processing entry to clear-to-close.
@@ -825,16 +989,10 @@ export default function WorkflowPage() {
               <div style={styles.heroPurposeCard}>
                 <div style={styles.heroPurposeTitle}>COMMAND PURPOSE</div>
                 <div style={styles.heroPurposeList}>
-                  <div>
-                    • Trigger processing handoff with structure and urgency.
-                  </div>
-                  <div>
-                    • Keep loan officer and processor aligned in one file room.
-                  </div>
-                  <div>
-                    • Track milestones, blockers, and next actions visibly.
-                  </div>
-                  <div>• Reduce drift between pre-approval and close.</div>
+                  <div>• Trigger processing handoff with structure and urgency.</div>
+                  <div>• Keep loan officer and processor aligned in one file room.</div>
+                  <div>• Track milestones, blockers, and next actions visibly.</div>
+                  <div>• Keep production assignment under Production Manager control.</div>
                 </div>
 
                 <div style={styles.heroActionRow}>
@@ -893,7 +1051,7 @@ export default function WorkflowPage() {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search borrower, loan officer, processor, file ID, or purpose"
+                placeholder="Search borrower, loan officer, production manager, processor, file ID, or purpose"
                 style={styles.searchInput}
               />
             </div>
@@ -980,8 +1138,7 @@ export default function WorkflowPage() {
                               {file.borrowerName}
                             </div>
                             <div style={styles.fileMeta}>
-                              {file.id} · {file.purpose} ·{" "}
-                              {formatCurrency(file.amount)}
+                              {file.id} · {file.purpose} · {formatCurrency(file.amount)}
                             </div>
                           </div>
 
@@ -1016,8 +1173,12 @@ export default function WorkflowPage() {
                             value={file.loanOfficer}
                           />
                           <MiniDataCard
+                            label="PRODUCTION MANAGER"
+                            value={file.productionManager || "Pending Assignment"}
+                          />
+                          <MiniDataCard
                             label="PROCESSOR"
-                            value={file.processor}
+                            value={file.processor || "Unassigned"}
                           />
                           <MiniDataCard
                             label="TARGET CLOSE"
@@ -1026,6 +1187,10 @@ export default function WorkflowPage() {
                           <MiniDataCard
                             label="FILE AGE"
                             value={`${file.fileAgeDays} days`}
+                          />
+                          <MiniDataCard
+                            label="REQUESTED PROCESSOR NOTE"
+                            value={file.requestedProcessorNote || "None"}
                           />
                         </div>
                       </button>
@@ -1058,8 +1223,8 @@ export default function WorkflowPage() {
                           {item.borrowerName}
                         </div>
                         <div style={styles.attentionMeta}>
-                          {getStatusLabel(item.status)} · {item.fileAgeDays} days
-                          in workflow
+                          {getStatusLabel(item.status)} · {item.fileAgeDays} days in
+                          workflow
                         </div>
                       </div>
                       <div style={styles.attentionIssue}>{item.blocker}</div>
@@ -1160,18 +1325,35 @@ export default function WorkflowPage() {
                 placeholder="Loan officer name"
               />
 
+              <label style={styles.label}>Requested processor note to Production Manager</label>
+              <textarea
+                value={createRequestedProcessorNote}
+                onChange={(e) => setCreateRequestedProcessorNote(e.target.value)}
+                rows={3}
+                style={styles.textarea}
+                placeholder="Example: If possible, I would like Bia Marques on this file because of borrower language needs."
+              />
+
               <label style={styles.label}>Assign processor</label>
               <select
                 value={createProcessor}
                 onChange={(e) => setCreateProcessor(e.target.value)}
                 style={styles.input}
+                disabled={!canManageProcessing}
               >
+                <option value="Unassigned">Unassigned</option>
                 {PROCESSORS.map((processor) => (
                   <option key={processor.id} value={processor.name}>
                     {processor.name}
                   </option>
                 ))}
               </select>
+              {!canManageProcessing ? (
+                <div style={styles.infoBox}>
+                  Processor assignment is controlled by the Production Manager.
+                  Loan Officers may leave a requested processor note above.
+                </div>
+              ) : null}
 
               <label style={styles.label}>Target close date</label>
               <input
@@ -1252,8 +1434,12 @@ export default function WorkflowPage() {
                       value={selectedFile.loanOfficer}
                     />
                     <MiniDataCard
+                      label="PRODUCTION MANAGER"
+                      value={selectedFile.productionManager || "Pending Assignment"}
+                    />
+                    <MiniDataCard
                       label="PROCESSOR"
-                      value={selectedFile.processor}
+                      value={selectedFile.processor || "Unassigned"}
                     />
                     <MiniDataCard
                       label="TARGET CLOSE"
@@ -1270,6 +1456,10 @@ export default function WorkflowPage() {
                     <MiniDataCard
                       label="AMOUNT"
                       value={formatCurrency(selectedFile.amount)}
+                    />
+                    <MiniDataCard
+                      label="REQUESTED PROCESSOR NOTE"
+                      value={selectedFile.requestedProcessorNote || "None"}
                     />
                   </div>
 
@@ -1297,6 +1487,190 @@ export default function WorkflowPage() {
             </div>
 
             <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>EDIT FILE</div>
+              <h2 style={styles.sectionTitle}>Update workflow file</h2>
+
+              {selectedFile ? (
+                <>
+                  <label style={styles.label}>Borrower full name</label>
+                  <input
+                    value={editBorrowerName}
+                    onChange={(e) => setEditBorrowerName(e.target.value)}
+                    style={styles.input}
+                  />
+
+                  <label style={styles.label}>Loan purpose</label>
+                  <select
+                    value={editPurpose}
+                    onChange={(e) => setEditPurpose(e.target.value)}
+                    style={styles.input}
+                  >
+                    <option value="Purchase">Purchase</option>
+                    <option value="Rate/Term Refinance">Rate/Term Refinance</option>
+                    <option value="Cash-Out Refinance">Cash-Out Refinance</option>
+                    <option value="HELOC">HELOC</option>
+                    <option value="DSCR">DSCR</option>
+                  </select>
+
+                  <label style={styles.label}>Amount</label>
+                  <input
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    style={styles.input}
+                  />
+
+                  <label style={styles.label}>Loan officer</label>
+                  <input
+                    value={editLoanOfficer}
+                    onChange={(e) => setEditLoanOfficer(e.target.value)}
+                    style={styles.input}
+                  />
+
+                  <label style={styles.label}>Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as WorkflowStatus)}
+                    style={styles.input}
+                  >
+                    <option value="new_scenario">New Scenario</option>
+                    <option value="pre_approval_review">Pre-Approval Review</option>
+                    <option value="sent_to_processing">Sent to Processing</option>
+                    <option value="processing_active">Processing Active</option>
+                    <option value="submitted_to_lender">Submitted to Lender</option>
+                    <option value="conditional_approval">Conditional Approval</option>
+                    <option value="clear_to_close">Clear to Close</option>
+                    <option value="closed">Closed</option>
+                  </select>
+
+                  <label style={styles.label}>Urgency</label>
+                  <select
+                    value={editUrgency}
+                    onChange={(e) =>
+                      setEditUrgency(e.target.value as WorkflowUrgency)
+                    }
+                    style={styles.input}
+                  >
+                    <option value="Standard">Standard</option>
+                    <option value="Priority">Priority</option>
+                    <option value="Rush">Rush</option>
+                  </select>
+
+                  <label style={styles.label}>Occupancy</label>
+                  <input
+                    value={editOccupancy}
+                    onChange={(e) => setEditOccupancy(e.target.value)}
+                    style={styles.input}
+                  />
+
+                  <label style={styles.label}>Target close date</label>
+                  <input
+                    type="date"
+                    value={editTargetClose}
+                    onChange={(e) => setEditTargetClose(e.target.value)}
+                    style={styles.input}
+                  />
+
+                  <label style={styles.label}>Current blocker</label>
+                  <textarea
+                    value={editBlocker}
+                    onChange={(e) => setEditBlocker(e.target.value)}
+                    rows={3}
+                    style={styles.textarea}
+                  />
+
+                  <label style={styles.label}>Next internal action</label>
+                  <textarea
+                    value={editNextInternalAction}
+                    onChange={(e) => setEditNextInternalAction(e.target.value)}
+                    rows={3}
+                    style={styles.textarea}
+                  />
+
+                  <label style={styles.label}>Next borrower action</label>
+                  <textarea
+                    value={editNextBorrowerAction}
+                    onChange={(e) => setEditNextBorrowerAction(e.target.value)}
+                    rows={3}
+                    style={styles.textarea}
+                  />
+
+                  <label style={styles.label}>Latest file update</label>
+                  <textarea
+                    value={editLatestUpdate}
+                    onChange={(e) => setEditLatestUpdate(e.target.value)}
+                    rows={3}
+                    style={styles.textarea}
+                  />
+
+                  <label style={styles.label}>Requested processor note to Production Manager</label>
+                  <textarea
+                    value={editRequestedProcessorNote}
+                    onChange={(e) => setEditRequestedProcessorNote(e.target.value)}
+                    rows={3}
+                    style={styles.textarea}
+                  />
+
+                  <label style={styles.label}>Production Manager</label>
+                  <input
+                    value={selectedFile.productionManager || "Pending Assignment"}
+                    readOnly
+                    style={styles.inputReadOnly}
+                  />
+
+                  <label style={styles.label}>Assigned processor</label>
+                  <select
+                    value={editProcessor}
+                    onChange={(e) => setEditProcessor(e.target.value)}
+                    style={canManageProcessing ? styles.input : styles.inputReadOnly}
+                    disabled={!canManageProcessing}
+                  >
+                    <option value="Unassigned">Unassigned</option>
+                    {PROCESSORS.map((processor) => (
+                      <option key={processor.id} value={processor.name}>
+                        {processor.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {!canManageProcessing ? (
+                    <div style={styles.infoBox}>
+                      Only the Production Manager can assign or change the processor.
+                      Loan Officers may update the requested processor note instead.
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={saveFileEdits}
+                    style={styles.commandButton}
+                    disabled={isSavingFileEdit}
+                  >
+                    {isSavingFileEdit ? "Saving File..." : "Save File Changes"}
+                  </button>
+
+                  {canDeleteFile ? (
+                    <button
+                      type="button"
+                      onClick={deleteSelectedFile}
+                      style={styles.deleteButton}
+                      disabled={isDeletingFile}
+                    >
+                      {isDeletingFile ? "Deleting File..." : "Delete File"}
+                    </button>
+                  ) : null}
+
+                  {fileEditStatus ? (
+                    <div style={styles.infoBox}>{fileEditStatus}</div>
+                  ) : null}
+                </>
+              ) : (
+                <div style={styles.placeholderBox}>
+                  Select a file to edit.
+                </div>
+              )}
+            </div>
+
+            <div style={styles.card}>
               <div style={styles.sectionEyebrow}>PROCESSING HANDOFF</div>
               <h2 style={styles.sectionTitle}>Trigger and alert processing</h2>
 
@@ -1304,14 +1678,23 @@ export default function WorkflowPage() {
               <select
                 value={assignedProcessor}
                 onChange={(e) => setAssignedProcessor(e.target.value)}
-                style={styles.input}
+                style={canManageProcessing ? styles.input : styles.inputReadOnly}
+                disabled={!canManageProcessing}
               >
+                <option value="Unassigned">Unassigned</option>
                 {PROCESSORS.map((processor) => (
                   <option key={processor.id} value={processor.name}>
                     {processor.name}
                   </option>
                 ))}
               </select>
+
+              {!canManageProcessing ? (
+                <div style={styles.infoBox}>
+                  Only the Production Manager can assign the processor. Your note
+                  below will be sent without changing processor ownership.
+                </div>
+              ) : null}
 
               <label style={styles.label}>Target close date</label>
               <input
@@ -1334,12 +1717,20 @@ export default function WorkflowPage() {
                 <option value="Rush">Rush</option>
               </select>
 
-              <label style={styles.label}>Handoff note</label>
+              <label style={styles.label}>
+                {canManageProcessing
+                  ? "Production Manager handoff note"
+                  : "Note to Production Manager"}
+              </label>
               <textarea
                 value={handoffNote}
                 onChange={(e) => setHandoffNote(e.target.value)}
                 rows={4}
-                placeholder="Example: Borrower already reviewed pre-approval terms. Income profile is stable. Please issue first processing checklist today."
+                placeholder={
+                  canManageProcessing
+                    ? "Example: Assigned to Bia Marques. Please issue first checklist today."
+                    : "Example: If possible, please assign Bia Marques because the borrower needs Portuguese support."
+                }
                 style={styles.textarea}
               />
 
@@ -1363,35 +1754,35 @@ export default function WorkflowPage() {
 
               <div style={styles.moduleStack}>
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Processing Handoff</div>
+                  <div style={styles.moduleTitle}>Production-Controlled Assignment</div>
                   <div style={styles.moduleText}>
-                    Loan officer triggers file handoff with processor
-                    assignment, urgency, and operational note in one action.
+                    Processor assignment is controlled by the Production Manager,
+                    while Loan Officers can still request a preferred processor
+                    through a documented note.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Open File Communication</div>
+                  <div style={styles.moduleTitle}>Editable File Workspace</div>
                   <div style={styles.moduleText}>
-                    Shared internal updates keep loan officer and processor
-                    aligned from handoff through close.
+                    The file can now be updated after creation so the team can
+                    maintain one current operational record.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Timeline Visibility</div>
+                  <div style={styles.moduleTitle}>Protected Deletion Authority</div>
                   <div style={styles.moduleText}>
-                    File age, milestone stage, target close date, and blockers
-                    stay visible to the team without losing context.
+                    Only the Branch Manager can delete a workflow file, which keeps
+                    file control disciplined and traceable.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Future LOS Connection</div>
+                  <div style={styles.moduleTitle}>Priority-First Queue</div>
                   <div style={styles.moduleText}>
-                    This command layer can later sit above systems like ARIVE as
-                    the coordination and intelligence layer rather than
-                    replacing the LOS.
+                    Rush files remain on top, then Priority, then Standard, so the
+                    most critical work stays visible first.
                   </div>
                 </div>
               </div>
@@ -1566,12 +1957,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffffff",
     boxShadow: "0 16px 34px rgba(38,51,102,0.16)",
     marginBottom: 20,
-  },
-  heroGrid: {
-    display: "grid",
-    gridTemplateColumns: "1.2fr 0.8fr",
-    gap: 22,
-    alignItems: "start",
   },
   workflowHeroTopBar: {
     display: "grid",
@@ -1964,6 +2349,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#0F172A",
     backgroundColor: "#ffffff",
   },
+  inputReadOnly: {
+    width: "100%",
+    borderRadius: 18,
+    border: "1px solid #D7E2F0",
+    padding: "13px 16px",
+    fontSize: 15,
+    outline: "none",
+    color: "#64748B",
+    backgroundColor: "#F8FAFC",
+  },
   textarea: {
     width: "100%",
     borderRadius: 18,
@@ -1987,6 +2382,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 16,
     cursor: "pointer",
     boxShadow: "0 10px 20px rgba(38,51,102,0.16)",
+  },
+  deleteButton: {
+    width: "100%",
+    marginTop: 12,
+    border: "none",
+    borderRadius: 20,
+    backgroundColor: "#B91C1C",
+    color: "#ffffff",
+    padding: "16px 20px",
+    fontWeight: 900,
+    fontSize: 16,
+    cursor: "pointer",
+    boxShadow: "0 10px 20px rgba(185,28,28,0.16)",
   },
   infoBox: {
     marginTop: 14,
