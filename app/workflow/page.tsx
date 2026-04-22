@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 type TeamRole =
   | "Loan Officer"
@@ -64,13 +64,22 @@ type WorkflowApiFile = {
   urgency: WorkflowUrgency;
   loan_officer: string;
   processor: string;
-  target_close: string;
-  file_age_days: number;
+  target_close: string | null;
+  file_age_days: number | null;
   occupancy: string;
   blocker: string;
   next_internal_action: string;
   next_borrower_action: string;
   latest_update: string;
+};
+
+type WorkflowFeedApiItem = {
+  id: string;
+  workflow_file_id: string;
+  author: string;
+  role: string;
+  text: string;
+  created_at: string;
 };
 
 type FeedItem = {
@@ -130,6 +139,36 @@ function toDateInputValue(value: string) {
   const month = String(parsed.getMonth() + 1).padStart(2, "0");
   const day = String(parsed.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatFeedTime(value: string) {
+  if (!value) return "Recent";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Recent";
+
+  const now = new Date();
+  const sameDay =
+    parsed.getFullYear() === now.getFullYear() &&
+    parsed.getMonth() === now.getMonth() &&
+    parsed.getDate() === now.getDate();
+
+  const time = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
+
+  if (sameDay) {
+    return `Today · ${time}`;
+  }
+
+  const date = new Intl.DateTimeFormat("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+  }).format(parsed);
+
+  return `${date} · ${time}`;
 }
 
 function getStatusLabel(status: WorkflowStatus) {
@@ -237,12 +276,61 @@ function getUrgencyTone(urgency: WorkflowUrgency) {
   }
 }
 
+function getUrgencyRank(urgency: WorkflowUrgency) {
+  switch (urgency) {
+    case "Rush":
+      return 3;
+    case "Priority":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function getStatusRank(status: WorkflowStatus) {
+  switch (status) {
+    case "conditional_approval":
+      return 8;
+    case "submitted_to_lender":
+      return 7;
+    case "processing_active":
+      return 6;
+    case "sent_to_processing":
+      return 5;
+    case "pre_approval_review":
+      return 4;
+    case "new_scenario":
+      return 3;
+    case "clear_to_close":
+      return 2;
+    case "closed":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function compareWorkflowFiles(a: WorkflowFile, b: WorkflowFile) {
+  const urgencyDiff = getUrgencyRank(b.urgency) - getUrgencyRank(a.urgency);
+  if (urgencyDiff !== 0) return urgencyDiff;
+
+  const statusDiff = getStatusRank(b.status) - getStatusRank(a.status);
+  if (statusDiff !== 0) return statusDiff;
+
+  const ageDiff = b.fileAgeDays - a.fileAgeDays;
+  if (ageDiff !== 0) return ageDiff;
+
+  return a.borrowerName.localeCompare(b.borrowerName);
+}
+
 export default function WorkflowPage() {
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
   const [authCheckLoading, setAuthCheckLoading] = useState(true);
 
   const [files, setFiles] = useState<WorkflowFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(true);
+  const [feedLoading, setFeedLoading] = useState(false);
+
   const [selectedFileId, setSelectedFileId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -255,22 +343,98 @@ export default function WorkflowPage() {
   const [handoffStatus, setHandoffStatus] = useState("");
 
   const [internalUpdateInput, setInternalUpdateInput] = useState("");
-  const [feedItems, setFeedItems] = useState<FeedItem[]>([
-    {
-      id: "feed-1",
-      author: "Sandro Pansini Souza",
-      role: "Loan Officer",
-      timeLabel: "Today · 9:18 AM",
-      text: "Borrower verbally confirmed funds are seasoned. Processor may proceed with checklist.",
-    },
-    {
-      id: "feed-2",
-      author: "Amarilis Santos",
-      role: "Processor",
-      timeLabel: "Today · 10:02 AM",
-      text: "Checklist drafted. Waiting on updated statements before I issue final processing request.",
-    },
-  ]);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+
+  const [createBorrowerName, setCreateBorrowerName] = useState("");
+  const [createPurpose, setCreatePurpose] = useState("Purchase");
+  const [createAmount, setCreateAmount] = useState("");
+  const [createLoanOfficer, setCreateLoanOfficer] = useState("");
+  const [createProcessor, setCreateProcessor] = useState("Amarilis Santos");
+  const [createTargetClose, setCreateTargetClose] = useState("");
+  const [createUrgency, setCreateUrgency] =
+    useState<WorkflowUrgency>("Priority");
+  const [createOccupancy, setCreateOccupancy] =
+    useState("Primary Residence");
+  const [createBlocker, setCreateBlocker] = useState("None currently.");
+  const [createStatusMessage, setCreateStatusMessage] = useState("");
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [isSavingFeed, setIsSavingFeed] = useState(false);
+  const [isSavingHandoff, setIsSavingHandoff] = useState(false);
+
+  const loadFiles = useCallback(async (preferredSelectedFileId?: string) => {
+    try {
+      setFilesLoading(true);
+
+      const res = await fetch("/api/workflow", { cache: "no-store" });
+      const data = await res.json();
+
+      const mappedFiles: WorkflowFile[] = Array.isArray(data?.files)
+        ? (data.files as WorkflowApiFile[]).map((f) => ({
+            id: String(f.id ?? ""),
+            borrowerName: String(f.borrower_name ?? ""),
+            purpose: String(f.purpose ?? ""),
+            amount: Number(f.amount ?? 0),
+            status: f.status,
+            urgency: f.urgency,
+            loanOfficer: String(f.loan_officer ?? ""),
+            processor: String(f.processor ?? ""),
+            targetClose: String(f.target_close ?? ""),
+            fileAgeDays: Number(f.file_age_days ?? 0),
+            occupancy: String(f.occupancy ?? ""),
+            blocker: String(f.blocker ?? ""),
+            nextInternalAction: String(f.next_internal_action ?? ""),
+            nextBorrowerAction: String(f.next_borrower_action ?? ""),
+            latestUpdate: String(f.latest_update ?? ""),
+          }))
+        : [];
+
+      setFiles(mappedFiles);
+
+      if (preferredSelectedFileId) {
+        setSelectedFileId(preferredSelectedFileId);
+      } else if (!selectedFileId && mappedFiles[0]) {
+        setSelectedFileId(mappedFiles[0].id);
+      }
+    } catch (err) {
+      console.error("Failed to load workflow files", err);
+      setFiles([]);
+    } finally {
+      setFilesLoading(false);
+    }
+  }, [selectedFileId]);
+
+  const loadFeed = useCallback(async (workflowFileId: string) => {
+    if (!workflowFileId) {
+      setFeedItems([]);
+      return;
+    }
+
+    try {
+      setFeedLoading(true);
+
+      const res = await fetch(`/api/workflow?fileId=${workflowFileId}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      const mappedFeed: FeedItem[] = Array.isArray(data?.feed)
+        ? (data.feed as WorkflowFeedApiItem[]).map((item) => ({
+            id: String(item.id),
+            author: String(item.author ?? ""),
+            role: String(item.role ?? ""),
+            timeLabel: formatFeedTime(String(item.created_at ?? "")),
+            text: String(item.text ?? ""),
+          }))
+        : [];
+
+      setFeedItems(mappedFeed);
+    } catch (err) {
+      console.error("Failed to load workflow feed", err);
+      setFeedItems([]);
+    } finally {
+      setFeedLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -282,6 +446,7 @@ export default function WorkflowPage() {
 
           if (data?.authenticated && data?.user) {
             setActiveUser(data.user);
+            setCreateLoanOfficer(data.user.name || "");
           }
         }
       } catch {
@@ -295,59 +460,18 @@ export default function WorkflowPage() {
   }, []);
 
   useEffect(() => {
-    const loadFiles = async () => {
-      try {
-        setFilesLoading(true);
-
-        const res = await fetch("/api/workflow");
-        const data = await res.json();
-
-        if (data?.files && Array.isArray(data.files)) {
-          const mappedFiles: WorkflowFile[] = (data.files as WorkflowApiFile[]).map(
-            (f) => ({
-              id: String(f.id ?? ""),
-              borrowerName: String(f.borrower_name ?? ""),
-              purpose: String(f.purpose ?? ""),
-              amount: Number(f.amount ?? 0),
-              status: f.status,
-              urgency: f.urgency,
-              loanOfficer: String(f.loan_officer ?? ""),
-              processor: String(f.processor ?? ""),
-              targetClose: String(f.target_close ?? ""),
-              fileAgeDays: Number(f.file_age_days ?? 0),
-              occupancy: String(f.occupancy ?? ""),
-              blocker: String(f.blocker ?? ""),
-              nextInternalAction: String(f.next_internal_action ?? ""),
-              nextBorrowerAction: String(f.next_borrower_action ?? ""),
-              latestUpdate: String(f.latest_update ?? ""),
-            })
-          );
-
-          setFiles(mappedFiles);
-        } else {
-          setFiles([]);
-        }
-      } catch (err) {
-        console.error("Failed to load workflow files", err);
-        setFiles([]);
-      } finally {
-        setFilesLoading(false);
-      }
-    };
-
     loadFiles();
-  }, []);
+  }, [loadFiles]);
 
-  const handleSignOut = async () => {
-    await fetch("/api/team-auth/logout", { method: "POST" });
-    setActiveUser(null);
-  };
+  const sortedFiles = useMemo(() => {
+    return [...files].sort(compareWorkflowFiles);
+  }, [files]);
 
   const filteredFiles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return files;
+    if (!query) return sortedFiles;
 
-    return files.filter((file) => {
+    return sortedFiles.filter((file) => {
       const haystack = [
         file.borrowerName,
         file.loanOfficer,
@@ -361,13 +485,13 @@ export default function WorkflowPage() {
 
       return haystack.includes(query);
     });
-  }, [files, searchQuery]);
+  }, [sortedFiles, searchQuery]);
 
   const selectedFile =
     filteredFiles.find((file) => file.id === selectedFileId) ||
-    files.find((file) => file.id === selectedFileId) ||
+    sortedFiles.find((file) => file.id === selectedFileId) ||
     filteredFiles[0] ||
-    files[0] ||
+    sortedFiles[0] ||
     null;
 
   useEffect(() => {
@@ -385,12 +509,21 @@ export default function WorkflowPage() {
   }, [filteredFiles, selectedFile, selectedFileId]);
 
   useEffect(() => {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      setFeedItems([]);
+      return;
+    }
 
     setAssignedProcessor(selectedFile.processor || "Amarilis Santos");
     setHandoffUrgency(selectedFile.urgency || "Priority");
     setTargetCloseDate(toDateInputValue(selectedFile.targetClose));
-  }, [selectedFile]);
+    loadFeed(selectedFile.id);
+  }, [selectedFile, loadFeed]);
+
+  const handleSignOut = async () => {
+    await fetch("/api/team-auth/logout", { method: "POST" });
+    setActiveUser(null);
+  };
 
   const pipelineCounts = useMemo(() => {
     return {
@@ -432,75 +565,163 @@ export default function WorkflowPage() {
       )
     : 0;
 
-  const urgentItems = files.filter(
-    (file) =>
-      file.urgency !== "Standard" ||
-      file.blocker.toLowerCase() !== "none currently."
-  );
-
-  const submitProcessingHandoff = () => {
-    if (!selectedFile) return;
-
-    const effectiveTargetClose = targetCloseDate.trim() || selectedFile.targetClose;
-
-    setFiles((prev) =>
-      prev.map((file) =>
-        file.id === selectedFile.id
-          ? {
-              ...file,
-              status: "sent_to_processing",
-              processor: assignedProcessor || file.processor,
-              targetClose: effectiveTargetClose,
-              urgency: handoffUrgency,
-              latestUpdate:
-                handoffNote.trim() ||
-                "Loan officer triggered processing handoff through Team Workflow Intelligence.",
-              nextInternalAction:
-                "Processor to review handoff package and issue first checklist.",
-            }
-          : file
+  const urgentItems = useMemo(() => {
+    return [...files]
+      .filter(
+        (file) =>
+          file.urgency !== "Standard" ||
+          file.blocker.toLowerCase() !== "none currently."
       )
-    );
+      .sort(compareWorkflowFiles);
+  }, [files]);
 
-    const author = activeUser?.name || "Team User";
-    const role = activeUser?.role || "Professional";
+  const createWorkflowFile = async () => {
+    const borrowerName = createBorrowerName.trim();
+    const loanOfficer = createLoanOfficer.trim() || activeUser?.name || "";
 
-    setFeedItems((prev) => [
-      {
-        id: `feed-${Date.now()}`,
-        author,
-        role,
-        timeLabel: "Just now",
-        text:
-          handoffNote.trim() ||
-          `${selectedFile.borrowerName} sent to processing with ${handoffUrgency.toLowerCase()} visibility.`,
-      },
-      ...prev,
-    ]);
+    if (!borrowerName || !loanOfficer) {
+      setCreateStatusMessage(
+        "Borrower name and loan officer are required to create a workflow file."
+      );
+      return;
+    }
 
-    setHandoffStatus("Processing handoff triggered successfully.");
-    setHandoffNote("");
+    try {
+      setIsCreatingFile(true);
+      setCreateStatusMessage("");
+
+      const response = await fetch("/api/workflow", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "create_file",
+          borrowerName,
+          purpose: createPurpose,
+          amount: Number(createAmount || 0),
+          loanOfficer,
+          processor: createProcessor,
+          targetClose: createTargetClose,
+          urgency: createUrgency,
+          occupancy: createOccupancy,
+          blocker: createBlocker,
+          author: activeUser?.name || "Team User",
+          role: activeUser?.role || "Professional",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        setCreateStatusMessage(
+          data?.error || "Unable to create workflow file."
+        );
+        return;
+      }
+
+      const newId = String(data?.file?.id ?? "");
+
+      setCreateBorrowerName("");
+      setCreatePurpose("Purchase");
+      setCreateAmount("");
+      setCreateProcessor("Amarilis Santos");
+      setCreateTargetClose("");
+      setCreateUrgency("Priority");
+      setCreateOccupancy("Primary Residence");
+      setCreateBlocker("None currently.");
+      setCreateStatusMessage("Workflow file created successfully.");
+
+      await loadFiles(newId);
+      if (newId) {
+        await loadFeed(newId);
+      }
+    } catch (err) {
+      console.error(err);
+      setCreateStatusMessage("Unable to create workflow file.");
+    } finally {
+      setIsCreatingFile(false);
+    }
   };
 
-  const addInternalUpdate = () => {
+  const submitProcessingHandoff = async () => {
+    if (!selectedFile) return;
+
+    try {
+      setIsSavingHandoff(true);
+      setHandoffStatus("");
+
+      const response = await fetch("/api/workflow", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "handoff",
+          workflowFileId: selectedFile.id,
+          processor: assignedProcessor,
+          targetClose: targetCloseDate,
+          urgency: handoffUrgency,
+          handoffNote,
+          author: activeUser?.name || "Team User",
+          role: activeUser?.role || "Professional",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        setHandoffStatus(data?.error || "Unable to save handoff.");
+        return;
+      }
+
+      await loadFiles(selectedFile.id);
+      await loadFeed(selectedFile.id);
+
+      setHandoffStatus("Processing handoff triggered successfully.");
+      setHandoffNote("");
+    } catch (err) {
+      console.error(err);
+      setHandoffStatus("Unable to save handoff.");
+    } finally {
+      setIsSavingHandoff(false);
+    }
+  };
+
+  const addInternalUpdate = async () => {
     const trimmed = internalUpdateInput.trim();
-    if (!trimmed) return;
+    if (!trimmed || !selectedFile) return;
 
-    const author = activeUser?.name || "Team User";
-    const role = activeUser?.role || "Professional";
+    try {
+      setIsSavingFeed(true);
 
-    setFeedItems((prev) => [
-      {
-        id: `feed-${Date.now()}`,
-        author,
-        role,
-        timeLabel: "Just now",
-        text: trimmed,
-      },
-      ...prev,
-    ]);
+      const response = await fetch("/api/workflow", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "add_feed",
+          workflowFileId: selectedFile.id,
+          author: activeUser?.name || "Team User",
+          role: activeUser?.role || "Professional",
+          text: trimmed,
+        }),
+      });
 
-    setInternalUpdateInput("");
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        return;
+      }
+
+      setInternalUpdateInput("");
+      await loadFeed(selectedFile.id);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSavingFeed(false);
+    }
   };
 
   if (authCheckLoading) {
@@ -866,27 +1087,143 @@ export default function WorkflowPage() {
                 type="button"
                 onClick={addInternalUpdate}
                 style={styles.gradientButton}
+                disabled={!selectedFile || isSavingFeed}
               >
-                Add Internal Update
+                {isSavingFeed ? "Saving Update..." : "Add Internal Update"}
               </button>
 
-              <div style={styles.feedList}>
-                {feedItems.map((item) => (
-                  <div key={item.id} style={styles.feedCard}>
-                    <div style={styles.feedHeader}>
-                      <div style={styles.feedAuthor}>{item.author}</div>
-                      <div style={styles.feedMeta}>
-                        {item.role} · {item.timeLabel}
-                      </div>
+              {feedLoading ? (
+                <div style={styles.placeholderBox}>Loading file activity...</div>
+              ) : (
+                <div style={styles.feedList}>
+                  {feedItems.length === 0 ? (
+                    <div style={styles.placeholderBox}>
+                      No internal updates yet for this file.
                     </div>
-                    <div style={styles.feedText}>{item.text}</div>
-                  </div>
-                ))}
-              </div>
+                  ) : (
+                    feedItems.map((item) => (
+                      <div key={item.id} style={styles.feedCard}>
+                        <div style={styles.feedHeader}>
+                          <div style={styles.feedAuthor}>{item.author}</div>
+                          <div style={styles.feedMeta}>
+                            {item.role} · {item.timeLabel}
+                          </div>
+                        </div>
+                        <div style={styles.feedText}>{item.text}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </section>
 
           <aside style={styles.column}>
+            <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>ADD LOAN APP</div>
+              <h2 style={styles.sectionTitle}>Create workflow file</h2>
+
+              <label style={styles.label}>Borrower full name</label>
+              <input
+                value={createBorrowerName}
+                onChange={(e) => setCreateBorrowerName(e.target.value)}
+                style={styles.input}
+                placeholder="Borrower full name"
+              />
+
+              <label style={styles.label}>Loan purpose</label>
+              <select
+                value={createPurpose}
+                onChange={(e) => setCreatePurpose(e.target.value)}
+                style={styles.input}
+              >
+                <option value="Purchase">Purchase</option>
+                <option value="Rate/Term Refinance">Rate/Term Refinance</option>
+                <option value="Cash-Out Refinance">Cash-Out Refinance</option>
+                <option value="HELOC">HELOC</option>
+                <option value="DSCR">DSCR</option>
+              </select>
+
+              <label style={styles.label}>Amount</label>
+              <input
+                value={createAmount}
+                onChange={(e) => setCreateAmount(e.target.value)}
+                style={styles.input}
+                placeholder="612000"
+              />
+
+              <label style={styles.label}>Loan officer</label>
+              <input
+                value={createLoanOfficer}
+                onChange={(e) => setCreateLoanOfficer(e.target.value)}
+                style={styles.input}
+                placeholder="Loan officer name"
+              />
+
+              <label style={styles.label}>Assign processor</label>
+              <select
+                value={createProcessor}
+                onChange={(e) => setCreateProcessor(e.target.value)}
+                style={styles.input}
+              >
+                {PROCESSORS.map((processor) => (
+                  <option key={processor.id} value={processor.name}>
+                    {processor.name}
+                  </option>
+                ))}
+              </select>
+
+              <label style={styles.label}>Target close date</label>
+              <input
+                type="date"
+                value={createTargetClose}
+                onChange={(e) => setCreateTargetClose(e.target.value)}
+                style={styles.input}
+              />
+
+              <label style={styles.label}>Urgency</label>
+              <select
+                value={createUrgency}
+                onChange={(e) =>
+                  setCreateUrgency(e.target.value as WorkflowUrgency)
+                }
+                style={styles.input}
+              >
+                <option value="Standard">Standard</option>
+                <option value="Priority">Priority</option>
+                <option value="Rush">Rush</option>
+              </select>
+
+              <label style={styles.label}>Occupancy</label>
+              <input
+                value={createOccupancy}
+                onChange={(e) => setCreateOccupancy(e.target.value)}
+                style={styles.input}
+                placeholder="Primary Residence"
+              />
+
+              <label style={styles.label}>Current blocker</label>
+              <textarea
+                value={createBlocker}
+                onChange={(e) => setCreateBlocker(e.target.value)}
+                rows={3}
+                style={styles.textarea}
+              />
+
+              <button
+                type="button"
+                onClick={createWorkflowFile}
+                style={styles.commandButton}
+                disabled={isCreatingFile}
+              >
+                {isCreatingFile ? "Creating File..." : "Add to Workflow"}
+              </button>
+
+              {createStatusMessage ? (
+                <div style={styles.infoBox}>{createStatusMessage}</div>
+              ) : null}
+            </div>
+
             <div style={styles.card}>
               <div style={styles.sectionEyebrow}>FILE COMMAND</div>
 
@@ -1010,8 +1347,9 @@ export default function WorkflowPage() {
                 type="button"
                 onClick={submitProcessingHandoff}
                 style={styles.commandButton}
+                disabled={!selectedFile || isSavingHandoff}
               >
-                Send to Processing
+                {isSavingHandoff ? "Saving..." : "Send to Processing"}
               </button>
 
               {handoffStatus ? (
