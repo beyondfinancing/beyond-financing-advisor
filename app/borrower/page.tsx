@@ -1194,7 +1194,7 @@ Keep the response practical and professional.`,
                 </div>
               )}
 
-              <div style={styles.chatArea}>
+                            <div style={styles.chatArea}>
                 {conversation.map((message, index) => (
                   <div
                     key={`${message.role}-${index}`}
@@ -1211,7 +1211,7 @@ Keep the response practical and professional.`,
                 ))}
               </div>
 
-                            <textarea
+              <textarea
                 style={styles.textarea}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
