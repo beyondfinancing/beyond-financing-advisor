@@ -102,9 +102,9 @@ const PROCESSORS = [
 const DEFAULT_PROCESSING_EMAIL = "myloan@beyondfinancing.com";
 
 const PROCESSOR_EMAILS: Record<string, string> = {
-  "Amarilis Santos": "myloan@beyondfinancing.com",
-  "Kyle Nicholson": "myloan@beyondfinancing.com",
-  "Bia Marques": "myloan@beyondfinancing.com",
+  "Amarilis Santos": "amarilis@beyondfinancing.com",
+  "Kyle Nicholson": "kyle@beyondfinancing.com",
+  "Bia Marques": "bia@beyondfinancing.com",
 };
 
 const LOAN_OFFICER_EMAILS: Record<string, string> = {
