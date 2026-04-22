@@ -367,6 +367,11 @@ export default function WorkflowPage() {
     loadFiles();
   }, [loadFiles]);
 
+  const handleSignOut = async () => {
+    await fetch("/api/team-auth/logout", { method: "POST" });
+    setActiveUser(null);
+  };
+
   const sortedFiles = useMemo(() => {
     return [...files].sort(compareWorkflowFiles);
   }, [files]);
