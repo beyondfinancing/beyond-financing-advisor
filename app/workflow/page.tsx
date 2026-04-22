@@ -55,6 +55,24 @@ type WorkflowFile = {
   latestUpdate: string;
 };
 
+type WorkflowApiFile = {
+  id: string;
+  borrower_name: string;
+  purpose: string;
+  amount: number | string | null;
+  status: WorkflowStatus;
+  urgency: WorkflowUrgency;
+  loan_officer: string;
+  processor: string;
+  target_close: string;
+  file_age_days: number;
+  occupancy: string;
+  blocker: string;
+  next_internal_action: string;
+  next_borrower_action: string;
+  latest_update: string;
+};
+
 type FeedItem = {
   id: string;
   author: string;
@@ -78,82 +96,6 @@ const PROCESSORS: ProcessorOption[] = [
     id: "bia-marques",
     name: "Bia Marques",
     email: "bia@beyondfinancing.com",
-  },
-];
-
-const INITIAL_FILES: WorkflowFile[] = [
-  {
-    id: "BF-24001",
-    borrowerName: "Mariana Costa",
-    purpose: "Purchase",
-    amount: 612000,
-    status: "sent_to_processing",
-    urgency: "Priority",
-    loanOfficer: "Sandro Pansini Souza",
-    processor: "Amarilis Santos",
-    targetClose: "5/17/2026",
-    fileAgeDays: 2,
-    occupancy: "Primary Residence",
-    blocker: "Awaiting updated bank statements.",
-    nextInternalAction: "Processor to issue first doc checklist.",
-    nextBorrowerAction: "Upload latest 2 months asset statements.",
-    latestUpdate:
-      "Initial processor handoff completed. Income docs under review.",
-  },
-  {
-    id: "BF-24002",
-    borrowerName: "Daniel Ribeiro",
-    purpose: "Rate/Term Refinance",
-    amount: 438500,
-    status: "processing_active",
-    urgency: "Standard",
-    loanOfficer: "Warren Wendt",
-    processor: "Kyle Nicholson",
-    targetClose: "5/10/2026",
-    fileAgeDays: 6,
-    occupancy: "Primary Residence",
-    blocker: "VOE pending from employer.",
-    nextInternalAction: "Follow up with employer verification vendor.",
-    nextBorrowerAction: "Confirm most recent paystub if requested.",
-    latestUpdate:
-      "Checklist drafted. Assets reviewed. Waiting on employment verification.",
-  },
-  {
-    id: "BF-24003",
-    borrowerName: "Patricia Mendez",
-    purpose: "Purchase",
-    amount: 829000,
-    status: "conditional_approval",
-    urgency: "Rush",
-    loanOfficer: "Sandro Pansini Souza",
-    processor: "Bia Marques",
-    targetClose: "5/26/2026",
-    fileAgeDays: 14,
-    occupancy: "Primary Residence",
-    blocker: "Conditions package not fully cleared.",
-    nextInternalAction: "Review lender condition list with borrower today.",
-    nextBorrowerAction:
-      "Provide updated large deposit letter and insurance binder.",
-    latestUpdate:
-      "Conditional approval received. Conditions list sent to borrower.",
-  },
-  {
-    id: "BF-24004",
-    borrowerName: "Lucas Andrade",
-    purpose: "HELOC",
-    amount: 185000,
-    status: "submitted_to_lender",
-    urgency: "Priority",
-    loanOfficer: "Nate Hubley",
-    processor: "Amarilis Santos",
-    targetClose: "5/7/2026",
-    fileAgeDays: 5,
-    occupancy: "Primary Residence",
-    blocker: "None currently.",
-    nextInternalAction: "Monitor lender turn time and appraisal status.",
-    nextBorrowerAction: "Stand by for lender follow-up if needed.",
-    latestUpdate:
-      "File submitted to lender. Waiting for initial lender response.",
   },
 ];
 
@@ -275,10 +217,8 @@ export default function WorkflowPage() {
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
   const [authCheckLoading, setAuthCheckLoading] = useState(true);
 
-  const [files, setFiles] = useState<WorkflowFile[]>(INITIAL_FILES);
-  const [selectedFileId, setSelectedFileId] = useState<string>(
-    INITIAL_FILES[0]?.id || ""
-  );
+  const [files, setFiles] = useState<WorkflowFile[]>([]);
+  const [selectedFileId, setSelectedFileId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [assignedProcessor, setAssignedProcessor] =
@@ -329,6 +269,41 @@ export default function WorkflowPage() {
     loadUser();
   }, []);
 
+  useEffect(() => {
+    const loadFiles = async () => {
+      try {
+        const res = await fetch("/api/workflow");
+        const data = await res.json();
+
+        if (data?.files) {
+          setFiles(
+            (data.files as WorkflowApiFile[]).map((f) => ({
+              id: f.id,
+              borrowerName: f.borrower_name,
+              purpose: f.purpose,
+              amount: Number(f.amount || 0),
+              status: f.status,
+              urgency: f.urgency,
+              loanOfficer: f.loan_officer,
+              processor: f.processor,
+              targetClose: f.target_close,
+              fileAgeDays: f.file_age_days,
+              occupancy: f.occupancy,
+              blocker: f.blocker,
+              nextInternalAction: f.next_internal_action,
+              nextBorrowerAction: f.next_borrower_action,
+              latestUpdate: f.latest_update,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Failed to load workflow files", err);
+      }
+    };
+
+    loadFiles();
+  }, []);
+
   const handleSignOut = async () => {
     await fetch("/api/team-auth/logout", { method: "POST" });
     setActiveUser(null);
@@ -363,6 +338,7 @@ export default function WorkflowPage() {
 
   useEffect(() => {
     if (!selectedFile && filteredFiles.length === 0) return;
+
     if (!selectedFileId && filteredFiles[0]) {
       setSelectedFileId(filteredFiles[0].id);
       return;
@@ -377,8 +353,9 @@ export default function WorkflowPage() {
   const pipelineCounts = useMemo(() => {
     return {
       newScenario: files.filter((f) => f.status === "new_scenario").length,
-      preApprovalReview: files.filter((f) => f.status === "pre_approval_review")
-        .length,
+      preApprovalReview: files.filter(
+        (f) => f.status === "pre_approval_review"
+      ).length,
       sentToProcessing: files.filter((f) => f.status === "sent_to_processing")
         .length,
       processingActive: files.filter((f) => f.status === "processing_active")
@@ -422,7 +399,8 @@ export default function WorkflowPage() {
   const submitProcessingHandoff = () => {
     if (!selectedFile) return;
 
-    const effectiveTargetClose = targetCloseDate.trim() || selectedFile.targetClose;
+    const effectiveTargetClose =
+      targetCloseDate.trim() || selectedFile.targetClose;
 
     setFiles((prev) =>
       prev.map((file) =>
@@ -496,7 +474,9 @@ export default function WorkflowPage() {
             <h1 style={styles.heroTitle}>
               Beyond Intelligence™ Team Workflow Intelligence
             </h1>
-            <p style={styles.heroText}>Loading protected workflow command center...</p>
+            <p style={styles.heroText}>
+              Loading protected workflow command center...
+            </p>
           </section>
         </div>
       </main>
@@ -515,8 +495,8 @@ export default function WorkflowPage() {
               Beyond Intelligence™ Team Workflow Intelligence
             </h1>
             <p style={styles.heroText}>
-              Processing handoff, file command, milestone visibility, and execution
-              tracking from pre-approval through closing.
+              Processing handoff, file command, milestone visibility, and
+              execution tracking from pre-approval through closing.
             </p>
           </section>
 
@@ -550,7 +530,10 @@ export default function WorkflowPage() {
         <TopNav active="workflow" />
 
         <section style={styles.hero}>
-          <div className="bf-workflow-hero-top" style={styles.workflowHeroTopBar}>
+          <div
+            className="bf-workflow-hero-top"
+            style={styles.workflowHeroTopBar}
+          >
             <div style={styles.workflowHeroLeft}>
               <div style={styles.heroBadge}>TEAM COMMAND CENTER</div>
               <h1 style={styles.heroTitle}>
@@ -581,9 +564,15 @@ export default function WorkflowPage() {
               <div style={styles.heroPurposeCard}>
                 <div style={styles.heroPurposeTitle}>COMMAND PURPOSE</div>
                 <div style={styles.heroPurposeList}>
-                  <div>• Trigger processing handoff with structure and urgency.</div>
-                  <div>• Keep loan officer and processor aligned in one file room.</div>
-                  <div>• Track milestones, blockers, and next actions visibly.</div>
+                  <div>
+                    • Trigger processing handoff with structure and urgency.
+                  </div>
+                  <div>
+                    • Keep loan officer and processor aligned in one file room.
+                  </div>
+                  <div>
+                    • Track milestones, blockers, and next actions visibly.
+                  </div>
                   <div>• Reduce drift between pre-approval and close.</div>
                 </div>
 
@@ -722,9 +711,12 @@ export default function WorkflowPage() {
                     >
                       <div style={styles.fileCardTop}>
                         <div>
-                          <div style={styles.fileBorrower}>{file.borrowerName}</div>
+                          <div style={styles.fileBorrower}>
+                            {file.borrowerName}
+                          </div>
                           <div style={styles.fileMeta}>
-                            {file.id} · {file.purpose} · {formatCurrency(file.amount)}
+                            {file.id} · {file.purpose} ·{" "}
+                            {formatCurrency(file.amount)}
                           </div>
                         </div>
 
@@ -754,9 +746,18 @@ export default function WorkflowPage() {
                       </div>
 
                       <div className="bf-mini-grid" style={styles.miniGrid}>
-                        <MiniDataCard label="LOAN OFFICER" value={file.loanOfficer} />
-                        <MiniDataCard label="PROCESSOR" value={file.processor} />
-                        <MiniDataCard label="TARGET CLOSE" value={file.targetClose} />
+                        <MiniDataCard
+                          label="LOAN OFFICER"
+                          value={file.loanOfficer}
+                        />
+                        <MiniDataCard
+                          label="PROCESSOR"
+                          value={file.processor}
+                        />
+                        <MiniDataCard
+                          label="TARGET CLOSE"
+                          value={file.targetClose}
+                        />
                         <MiniDataCard
                           label="FILE AGE"
                           value={`${file.fileAgeDays} days`}
@@ -782,10 +783,12 @@ export default function WorkflowPage() {
                 {urgentItems.map((item) => (
                   <div key={`urgent-${item.id}`} style={styles.attentionCard}>
                     <div>
-                      <div style={styles.attentionName}>{item.borrowerName}</div>
+                      <div style={styles.attentionName}>
+                        {item.borrowerName}
+                      </div>
                       <div style={styles.attentionMeta}>
-                        {getStatusLabel(item.status)} · {item.fileAgeDays} days in
-                        workflow
+                        {getStatusLabel(item.status)} · {item.fileAgeDays} days
+                        in workflow
                       </div>
                     </div>
                     <div style={styles.attentionIssue}>{item.blocker}</div>
@@ -894,7 +897,8 @@ export default function WorkflowPage() {
                     {selectedFile.nextBorrowerAction}
                   </div>
                   <div style={styles.commandNote}>
-                    <strong>Latest file update:</strong> {selectedFile.latestUpdate}
+                    <strong>Latest file update:</strong>{" "}
+                    {selectedFile.latestUpdate}
                   </div>
                 </>
               ) : (
@@ -932,7 +936,9 @@ export default function WorkflowPage() {
               <label style={styles.label}>Urgency</label>
               <select
                 value={handoffUrgency}
-                onChange={(e) => setHandoffUrgency(e.target.value as WorkflowUrgency)}
+                onChange={(e) =>
+                  setHandoffUrgency(e.target.value as WorkflowUrgency)
+                }
                 style={styles.input}
               >
                 <option value="Standard">Standard</option>
@@ -957,7 +963,9 @@ export default function WorkflowPage() {
                 Send to Processing
               </button>
 
-              {handoffStatus ? <div style={styles.infoBox}>{handoffStatus}</div> : null}
+              {handoffStatus ? (
+                <div style={styles.infoBox}>{handoffStatus}</div>
+              ) : null}
             </div>
 
             <div style={styles.card}>
@@ -968,32 +976,33 @@ export default function WorkflowPage() {
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Processing Handoff</div>
                   <div style={styles.moduleText}>
-                    Loan officer triggers file handoff with processor assignment,
-                    urgency, and operational note in one action.
+                    Loan officer triggers file handoff with processor
+                    assignment, urgency, and operational note in one action.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Open File Communication</div>
                   <div style={styles.moduleText}>
-                    Shared internal updates keep loan officer and processor aligned
-                    from handoff through close.
+                    Shared internal updates keep loan officer and processor
+                    aligned from handoff through close.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Timeline Visibility</div>
                   <div style={styles.moduleText}>
-                    File age, milestone stage, target close date, and blockers stay
-                    visible to the team without losing context.
+                    File age, milestone stage, target close date, and blockers
+                    stay visible to the team without losing context.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Future LOS Connection</div>
                   <div style={styles.moduleText}>
-                    This command layer can later sit above systems like ARIVE as the
-                    coordination and intelligence layer rather than replacing the LOS.
+                    This command layer can later sit above systems like ARIVE as
+                    the coordination and intelligence layer rather than
+                    replacing the LOS.
                   </div>
                 </div>
               </div>
@@ -1026,7 +1035,9 @@ function TopNav({ active = "workflow" }: { active?: "team" | "workflow" }) {
         <a
           href="/team"
           style={
-            active === "team" ? navStyles.topBarLinkActive : navStyles.topBarLink
+            active === "team"
+              ? navStyles.topBarLinkActive
+              : navStyles.topBarLink
           }
         >
           Mortgage Intelligence
@@ -1083,8 +1094,12 @@ function PipelineCard({
         borderColor: tone.border,
       }}
     >
-      <div style={{ ...styles.pipelineLabel, color: tone.text }}>{label}</div>
-      <div style={{ ...styles.pipelineValue, color: tone.text }}>{value}</div>
+      <div style={{ ...styles.pipelineLabel, color: tone.text }}>
+        {label}
+      </div>
+      <div style={{ ...styles.pipelineValue, color: tone.text }}>
+        {value}
+      </div>
     </div>
   );
 }
