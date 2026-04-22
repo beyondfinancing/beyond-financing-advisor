@@ -52,19 +52,17 @@ export async function POST(req: Request) {
     const nextInternalAction =
       "Processor to review handoff package and issue first checklist.";
 
-    const updatePayload = {
-      status: "sent_to_processing",
-      processor: processor || existingFile.processor,
-      target_close: targetClose || existingFile.target_close,
-      urgency: urgency || existingFile.urgency,
-      latest_update: latestUpdate,
-      next_internal_action: nextInternalAction,
-      updated_at: new Date().toISOString(),
-    };
-
     const { error: updateError } = await supabaseAdmin
       .from("workflow_files")
-      .update(updatePayload)
+      .update({
+        status: "sent_to_processing",
+        processor: processor || existingFile.processor,
+        target_close: targetClose || existingFile.target_close,
+        urgency: urgency || existingFile.urgency,
+        latest_update: latestUpdate,
+        next_internal_action: nextInternalAction,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id);
 
     if (updateError) {
@@ -80,20 +78,19 @@ export async function POST(req: Request) {
         urgency || existingFile.urgency || "Priority"
       ).toLowerCase()} visibility.`;
 
-    const { error: feedError } = await supabaseAdmin.from("workflow_feed").insert({
-      workflow_file_id: id,
-      author: actorName,
-      role: actorRole,
-      text: feedText,
-      created_at: new Date().toISOString(),
-    });
+    const { error: feedError } = await supabaseAdmin
+      .from("workflow_feed")
+      .insert({
+        workflow_file_id: id,
+        author: actorName,
+        role: actorRole,
+        text: feedText,
+        created_at: new Date().toISOString(),
+      });
 
     if (feedError) {
       return NextResponse.json(
-        {
-          success: false,
-          error: feedError.message,
-        },
+        { success: false, error: feedError.message },
         { status: 500 }
       );
     }
@@ -106,7 +103,8 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown server error.",
+        error:
+          error instanceof Error ? error.message : "Unknown server error.",
       },
       { status: 500 }
     );
