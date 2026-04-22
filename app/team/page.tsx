@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 
 type LanguageCode = "en" | "pt" | "es";
 
@@ -965,6 +964,17 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
         <style>{responsiveCss}</style>
 
         <div className="bf-team-wrap" style={styles.wrap}>
+          <div style={navStyles.topBar}>
+            <a href="/" style={navStyles.brand}>
+              Beyond Intelligence™
+            </a>
+            <div style={navStyles.topBarLinks}>
+              <a href="/" style={navStyles.topBarLink}>Home</a>
+              <a href="/borrower" style={navStyles.topBarLink}>Start as Borrower</a>
+              <a href="/team" style={navStyles.topBarLink}>Team Workspace</a>
+            </div>
+          </div>
+
           <div style={styles.hero}>
             <div style={styles.eyebrow}>Beyond Intelligence™</div>
             <h1 style={styles.heroTitle}>{t.title}</h1>
@@ -981,6 +991,17 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
         <style>{responsiveCss}</style>
 
         <div className="bf-team-wrap" style={styles.wrap}>
+          <div style={navStyles.topBar}>
+            <a href="/" style={navStyles.brand}>
+              Beyond Intelligence™
+            </a>
+            <div style={navStyles.topBarLinks}>
+              <a href="/" style={navStyles.topBarLink}>Home</a>
+              <a href="/borrower" style={navStyles.topBarLink}>Start as Borrower</a>
+              <a href="/team" style={navStyles.topBarLink}>Team Workspace</a>
+            </div>
+          </div>
+
           <div style={styles.hero}>
             <div style={styles.eyebrow}>Beyond Intelligence™</div>
             <h1 style={styles.heroTitle}>{t.title}</h1>
@@ -1078,6 +1099,17 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
       <style>{responsiveCss}</style>
 
       <div className="bf-team-wrap" style={styles.wrap}>
+        <div style={navStyles.topBar}>
+          <a href="/" style={navStyles.brand}>
+            Beyond Intelligence™
+          </a>
+          <div style={navStyles.topBarLinks}>
+            <a href="/" style={navStyles.topBarLink}>Home</a>
+            <a href="/borrower" style={navStyles.topBarLink}>Start as Borrower</a>
+            <a href="/team" style={navStyles.topBarLink}>Team Workspace</a>
+          </div>
+        </div>
+
         <div style={styles.hero}>
           <div style={styles.topBar}>
             <div>
@@ -1593,14 +1625,6 @@ Estimated LTV: ${snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "No
             <div style={styles.card}>
               <div style={styles.footerNote}>{t.footerNote}</div>
               <div style={styles.brandTag}>MultiLender Intelligence™</div>
-              <div style={styles.homeLinkRow}>
-                <Link href="/" style={styles.inlineLink}>
-                  Return to main page
-                </Link>
-                <Link href="/borrower" style={styles.inlineLink}>
-                  Open borrower page
-                </Link>
-              </div>
             </div>
           </aside>
         </div>
@@ -2097,15 +2121,38 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     letterSpacing: 0.4,
   },
-  homeLinkRow: {
+};
+const navStyles: Record<string, React.CSSProperties> = {
+  topBar: {
     display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     gap: 16,
+    marginBottom: 18,
+    padding: "4px 2px",
     flexWrap: "wrap",
-    marginTop: 16,
   },
-  inlineLink: {
-    color: "#263366",
-    fontWeight: 700,
+  brand: {
     textDecoration: "none",
+    color: "#263366",
+    fontSize: 15,
+    fontWeight: 800,
+    letterSpacing: 0.2,
+  },
+  topBarLinks: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  topBarLink: {
+    textDecoration: "none",
+    color: "#263366",
+    background: "#F7F9FD",
+    border: "1px solid #C9D5EA",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1,
   },
 };
