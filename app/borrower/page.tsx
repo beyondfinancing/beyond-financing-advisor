@@ -161,6 +161,37 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatNumberInput(value: string) {
+  const digits = value.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 0,
+  }).format(Number(digits));
+}
+
+function formatPhoneDisplay(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+
+  let normalized = digits;
+  if (digits.length === 10) {
+    normalized = `1${digits}`;
+  }
+
+  if (!normalized) return "+1.";
+
+  const country = normalized.slice(0, 1);
+  const area = normalized.slice(1, 4);
+  const mid = normalized.slice(4, 7);
+  const last = normalized.slice(7, 11);
+
+  let result = `+${country}`;
+  if (area) result += `.${area}`;
+  if (mid) result += `.${mid}`;
+  if (last) result += `.${last}`;
+
+  return result;
+}
+
 function normalizeDigitsOnly(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -203,26 +234,68 @@ function extractAiText(data: unknown): string {
   return "";
 }
 
+function extractAiText(data: unknown): string {
+  if (typeof data === "string") return data;
+
+  if (typeof data === "object" && data !== null) {
+    const obj = data as {
+      choices?: Array<{ message?: { content?: string } }>;
+      reply?: string;
+      message?: string;
+      response?: string;
+      content?: string;
+      text?: string;
+      nextQuestion?: string;
+    };
+
+    return (
+      obj.choices?.[0]?.message?.content ||
+      obj.reply ||
+      obj.message ||
+      obj.response ||
+      obj.content ||
+      obj.text ||
+      obj.nextQuestion ||
+      ""
+    );
+  }
+
+  return "";
+}
+
 function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return null;
 
-  const exact = LOAN_OFFICERS.find(
-    (officer) =>
+  const exact = LOAN_OFFICERS.find((officer) => {
+    const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
+
+    return (
       officer.name.toLowerCase() === trimmed ||
-      officer.nmls.toLowerCase() === trimmed
-  );
+      officer.nmls.toLowerCase() === trimmed ||
+      display === trimmed
+    );
+  });
 
   if (exact) return exact;
 
-  const partial = LOAN_OFFICERS.find(
-    (officer) =>
-      officer.name.toLowerCase().includes(trimmed) ||
-      officer.nmls.toLowerCase().includes(trimmed)
-  );
+  return (
+    LOAN_OFFICERS.find((officer) => {
+      const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
 
-  return partial || null;
+      return (
+        officer.name.toLowerCase().includes(trimmed) ||
+        officer.nmls.toLowerCase().includes(trimmed) ||
+        display.includes(trimmed)
+      );
+    }) || null
+  );
 }
+
+export default function BorrowerPage() {
+  const t = COPY.en;
+
+  const [accepted, setAccepted] = useState(false);
 
 export default function BorrowerPage() {
   const t = COPY.en;
@@ -841,7 +914,9 @@ Keep the response practical and professional.`,
                 <input
                   style={styles.input}
                   value={intakeForm.phone}
-                  onChange={(e) => setIntakeField("phone", e.target.value)}
+                  onChange={(e) =>
+                    setIntakeField("phone", formatPhoneDisplay(e.target.value))
+                  }
                   placeholder={t.phone}
                 />
                 <input
@@ -853,13 +928,17 @@ Keep the response practical and professional.`,
                 <input
                   style={styles.input}
                   value={intakeForm.income}
-                  onChange={(e) => setIntakeField("income", e.target.value)}
+                  onChange={(e) =>
+                    setIntakeField("income", formatNumberInput(e.target.value))
+                  }
                   placeholder={t.income}
                 />
                 <input
                   style={styles.input}
                   value={intakeForm.debt}
-                  onChange={(e) => setIntakeField("debt", e.target.value)}
+                  onChange={(e) =>
+                    setIntakeField("debt", formatNumberInput(e.target.value))
+                  }
                   placeholder={t.debt}
                 />
                 <input
@@ -945,7 +1024,10 @@ Keep the response practical and professional.`,
                     style={styles.input}
                     value={intakeForm.realtorPhone}
                     onChange={(e) =>
-                      setIntakeField("realtorPhone", e.target.value)
+                      setIntakeField(
+                        "realtorPhone",
+                        formatPhoneDisplay(e.target.value)
+                      )
                     }
                     placeholder={t.realtorPhone}
                   />
@@ -1053,7 +1135,9 @@ Keep the response practical and professional.`,
                 <input
                   style={styles.input}
                   value={scenario.homePrice}
-                  onChange={(e) => setScenarioField("homePrice", e.target.value)}
+                  onChange={(e) =>
+                    setScenarioField("homePrice", formatNumberInput(e.target.value))
+                  }
                   placeholder={t.homePrice}
                   disabled={scenarioConfirmed}
                 />
@@ -1061,7 +1145,10 @@ Keep the response practical and professional.`,
                   style={styles.input}
                   value={scenario.downPayment}
                   onChange={(e) =>
-                    setScenarioField("downPayment", e.target.value)
+                    setScenarioField(
+                      "downPayment",
+                      formatNumberInput(e.target.value)
+                    )
                   }
                   placeholder={t.downPayment}
                   disabled={scenarioConfirmed}
