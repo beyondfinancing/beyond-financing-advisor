@@ -1,9 +1,7 @@
-
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 type TeamRole =
   | "Loan Officer"
@@ -14,14 +12,11 @@ type TeamRole =
   | "Real Estate Agent";
 
 type TeamUser = {
-  id?: string;
+  id: string;
   name: string;
   email: string;
-  nmls?: string;
-  role: TeamRole | string;
-  calendly?: string;
-  assistantEmail?: string;
-  phone?: string;
+  nmls: string;
+  role: TeamRole;
 };
 
 type WorkflowStatus =
@@ -38,6 +33,7 @@ type WorkflowUrgency = "Standard" | "Priority" | "Rush";
 
 type WorkflowFile = {
   id: string;
+  loanNumber: string;
   borrowerName: string;
   purpose: string;
   amount: number;
@@ -45,6 +41,8 @@ type WorkflowFile = {
   urgency: WorkflowUrgency;
   loanOfficer: string;
   processor: string;
+  productionManager: string;
+  requestedProcessorNote: string;
   targetClose: string;
   fileAgeDays: number;
   occupancy: string;
@@ -55,72 +53,40 @@ type WorkflowFile = {
 };
 
 type WorkflowApiFile = {
-  id?: string;
-  borrower_name?: string;
-  purpose?: string;
-  amount?: number | string | null;
-  status?: WorkflowStatus;
-  urgency?: WorkflowUrgency;
-  loan_officer?: string;
-  processor?: string;
-  target_close?: string;
-  file_age_days?: number | string | null;
-  occupancy?: string;
-  blocker?: string;
-  next_internal_action?: string;
-  next_borrower_action?: string;
-  latest_update?: string;
+  id: string;
+  file_number?: string | null;
+  borrower_name: string;
+  purpose: string;
+  amount: number | string | null;
+  status: WorkflowStatus;
+  urgency: WorkflowUrgency;
+  loan_officer: string;
+  processor: string | null;
+  production_manager?: string | null;
+  requested_processor_note?: string | null;
+  target_close: string | null;
+  file_age_days: number | null;
+  occupancy: string;
+  blocker: string;
+  next_internal_action: string;
+  next_borrower_action: string;
+  latest_update: string;
 };
 
 type FeedItem = {
   id: string;
   author: string;
   role: string;
-  timeLabel: string;
   text: string;
-  createdAt?: string;
-};
-
-type WorkflowFeedApiItem = {
-  id?: string;
-  author?: string;
-  role?: string;
-  text?: string;
-  created_at?: string;
+  created_at: string;
 };
 
 const PROCESSORS = [
+  "Unassigned",
   "Amarilis Santos",
   "Kyle Nicholson",
   "Bia Marques",
 ];
-
-const PURPOSE_OPTIONS = [
-  "Purchase",
-  "Rate/Term Refinance",
-  "Cash-Out Refinance",
-  "HELOC",
-  "Second Mortgage",
-];
-
-const OCCUPANCY_OPTIONS = [
-  "Primary Residence",
-  "Second Home",
-  "Investment Property",
-];
-
-const STATUS_OPTIONS: WorkflowStatus[] = [
-  "new_scenario",
-  "pre_approval_review",
-  "sent_to_processing",
-  "processing_active",
-  "submitted_to_lender",
-  "conditional_approval",
-  "clear_to_close",
-  "closed",
-];
-
-const URGENCY_OPTIONS: WorkflowUrgency[] = ["Standard", "Priority", "Rush"];
 
 function formatCurrency(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "$0";
@@ -131,26 +97,18 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatDateLabel(value?: string) {
-  if (!value) return "—";
+function formatTargetClose(value: string) {
+  if (!value) return "No date set";
+  const isoMatch = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!isoMatch) return value;
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const parsed = new Date(`${value}T00:00:00`);
-    if (!Number.isNaN(parsed.getTime())) {
-      return new Intl.DateTimeFormat("en-US").format(parsed);
-    }
-  }
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
 
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(parsed);
+  return new Intl.DateTimeFormat("en-US").format(date);
 }
 
-function toDateInputValue(value?: string) {
+function toDateInputValue(value: string) {
   if (!value) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
 
@@ -160,7 +118,6 @@ function toDateInputValue(value?: string) {
   const year = parsed.getFullYear();
   const month = String(parsed.getMonth() + 1).padStart(2, "0");
   const day = String(parsed.getDate()).padStart(2, "0");
-
   return `${year}-${month}-${day}`;
 }
 
@@ -221,82 +178,146 @@ function getUrgencyTone(urgency: WorkflowUrgency) {
   }
 }
 
-function mapApiFileToUi(file?: WorkflowApiFile | null): WorkflowFile | null {
-  if (!file?.id) return null;
-
-  return {
-    id: String(file.id),
-    borrowerName: String(file.borrower_name ?? ""),
-    purpose: String(file.purpose ?? ""),
-    amount: Number(file.amount ?? 0),
-    status: (file.status ?? "new_scenario") as WorkflowStatus,
-    urgency: (file.urgency ?? "Standard") as WorkflowUrgency,
-    loanOfficer: String(file.loan_officer ?? ""),
-    processor: String(file.processor ?? ""),
-    targetClose: String(file.target_close ?? ""),
-    fileAgeDays: Number(file.file_age_days ?? 0),
-    occupancy: String(file.occupancy ?? ""),
-    blocker: String(file.blocker ?? ""),
-    nextInternalAction: String(file.next_internal_action ?? ""),
-    nextBorrowerAction: String(file.next_borrower_action ?? ""),
-    latestUpdate: String(file.latest_update ?? ""),
-  };
-}
-
-function mapFeedItem(item: WorkflowFeedApiItem, index: number): FeedItem {
-  return {
-    id: String(item.id ?? `feed-${index}`),
-    author: String(item.author ?? "Team User"),
-    role: String(item.role ?? "Professional"),
-    text: String(item.text ?? ""),
-    createdAt: item.created_at,
-    timeLabel: formatDateLabel(item.created_at),
-  };
+function formatFeedTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 export default function WorkflowFileDetailPage() {
-  const params = useParams<{ id: string }>();
-  const router = useRouter();
-  const fileId = decodeURIComponent(String(params?.id ?? ""));
+  const fileId =
+    typeof window !== "undefined"
+      ? window.location.pathname.split("/").filter(Boolean).pop() || ""
+      : "";
 
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
   const [authCheckLoading, setAuthCheckLoading] = useState(true);
 
   const [file, setFile] = useState<WorkflowFile | null>(null);
-  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [loadingFile, setLoadingFile] = useState(true);
-  const [savingFile, setSavingFile] = useState(false);
-  const [addingFeed, setAddingFeed] = useState(false);
-  const [deletingFile, setDeletingFile] = useState(false);
+  const [loanNumber, setLoanNumber] = useState("");
+  const [borrowerName, setBorrowerName] = useState("");
+  const [purpose, setPurpose] = useState("Purchase");
+  const [amount, setAmount] = useState("");
+  const [loanOfficer, setLoanOfficer] = useState("");
+  const [status, setStatus] = useState<WorkflowStatus>("new_scenario");
+  const [urgency, setUrgency] = useState<WorkflowUrgency>("Priority");
+  const [targetClose, setTargetClose] = useState("");
+  const [occupancy, setOccupancy] = useState("Primary Residence");
+  const [processor, setProcessor] = useState("Unassigned");
+  const [requestedProcessorNote, setRequestedProcessorNote] = useState("");
+  const [blocker, setBlocker] = useState("");
+  const [nextInternalAction, setNextInternalAction] = useState("");
+  const [nextBorrowerAction, setNextBorrowerAction] = useState("");
+  const [latestUpdate, setLatestUpdate] = useState("");
 
-  const [pageMessage, setPageMessage] = useState("");
-  const [pageError, setPageError] = useState("");
+  const [internalUpdateText, setInternalUpdateText] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [postingUpdate, setPostingUpdate] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const [internalUpdateInput, setInternalUpdateInput] = useState("");
+  const canManageProcessing =
+    activeUser?.role === "Production Manager" ||
+    activeUser?.name === "Amarilis Santos";
 
-  const [editForm, setEditForm] = useState({
-    borrowerName: "",
-    purpose: "Purchase",
-    amount: "",
-    status: "new_scenario" as WorkflowStatus,
-    urgency: "Standard" as WorkflowUrgency,
-    loanOfficer: "",
-    processor: "",
-    targetClose: "",
-    occupancy: "Primary Residence",
-    blocker: "",
-    nextInternalAction: "",
-    nextBorrowerAction: "",
-    latestUpdate: "",
-  });
+  const canDeleteFile =
+    activeUser?.role === "Branch Manager" ||
+    activeUser?.name === "Sandro Pansini Souza";
+
+  const handleSignOut = async () => {
+    await fetch("/api/team-auth/logout", { method: "POST" });
+    setActiveUser(null);
+    window.location.href = "/team";
+  };
+
+  const mapFile = useCallback((f: WorkflowApiFile): WorkflowFile => {
+    return {
+      id: String(f.id ?? ""),
+      loanNumber: String(f.file_number ?? ""),
+      borrowerName: String(f.borrower_name ?? ""),
+      purpose: String(f.purpose ?? ""),
+      amount: Number(f.amount ?? 0),
+      status: f.status,
+      urgency: f.urgency,
+      loanOfficer: String(f.loan_officer ?? ""),
+      processor: String(f.processor ?? "Unassigned"),
+      productionManager: String(f.production_manager ?? "Pending Assignment"),
+      requestedProcessorNote: String(f.requested_processor_note ?? ""),
+      targetClose: String(f.target_close ?? ""),
+      fileAgeDays: Number(f.file_age_days ?? 0),
+      occupancy: String(f.occupancy ?? ""),
+      blocker: String(f.blocker ?? ""),
+      nextInternalAction: String(f.next_internal_action ?? ""),
+      nextBorrowerAction: String(f.next_borrower_action ?? ""),
+      latestUpdate: String(f.latest_update ?? ""),
+    };
+  }, []);
+
+  const syncForm = useCallback((f: WorkflowFile) => {
+    setLoanNumber(f.loanNumber);
+    setBorrowerName(f.borrowerName);
+    setPurpose(f.purpose);
+    setAmount(String(f.amount || ""));
+    setLoanOfficer(f.loanOfficer);
+    setStatus(f.status);
+    setUrgency(f.urgency);
+    setTargetClose(toDateInputValue(f.targetClose));
+    setOccupancy(f.occupancy);
+    setProcessor(f.processor || "Unassigned");
+    setRequestedProcessorNote(f.requestedProcessorNote || "");
+    setBlocker(f.blocker);
+    setNextInternalAction(f.nextInternalAction);
+    setNextBorrowerAction(f.nextBorrowerAction);
+    setLatestUpdate(f.latestUpdate);
+  }, []);
+
+  const loadFile = useCallback(async () => {
+    if (!fileId) return;
+
+    try {
+      setLoading(true);
+      setSaveError("");
+      setSaveMessage("");
+
+      const res = await fetch(`/api/workflow/${fileId}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data?.success) {
+        setSaveError(data?.error || "Unable to load workflow file.");
+        setFile(null);
+        setFeed([]);
+        return;
+      }
+
+      const mappedFile = mapFile(data.file as WorkflowApiFile);
+      setFile(mappedFile);
+      syncForm(mappedFile);
+      setFeed(Array.isArray(data.feed) ? data.feed : []);
+    } catch (error) {
+      console.error(error);
+      setSaveError("Unable to load workflow file.");
+    } finally {
+      setLoading(false);
+    }
+  }, [fileId, mapFile, syncForm]);
 
   useEffect(() => {
     const loadUser = async () => {
       try {
         const response = await fetch("/api/team-auth/me");
+
         if (response.ok) {
           const data = await response.json();
+
           if (data?.authenticated && data?.user) {
             setActiveUser(data.user);
           }
@@ -311,146 +332,49 @@ export default function WorkflowFileDetailPage() {
     loadUser();
   }, []);
 
-  const isBranchManager = useMemo(() => {
-    if (!activeUser) return false;
-    return (
-      activeUser.role === "Branch Manager" ||
-      activeUser.name === "Sandro Pansini Souza"
-    );
-  }, [activeUser]);
-
-  const isProductionManager = useMemo(() => {
-    if (!activeUser) return false;
-    return (
-      activeUser.role === "Production Manager" ||
-      activeUser.name === "Amarilis Santos"
-    );
-  }, [activeUser]);
-
-  const loadFileDetail = async () => {
-    if (!fileId) return;
-
-    setLoadingFile(true);
-    setPageError("");
-    setPageMessage("");
-
-    try {
-      const detailResponse = await fetch(`/api/workflow/${fileId}`, {
-        cache: "no-store",
-      });
-
-      if (detailResponse.ok) {
-        const detailData = await detailResponse.json();
-        const resolvedFile = mapApiFileToUi(
-          detailData?.file || detailData?.data || detailData
-        );
-
-        if (!resolvedFile) {
-          throw new Error("Workflow file was not found.");
-        }
-
-        const resolvedFeed = Array.isArray(detailData?.feed)
-          ? detailData.feed.map(mapFeedItem)
-          : [];
-
-        setFile(resolvedFile);
-        setFeedItems(resolvedFeed);
-        return;
-      }
-
-      const fallbackResponse = await fetch("/api/workflow", {
-        cache: "no-store",
-      });
-
-      if (!fallbackResponse.ok) {
-        throw new Error("Unable to load workflow file.");
-      }
-
-      const fallbackData = await fallbackResponse.json();
-      const files = Array.isArray(fallbackData?.files) ? fallbackData.files : [];
-      const matched = files.find(
-        (item: WorkflowApiFile) => String(item?.id ?? "") === fileId
-      );
-
-      const resolvedFallbackFile = mapApiFileToUi(matched);
-      if (!resolvedFallbackFile) {
-        throw new Error("Workflow file was not found.");
-      }
-
-      setFile(resolvedFallbackFile);
-      setFeedItems([]);
-    } catch (error) {
-      setPageError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load the workflow detail page."
-      );
-      setFile(null);
-      setFeedItems([]);
-    } finally {
-      setLoadingFile(false);
-    }
-  };
-
   useEffect(() => {
-    loadFileDetail();
-  }, [fileId]);
+    loadFile();
+  }, [loadFile]);
 
-  useEffect(() => {
+  const activeStatusTone = useMemo(
+    () => getStatusTone(status),
+    [status]
+  );
+
+  const activeUrgencyTone = useMemo(
+    () => getUrgencyTone(urgency),
+    [urgency]
+  );
+
+  const saveFileChanges = async () => {
     if (!file) return;
 
-    setEditForm({
-      borrowerName: file.borrowerName,
-      purpose: file.purpose || "Purchase",
-      amount: String(file.amount || ""),
-      status: file.status,
-      urgency: file.urgency,
-      loanOfficer: file.loanOfficer,
-      processor: file.processor,
-      targetClose: toDateInputValue(file.targetClose),
-      occupancy: file.occupancy || "Primary Residence",
-      blocker: file.blocker,
-      nextInternalAction: file.nextInternalAction,
-      nextBorrowerAction: file.nextBorrowerAction,
-      latestUpdate: file.latestUpdate,
-    });
-  }, [file]);
-
-  const handleEditField = (
-    key: keyof typeof editForm,
-    value: string | WorkflowStatus | WorkflowUrgency
-  ) => {
-    setEditForm((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-  };
-
-  const saveFile = async () => {
-    if (!file) return;
-
-    setSavingFile(true);
-    setPageError("");
-    setPageMessage("");
-
     try {
+      setSaving(true);
+      setSaveError("");
+      setSaveMessage("");
+
       const payload: Record<string, unknown> = {
-        borrower_name: editForm.borrowerName,
-        purpose: editForm.purpose,
-        amount: Number(editForm.amount || 0),
-        status: editForm.status,
-        urgency: editForm.urgency,
-        loan_officer: editForm.loanOfficer,
-        target_close: editForm.targetClose || null,
-        occupancy: editForm.occupancy,
-        blocker: editForm.blocker,
-        next_internal_action: editForm.nextInternalAction,
-        next_borrower_action: editForm.nextBorrowerAction,
-        latest_update: editForm.latestUpdate,
+        loanNumber: loanNumber.trim(),
+        borrowerName: borrowerName.trim(),
+        purpose: purpose.trim(),
+        amount: Number(amount || 0),
+        loanOfficer: loanOfficer.trim(),
+        status,
+        urgency,
+        targetClose: targetClose.trim(),
+        occupancy: occupancy.trim(),
+        blocker: blocker.trim(),
+        nextInternalAction: nextInternalAction.trim(),
+        nextBorrowerAction: nextBorrowerAction.trim(),
+        latestUpdate: latestUpdate.trim(),
+        requestedProcessorNote: requestedProcessorNote.trim(),
+        author: activeUser?.name || "Team User",
+        role: activeUser?.role || "Professional",
       };
 
-      if (isProductionManager) {
-        payload.processor = editForm.processor;
+      if (canManageProcessing) {
+        payload.processor = processor.trim() || "Unassigned";
       }
 
       const response = await fetch(`/api/workflow/${file.id}`, {
@@ -461,131 +385,116 @@ export default function WorkflowFileDetailPage() {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json().catch(() => null);
+      const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(
-          data?.error || "Unable to save workflow file changes."
-        );
+      if (!response.ok || !data?.success) {
+        setSaveError(data?.error || "Unable to save workflow file changes.");
+        return;
       }
 
-      const updatedFile = mapApiFileToUi(data?.file || data?.data || data);
-      if (updatedFile) {
-        setFile(updatedFile);
-      } else {
-        await loadFileDetail();
-      }
-
-      setPageMessage("Workflow file updated successfully.");
+      const mappedFile = mapFile(data.file as WorkflowApiFile);
+      setFile(mappedFile);
+      syncForm(mappedFile);
+      setSaveMessage("Workflow file updated successfully.");
     } catch (error) {
-      setPageError(
-        error instanceof Error
-          ? error.message
-          : "Unable to save workflow file."
-      );
+      console.error(error);
+      setSaveError("Unable to save workflow file changes.");
     } finally {
-      setSavingFile(false);
+      setSaving(false);
     }
   };
 
   const addInternalUpdate = async () => {
-    if (!file || !internalUpdateInput.trim()) return;
+    if (!file) return;
 
-    setAddingFeed(true);
-    setPageError("");
-    setPageMessage("");
+    const trimmed = internalUpdateText.trim();
+    if (!trimmed) return;
 
     try {
-      const response = await fetch(`/api/workflow/${file.id}/feed`, {
+      setPostingUpdate(true);
+      setSaveError("");
+      setSaveMessage("");
+
+      const response = await fetch(`/api/workflow/${file.id}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          action: "add_feed_entry",
           author: activeUser?.name || "Team User",
           role: activeUser?.role || "Professional",
-          text: internalUpdateInput.trim(),
+          text: trimmed,
         }),
       });
 
-      const data = await response.json().catch(() => null);
+      const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data?.error || "Unable to add internal update.");
+      if (!response.ok || !data?.success) {
+        setSaveError(data?.error || "Unable to add internal update.");
+        return;
       }
 
-      const createdFeed = data?.feed
-        ? mapFeedItem(data.feed, 0)
-        : {
-            id: `feed-${Date.now()}`,
-            author: activeUser?.name || "Team User",
-            role: activeUser?.role || "Professional",
-            text: internalUpdateInput.trim(),
-            timeLabel: "Just now",
-          };
-
-      setFeedItems((prev) => [createdFeed, ...prev]);
-      setInternalUpdateInput("");
-      setPageMessage("Internal update added successfully.");
+      setInternalUpdateText("");
+      await loadFile();
+      setSaveMessage("Internal update added successfully.");
     } catch (error) {
-      setPageError(
-        error instanceof Error
-          ? error.message
-          : "Unable to add internal update."
-      );
+      console.error(error);
+      setSaveError("Unable to add internal update.");
     } finally {
-      setAddingFeed(false);
+      setPostingUpdate(false);
     }
   };
 
-  const deleteFile = async () => {
-    if (!file || !isBranchManager) return;
+  const deleteWorkflowFile = async () => {
+    if (!file || !canDeleteFile) return;
 
     const confirmed = window.confirm(
-      `Delete workflow file for ${file.borrowerName}? This action should be limited to the Branch Manager.`
+      `Delete workflow file for ${file.borrowerName}? This cannot be undone.`
     );
 
     if (!confirmed) return;
 
-    setDeletingFile(true);
-    setPageError("");
-    setPageMessage("");
-
     try {
+      setDeleting(true);
+      setSaveError("");
+      setSaveMessage("");
+
       const response = await fetch(`/api/workflow/${file.id}`, {
         method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          author: activeUser?.name || "",
+          role: activeUser?.role || "",
+        }),
       });
 
-      const data = await response.json().catch(() => null);
+      const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data?.error || "Unable to delete workflow file.");
+      if (!response.ok || !data?.success) {
+        setSaveError(data?.error || "Unable to delete workflow file.");
+        return;
       }
 
-      router.push("/workflow");
-      router.refresh();
+      window.location.href = "/workflow";
     } catch (error) {
-      setPageError(
-        error instanceof Error
-          ? error.message
-          : "Unable to delete workflow file."
-      );
-      setDeletingFile(false);
+      console.error(error);
+      setSaveError("Unable to delete workflow file.");
+    } finally {
+      setDeleting(false);
     }
   };
 
-  if (authCheckLoading || loadingFile) {
+  if (authCheckLoading || loading) {
     return (
       <main style={styles.page}>
         <style>{responsiveCss}</style>
-        <div className="wf-wrap" style={styles.wrap}>
-          <TopNav active="workflow" />
+        <div style={styles.wrap}>
           <section style={styles.hero}>
             <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
-            <h1 style={styles.heroTitle}>Loading operational record...</h1>
-            <p style={styles.heroText}>
-              Building the full file command view.
-            </p>
+            <h1 style={styles.heroTitle}>Loading operational file...</h1>
           </section>
         </div>
       </main>
@@ -596,21 +505,19 @@ export default function WorkflowFileDetailPage() {
     return (
       <main style={styles.page}>
         <style>{responsiveCss}</style>
-        <div className="wf-wrap" style={styles.wrap}>
-          <TopNav active="workflow" />
+        <div style={styles.wrap}>
           <section style={styles.hero}>
             <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
-            <h1 style={styles.heroTitle}>Protected workflow access</h1>
+            <h1 style={styles.heroTitle}>Protected Professional Access</h1>
             <p style={styles.heroText}>
               Please sign in through Team Mortgage Intelligence first.
             </p>
+            <div style={styles.heroActionRow}>
+              <a href="/team" style={styles.heroActionOutline}>
+                Go to Login
+              </a>
+            </div>
           </section>
-
-          <div style={styles.card}>
-            <a href="/team" style={styles.primaryLinkButton}>
-              Go to Mortgage Intelligence Login
-            </a>
-          </div>
         </div>
       </main>
     );
@@ -620,72 +527,66 @@ export default function WorkflowFileDetailPage() {
     return (
       <main style={styles.page}>
         <style>{responsiveCss}</style>
-        <div className="wf-wrap" style={styles.wrap}>
-          <TopNav active="workflow" />
+        <div style={styles.wrap}>
           <section style={styles.hero}>
             <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
-            <h1 style={styles.heroTitle}>Workflow file not found</h1>
+            <h1 style={styles.heroTitle}>File not found</h1>
             <p style={styles.heroText}>
-              {pageError || "This operational record could not be loaded."}
+              The requested workflow file could not be loaded.
             </p>
+            <div style={styles.heroActionRow}>
+              <a href="/workflow" style={styles.heroActionOutline}>
+                Back to Workflow Intelligence
+              </a>
+            </div>
           </section>
-
-          <div style={styles.card}>
-            <Link href="/workflow" style={styles.secondaryLinkButton}>
-              Back to Workflow Intelligence
-            </Link>
-          </div>
         </div>
       </main>
     );
   }
 
-  const statusTone = getStatusTone(file.status);
-  const urgencyTone = getUrgencyTone(file.urgency);
-
   return (
     <main style={styles.page}>
       <style>{responsiveCss}</style>
 
-      <div className="wf-wrap" style={styles.wrap}>
+      <div style={styles.wrap}>
         <TopNav active="workflow" />
 
         <section style={styles.hero}>
-          <div className="wf-hero-grid" style={styles.heroGrid}>
+          <div className="bf-detail-hero-grid" style={styles.heroGrid}>
             <div>
               <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
               <h1 style={styles.heroTitle}>{file.borrowerName}</h1>
               <p style={styles.heroText}>
-                Operational record for this loan file, including status,
-                borrower actions, internal actions, file notes, and controlled
-                update permissions.
+                Operational record for this loan file, including status, borrower actions, internal actions, file notes, and controlled update permissions.
               </p>
 
               <div style={styles.heroActionRow}>
                 <Link href="/workflow" style={styles.heroActionOutline}>
                   Back to Workflow Intelligence
                 </Link>
-                <button
-                  type="button"
-                  onClick={loadFileDetail}
-                  style={styles.heroActionGhost}
-                >
+                <button type="button" onClick={loadFile} style={styles.heroActionButton}>
                   Refresh File
                 </button>
               </div>
             </div>
 
-            <div style={styles.heroSideCard}>
-              <div style={styles.userBadgeTitle}>Logged in as: {activeUser.name}</div>
-              <div style={styles.userBadgeSubtext}>
-                Role: {activeUser.role} · {activeUser.email}
+            <div style={styles.heroRightPanel}>
+              <div style={styles.userBadge}>
+                <div style={styles.userBadgeTitle}>
+                  Logged in as: {activeUser.name}
+                </div>
+                <div style={styles.userBadgeSubtext}>
+                  Role: {activeUser.role} · {activeUser.email}
+                </div>
               </div>
 
-              <div style={styles.permissionBox}>
-                <div style={styles.permissionTitle}>Permission Rules</div>
-                <div style={styles.permissionText}>
-                  Processor assignment can only be changed by the Production
-                  Manager. File deletion can only be done by the Branch Manager.
+              <div style={styles.heroRuleCard}>
+                <div style={styles.heroRuleTitle}>Permission Rules</div>
+                <div style={styles.heroRuleText}>
+                  Processor assignment can only be changed by the Production Manager.
+                  <br />
+                  File deletion can only be done by the Branch Manager.
                 </div>
               </div>
 
@@ -693,43 +594,43 @@ export default function WorkflowFileDetailPage() {
                 <span
                   style={{
                     ...styles.badge,
-                    backgroundColor: statusTone.bg,
-                    borderColor: statusTone.border,
-                    color: statusTone.text,
+                    backgroundColor: activeStatusTone.bg,
+                    borderColor: activeStatusTone.border,
+                    color: activeStatusTone.text,
                   }}
                 >
-                  {getStatusLabel(file.status)}
+                  {getStatusLabel(status)}
                 </span>
 
                 <span
                   style={{
                     ...styles.badge,
-                    backgroundColor: urgencyTone.bg,
-                    borderColor: urgencyTone.border,
-                    color: urgencyTone.text,
+                    backgroundColor: activeUrgencyTone.bg,
+                    borderColor: activeUrgencyTone.border,
+                    color: activeUrgencyTone.text,
                   }}
                 >
-                  {file.urgency}
+                  {urgency}
                 </span>
               </div>
             </div>
           </div>
         </section>
 
-        {pageMessage ? <div style={styles.successBox}>{pageMessage}</div> : null}
-        {pageError ? <div style={styles.errorBox}>{pageError}</div> : null}
+        {saveError ? <div style={styles.errorBox}>{saveError}</div> : null}
+        {saveMessage ? <div style={styles.infoBox}>{saveMessage}</div> : null}
 
-        <div className="wf-main-grid" style={styles.mainGrid}>
+        <div className="bf-detail-main-grid" style={styles.mainGrid}>
           <section style={styles.column}>
             <div style={styles.card}>
               <div style={styles.sectionEyebrow}>FILE SNAPSHOT</div>
               <h2 style={styles.sectionTitle}>Current operational profile</h2>
 
-              <div className="wf-mini-grid" style={styles.miniGrid}>
-                <MiniDataCard label="FILE ID" value={file.id} />
+              <div className="bf-mini-grid" style={styles.miniGrid}>
+                <MiniDataCard label="LOAN NUMBER" value={file.loanNumber || "Not Assigned"} />
                 <MiniDataCard label="LOAN PURPOSE" value={file.purpose} />
                 <MiniDataCard label="AMOUNT" value={formatCurrency(file.amount)} />
-                <MiniDataCard label="TARGET CLOSE" value={formatDateLabel(file.targetClose)} />
+                <MiniDataCard label="TARGET CLOSE" value={formatTargetClose(file.targetClose)} />
                 <MiniDataCard label="LOAN OFFICER" value={file.loanOfficer} />
                 <MiniDataCard label="PROCESSOR" value={file.processor || "Unassigned"} />
                 <MiniDataCard label="OCCUPANCY" value={file.occupancy} />
@@ -737,16 +638,16 @@ export default function WorkflowFileDetailPage() {
               </div>
 
               <div style={styles.commandNote}>
-                <strong>Current blocker:</strong> {file.blocker || "None currently."}
+                <strong>Current blocker:</strong> {file.blocker}
               </div>
               <div style={styles.commandNote}>
-                <strong>Next internal action:</strong> {file.nextInternalAction || "—"}
+                <strong>Next internal action:</strong> {file.nextInternalAction}
               </div>
               <div style={styles.commandNote}>
-                <strong>Next borrower action:</strong> {file.nextBorrowerAction || "—"}
+                <strong>Next borrower action:</strong> {file.nextBorrowerAction}
               </div>
               <div style={styles.commandNote}>
-                <strong>Latest file update:</strong> {file.latestUpdate || "—"}
+                <strong>Latest file update:</strong> {file.latestUpdate}
               </div>
             </div>
 
@@ -756,8 +657,8 @@ export default function WorkflowFileDetailPage() {
 
               <label style={styles.label}>Add internal update</label>
               <textarea
-                value={internalUpdateInput}
-                onChange={(e) => setInternalUpdateInput(e.target.value)}
+                value={internalUpdateText}
+                onChange={(e) => setInternalUpdateText(e.target.value)}
                 placeholder="Post a structured internal update for this active file."
                 rows={4}
                 style={styles.textarea}
@@ -765,31 +666,24 @@ export default function WorkflowFileDetailPage() {
               <button
                 type="button"
                 onClick={addInternalUpdate}
-                disabled={addingFeed || !internalUpdateInput.trim()}
-                style={{
-                  ...styles.gradientButton,
-                  opacity: addingFeed || !internalUpdateInput.trim() ? 0.7 : 1,
-                  cursor:
-                    addingFeed || !internalUpdateInput.trim()
-                      ? "not-allowed"
-                      : "pointer",
-                }}
+                style={styles.feedButton}
+                disabled={postingUpdate}
               >
-                {addingFeed ? "Adding Update..." : "Add Internal Update"}
+                {postingUpdate ? "Adding Update..." : "Add Internal Update"}
               </button>
 
               <div style={styles.feedList}>
-                {feedItems.length === 0 ? (
+                {feed.length === 0 ? (
                   <div style={styles.placeholderBox}>
                     No internal updates yet for this file.
                   </div>
                 ) : (
-                  feedItems.map((item) => (
+                  feed.map((item) => (
                     <div key={item.id} style={styles.feedCard}>
                       <div style={styles.feedHeader}>
                         <div style={styles.feedAuthor}>{item.author}</div>
                         <div style={styles.feedMeta}>
-                          {item.role} · {item.timeLabel}
+                          {item.role} · {formatFeedTime(item.created_at)}
                         </div>
                       </div>
                       <div style={styles.feedText}>{item.text}</div>
@@ -805,161 +699,157 @@ export default function WorkflowFileDetailPage() {
               <div style={styles.sectionEyebrow}>EDIT FILE</div>
               <h2 style={styles.sectionTitle}>Update operational details</h2>
 
+              <label style={styles.label}>Loan number</label>
+              <input
+                value={loanNumber}
+                onChange={(e) => setLoanNumber(e.target.value)}
+                style={styles.input}
+                placeholder="ARIVE / internal loan number"
+              />
+
               <label style={styles.label}>Borrower full name</label>
               <input
-                value={editForm.borrowerName}
-                onChange={(e) => handleEditField("borrowerName", e.target.value)}
+                value={borrowerName}
+                onChange={(e) => setBorrowerName(e.target.value)}
                 style={styles.input}
               />
 
               <label style={styles.label}>Loan purpose</label>
               <select
-                value={editForm.purpose}
-                onChange={(e) => handleEditField("purpose", e.target.value)}
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
                 style={styles.input}
               >
-                {PURPOSE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
+                <option value="Purchase">Purchase</option>
+                <option value="Rate/Term Refinance">Rate/Term Refinance</option>
+                <option value="Cash-Out Refinance">Cash-Out Refinance</option>
+                <option value="HELOC">HELOC</option>
+                <option value="DSCR">DSCR</option>
               </select>
 
               <label style={styles.label}>Amount</label>
               <input
-                value={editForm.amount}
-                onChange={(e) => handleEditField("amount", e.target.value)}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
                 style={styles.input}
-                type="number"
               />
 
               <label style={styles.label}>Loan officer</label>
               <input
-                value={editForm.loanOfficer}
-                onChange={(e) => handleEditField("loanOfficer", e.target.value)}
+                value={loanOfficer}
+                onChange={(e) => setLoanOfficer(e.target.value)}
                 style={styles.input}
               />
 
               <label style={styles.label}>Status</label>
               <select
-                value={editForm.status}
-                onChange={(e) =>
-                  handleEditField("status", e.target.value as WorkflowStatus)
-                }
+                value={status}
+                onChange={(e) => setStatus(e.target.value as WorkflowStatus)}
                 style={styles.input}
               >
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {getStatusLabel(option)}
-                  </option>
-                ))}
+                <option value="new_scenario">New Scenario</option>
+                <option value="pre_approval_review">Pre-Approval Review</option>
+                <option value="sent_to_processing">Sent to Processing</option>
+                <option value="processing_active">Processing Active</option>
+                <option value="submitted_to_lender">Submitted to Lender</option>
+                <option value="conditional_approval">Conditional Approval</option>
+                <option value="clear_to_close">Clear to Close</option>
+                <option value="closed">Closed</option>
               </select>
 
               <label style={styles.label}>Urgency</label>
               <select
-                value={editForm.urgency}
-                onChange={(e) =>
-                  handleEditField("urgency", e.target.value as WorkflowUrgency)
-                }
+                value={urgency}
+                onChange={(e) => setUrgency(e.target.value as WorkflowUrgency)}
                 style={styles.input}
               >
-                {URGENCY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
+                <option value="Standard">Standard</option>
+                <option value="Priority">Priority</option>
+                <option value="Rush">Rush</option>
               </select>
 
               <label style={styles.label}>Target close date</label>
               <input
                 type="date"
-                value={editForm.targetClose}
-                onChange={(e) => handleEditField("targetClose", e.target.value)}
+                value={targetClose}
+                onChange={(e) => setTargetClose(e.target.value)}
                 style={styles.input}
               />
 
               <label style={styles.label}>Occupancy</label>
-              <select
-                value={editForm.occupancy}
-                onChange={(e) => handleEditField("occupancy", e.target.value)}
+              <input
+                value={occupancy}
+                onChange={(e) => setOccupancy(e.target.value)}
                 style={styles.input}
-              >
-                {OCCUPANCY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+              />
+
+              <label style={styles.label}>Requested processor note</label>
+              <textarea
+                value={requestedProcessorNote}
+                onChange={(e) => setRequestedProcessorNote(e.target.value)}
+                rows={3}
+                style={styles.textarea}
+              />
 
               <label style={styles.label}>Assigned processor</label>
               <select
-                value={editForm.processor}
-                onChange={(e) => handleEditField("processor", e.target.value)}
-                style={{
-                  ...styles.input,
-                  backgroundColor: isProductionManager ? "#ffffff" : "#F8FAFC",
-                  opacity: isProductionManager ? 1 : 0.85,
-                }}
-                disabled={!isProductionManager}
+                value={processor}
+                onChange={(e) => setProcessor(e.target.value)}
+                style={styles.input}
+                disabled={!canManageProcessing}
               >
-                <option value="">Unassigned</option>
-                {PROCESSORS.map((processor) => (
-                  <option key={processor} value={processor}>
-                    {processor}
+                {PROCESSORS.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>
-              <div style={styles.helperText}>
-                Only the Production Manager can change the assigned processor.
-              </div>
+
+              {!canManageProcessing ? (
+                <div style={styles.infoBox}>
+                  Only the Production Manager can change the assigned processor.
+                </div>
+              ) : null}
 
               <label style={styles.label}>Current blocker</label>
               <textarea
-                value={editForm.blocker}
-                onChange={(e) => handleEditField("blocker", e.target.value)}
+                value={blocker}
+                onChange={(e) => setBlocker(e.target.value)}
                 rows={3}
                 style={styles.textarea}
               />
 
               <label style={styles.label}>Next internal action</label>
               <textarea
-                value={editForm.nextInternalAction}
-                onChange={(e) =>
-                  handleEditField("nextInternalAction", e.target.value)
-                }
+                value={nextInternalAction}
+                onChange={(e) => setNextInternalAction(e.target.value)}
                 rows={3}
                 style={styles.textarea}
               />
 
               <label style={styles.label}>Next borrower action</label>
               <textarea
-                value={editForm.nextBorrowerAction}
-                onChange={(e) =>
-                  handleEditField("nextBorrowerAction", e.target.value)
-                }
+                value={nextBorrowerAction}
+                onChange={(e) => setNextBorrowerAction(e.target.value)}
                 rows={3}
                 style={styles.textarea}
               />
 
               <label style={styles.label}>Latest file update</label>
               <textarea
-                value={editForm.latestUpdate}
-                onChange={(e) => handleEditField("latestUpdate", e.target.value)}
+                value={latestUpdate}
+                onChange={(e) => setLatestUpdate(e.target.value)}
                 rows={3}
                 style={styles.textarea}
               />
 
               <button
                 type="button"
-                onClick={saveFile}
-                disabled={savingFile}
-                style={{
-                  ...styles.commandButton,
-                  opacity: savingFile ? 0.75 : 1,
-                  cursor: savingFile ? "not-allowed" : "pointer",
-                }}
+                onClick={saveFileChanges}
+                style={styles.commandButton}
+                disabled={saving}
               >
-                {savingFile ? "Saving Changes..." : "Save File Changes"}
+                {saving ? "Saving Changes..." : "Save File Changes"}
               </button>
             </div>
 
@@ -969,24 +859,23 @@ export default function WorkflowFileDetailPage() {
 
               <div style={styles.commandNote}>
                 <strong>Branch Manager delete authority:</strong>{" "}
-                {isBranchManager ? "Enabled for this session." : "Not available for this session."}
+                {canDeleteFile ? "Enabled for this session." : "Not available in this session."}
               </div>
 
               <button
                 type="button"
-                onClick={deleteFile}
-                disabled={!isBranchManager || deletingFile}
+                onClick={deleteWorkflowFile}
                 style={{
                   ...styles.deleteButton,
-                  opacity: !isBranchManager || deletingFile ? 0.55 : 1,
-                  cursor:
-                    !isBranchManager || deletingFile ? "not-allowed" : "pointer",
+                  opacity: canDeleteFile ? 1 : 0.5,
+                  cursor: canDeleteFile ? "pointer" : "not-allowed",
                 }}
+                disabled={!canDeleteFile || deleting}
               >
-                {deletingFile ? "Deleting File..." : "Delete Workflow File"}
+                {deleting ? "Deleting Workflow File..." : "Delete Workflow File"}
               </button>
 
-              <div style={styles.helperText}>
+              <div style={styles.deleteHelpText}>
                 Only the Branch Manager should have file deletion authority.
                 Sandro Pansini Souza is currently the sole Branch Manager.
               </div>
@@ -1015,7 +904,9 @@ function TopNav({ active = "workflow" }: { active?: "team" | "workflow" }) {
         <a
           href="/team"
           style={
-            active === "team" ? navStyles.topBarLinkActive : navStyles.topBarLink
+            active === "team"
+              ? navStyles.topBarLinkActive
+              : navStyles.topBarLink
           }
         >
           Mortgage Intelligence
@@ -1055,28 +946,21 @@ const responsiveCss = `
   }
 
   @media (max-width: 1160px) {
-    .wf-main-grid {
-      grid-template-columns: 1fr !important;
-    }
-
-    .wf-hero-grid {
+    .bf-detail-main-grid,
+    .bf-detail-hero-grid {
       grid-template-columns: 1fr !important;
     }
   }
 
   @media (max-width: 920px) {
-    .wf-mini-grid {
-      grid-template-columns: 1fr 1fr !important;
+    .bf-mini-grid {
+      grid-template-columns: 1fr !important;
     }
   }
 
   @media (max-width: 680px) {
-    .wf-wrap {
+    .bf-detail-wrap {
       padding: 18px 12px 32px !important;
-    }
-
-    .wf-mini-grid {
-      grid-template-columns: 1fr !important;
     }
   }
 `;
@@ -1103,33 +987,46 @@ const styles: Record<string, React.CSSProperties> = {
   },
   heroGrid: {
     display: "grid",
-    gridTemplateColumns: "1.15fr 0.85fr",
+    gridTemplateColumns: "1.2fr 0.8fr",
     gap: 22,
     alignItems: "start",
   },
-  heroSideCard: {
+  heroRightPanel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+  },
+  userBadge: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    borderRadius: 20,
+    padding: 16,
+  },
+  userBadgeTitle: {
+    fontWeight: 800,
+    fontSize: 15,
+    marginBottom: 4,
+    color: "#ffffff",
+  },
+  userBadgeSubtext: {
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: "rgba(255,255,255,0.92)",
+  },
+  heroRuleCard: {
     backgroundColor: "rgba(255,255,255,0.12)",
     border: "1px solid rgba(255,255,255,0.18)",
     borderRadius: 24,
     padding: 18,
   },
-  permissionBox: {
-    marginTop: 14,
-    marginBottom: 14,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    borderRadius: 18,
-    padding: 14,
-  },
-  permissionTitle: {
-    fontSize: 13,
-    fontWeight: 900,
-    letterSpacing: 0.4,
-    marginBottom: 8,
-  },
-  permissionText: {
+  heroRuleTitle: {
     fontSize: 14,
-    lineHeight: 1.6,
+    fontWeight: 900,
+    marginBottom: 12,
+  },
+  heroRuleText: {
+    fontSize: 14,
+    lineHeight: 1.7,
     color: "rgba(255,255,255,0.95)",
   },
   heroBadge: {
@@ -1148,7 +1045,7 @@ const styles: Record<string, React.CSSProperties> = {
   heroTitle: {
     margin: 0,
     fontWeight: 900,
-    fontSize: 54,
+    fontSize: 56,
     lineHeight: 0.95,
   },
   heroText: {
@@ -1175,26 +1072,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     fontSize: 14,
   },
-  heroActionGhost: {
+  heroActionButton: {
     border: "1px solid rgba(255,255,255,0.26)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(255,255,255,0.1)",
     color: "#ffffff",
     borderRadius: 16,
     padding: "12px 16px",
     fontWeight: 800,
     fontSize: 14,
     cursor: "pointer",
-  },
-  userBadgeTitle: {
-    fontWeight: 800,
-    fontSize: 15,
-    marginBottom: 4,
-    color: "#ffffff",
-  },
-  userBadgeSubtext: {
-    fontSize: 13,
-    lineHeight: 1.5,
-    color: "rgba(255,255,255,0.92)",
   },
   mainGrid: {
     display: "grid",
@@ -1227,12 +1113,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 28,
     lineHeight: 1.15,
     fontWeight: 900,
-    marginBottom: 14,
   },
   miniGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: 12,
+    marginTop: 16,
     marginBottom: 18,
   },
   miniCard: {
@@ -1296,11 +1182,18 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#ffffff",
     resize: "vertical",
   },
-  helperText: {
-    marginTop: 8,
-    color: "#64748B",
+  badgeRow: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  badge: {
+    borderRadius: 999,
+    border: "1px solid",
+    padding: "8px 12px",
     fontSize: 13,
-    lineHeight: 1.55,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
   },
   commandButton: {
     width: "100%",
@@ -1312,21 +1205,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "16px 20px",
     fontWeight: 900,
     fontSize: 16,
+    cursor: "pointer",
     boxShadow: "0 10px 20px rgba(38,51,102,0.16)",
   },
-  deleteButton: {
-    width: "100%",
-    marginTop: 18,
-    border: "none",
-    borderRadius: 20,
-    backgroundColor: "#B42318",
-    color: "#ffffff",
-    padding: "16px 20px",
-    fontWeight: 900,
-    fontSize: 16,
-    boxShadow: "0 10px 20px rgba(180,35,24,0.16)",
-  },
-  gradientButton: {
+  feedButton: {
     width: "100%",
     marginTop: 14,
     border: "none",
@@ -1336,6 +1218,27 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "15px 18px",
     fontWeight: 900,
     fontSize: 16,
+    cursor: "pointer",
+  },
+  infoBox: {
+    marginBottom: 14,
+    backgroundColor: "#F8FBFF",
+    border: "1px solid #DBEAFE",
+    color: "#1E3A8A",
+    borderRadius: 16,
+    padding: 14,
+    lineHeight: 1.6,
+    fontSize: 14,
+  },
+  errorBox: {
+    marginBottom: 14,
+    backgroundColor: "#FFF1F2",
+    border: "1px solid #FECDD3",
+    color: "#B42318",
+    borderRadius: 16,
+    padding: 14,
+    lineHeight: 1.6,
+    fontSize: 14,
   },
   feedList: {
     display: "flex",
@@ -1372,6 +1275,24 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     lineHeight: 1.7,
   },
+  deleteButton: {
+    width: "100%",
+    marginTop: 18,
+    border: "none",
+    borderRadius: 20,
+    backgroundColor: "#C92519",
+    color: "#ffffff",
+    padding: "16px 20px",
+    fontWeight: 900,
+    fontSize: 16,
+    boxShadow: "0 10px 20px rgba(201,37,25,0.18)",
+  },
+  deleteHelpText: {
+    color: "#64748B",
+    fontSize: 14,
+    lineHeight: 1.6,
+    marginTop: 12,
+  },
   placeholderBox: {
     borderRadius: 18,
     border: "1px dashed #CBD5E1",
@@ -1381,63 +1302,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.7,
     fontSize: 14,
     marginTop: 10,
-  },
-  successBox: {
-    marginBottom: 16,
-    backgroundColor: "#ECFDF3",
-    color: "#166534",
-    border: "1px solid #BBF7D0",
-    borderRadius: 16,
-    padding: 14,
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  errorBox: {
-    marginBottom: 16,
-    backgroundColor: "#FEF2F2",
-    color: "#991B1B",
-    border: "1px solid #FECACA",
-    borderRadius: 16,
-    padding: 14,
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  badgeRow: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    marginTop: 14,
-  },
-  badge: {
-    borderRadius: 999,
-    border: "1px solid",
-    padding: "8px 12px",
-    fontSize: 13,
-    fontWeight: 900,
-    whiteSpace: "nowrap",
-  },
-  primaryLinkButton: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 14,
-    backgroundColor: "#263366",
-    color: "#ffffff",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-    display: "inline-block",
-  },
-  secondaryLinkButton: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 14,
-    border: "1px solid #263366",
-    backgroundColor: "#ffffff",
-    color: "#263366",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-    display: "inline-block",
   },
 };
 
