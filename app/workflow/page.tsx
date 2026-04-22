@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 type TeamRole =
@@ -79,23 +80,6 @@ type WorkflowApiFile = {
   latest_update: string;
 };
 
-type WorkflowFeedApiItem = {
-  id: string;
-  workflow_file_id: string;
-  author: string;
-  role: string;
-  text: string;
-  created_at: string;
-};
-
-type FeedItem = {
-  id: string;
-  author: string;
-  role: string;
-  timeLabel: string;
-  text: string;
-};
-
 const PROCESSORS: ProcessorOption[] = [
   {
     id: "amarilis-santos",
@@ -132,49 +116,6 @@ function formatTargetClose(value: string) {
   if (Number.isNaN(date.getTime())) return value;
 
   return new Intl.DateTimeFormat("en-US").format(date);
-}
-
-function toDateInputValue(value: string) {
-  if (!value) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function formatFeedTime(value: string) {
-  if (!value) return "Recent";
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Recent";
-
-  const now = new Date();
-  const sameDay =
-    parsed.getFullYear() === now.getFullYear() &&
-    parsed.getMonth() === now.getMonth() &&
-    parsed.getDate() === now.getDate();
-
-  const time = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(parsed);
-
-  if (sameDay) {
-    return `Today · ${time}`;
-  }
-
-  const date = new Intl.DateTimeFormat("en-US", {
-    month: "numeric",
-    day: "numeric",
-    year: "numeric",
-  }).format(parsed);
-
-  return `${date} · ${time}`;
 }
 
 function getStatusLabel(status: WorkflowStatus) {
@@ -335,21 +276,7 @@ export default function WorkflowPage() {
 
   const [files, setFiles] = useState<WorkflowFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(true);
-  const [feedLoading, setFeedLoading] = useState(false);
-
-  const [selectedFileId, setSelectedFileId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
-
-  const [assignedProcessor, setAssignedProcessor] =
-    useState<string>("Unassigned");
-  const [targetCloseDate, setTargetCloseDate] = useState("");
-  const [handoffUrgency, setHandoffUrgency] =
-    useState<WorkflowUrgency>("Priority");
-  const [handoffNote, setHandoffNote] = useState("");
-  const [handoffStatus, setHandoffStatus] = useState("");
-
-  const [internalUpdateInput, setInternalUpdateInput] = useState("");
-  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
 
   const [createBorrowerName, setCreateBorrowerName] = useState("");
   const [createPurpose, setCreatePurpose] = useState("Purchase");
@@ -366,38 +293,12 @@ export default function WorkflowPage() {
     useState("");
   const [createStatusMessage, setCreateStatusMessage] = useState("");
   const [isCreatingFile, setIsCreatingFile] = useState(false);
-  const [isSavingFeed, setIsSavingFeed] = useState(false);
-  const [isSavingHandoff, setIsSavingHandoff] = useState(false);
-  const [isSavingFileEdit, setIsSavingFileEdit] = useState(false);
-  const [isDeletingFile, setIsDeletingFile] = useState(false);
-  const [fileEditStatus, setFileEditStatus] = useState("");
-
-  const [editBorrowerName, setEditBorrowerName] = useState("");
-  const [editPurpose, setEditPurpose] = useState("Purchase");
-  const [editAmount, setEditAmount] = useState("");
-  const [editLoanOfficer, setEditLoanOfficer] = useState("");
-  const [editStatus, setEditStatus] = useState<WorkflowStatus>("new_scenario");
-  const [editUrgency, setEditUrgency] =
-    useState<WorkflowUrgency>("Priority");
-  const [editOccupancy, setEditOccupancy] = useState("Primary Residence");
-  const [editTargetClose, setEditTargetClose] = useState("");
-  const [editBlocker, setEditBlocker] = useState("");
-  const [editNextInternalAction, setEditNextInternalAction] = useState("");
-  const [editNextBorrowerAction, setEditNextBorrowerAction] = useState("");
-  const [editLatestUpdate, setEditLatestUpdate] = useState("");
-  const [editRequestedProcessorNote, setEditRequestedProcessorNote] =
-    useState("");
-  const [editProcessor, setEditProcessor] = useState("Unassigned");
 
   const canManageProcessing =
     activeUser?.role === "Production Manager" ||
     activeUser?.name === "Amarilis Santos";
 
-  const canDeleteFile =
-    activeUser?.role === "Branch Manager" ||
-    activeUser?.name === "Sandro Pansini Souza";
-
-  const loadFiles = useCallback(async (preferredSelectedFileId?: string) => {
+  const loadFiles = useCallback(async () => {
     try {
       setFilesLoading(true);
 
@@ -431,50 +332,11 @@ export default function WorkflowPage() {
         : [];
 
       setFiles(mappedFiles);
-
-      if (preferredSelectedFileId) {
-        setSelectedFileId(preferredSelectedFileId);
-      } else if (!selectedFileId && mappedFiles[0]) {
-        setSelectedFileId(mappedFiles[0].id);
-      }
     } catch (err) {
       console.error("Failed to load workflow files", err);
       setFiles([]);
     } finally {
       setFilesLoading(false);
-    }
-  }, [selectedFileId]);
-
-  const loadFeed = useCallback(async (workflowFileId: string) => {
-    if (!workflowFileId) {
-      setFeedItems([]);
-      return;
-    }
-
-    try {
-      setFeedLoading(true);
-
-      const res = await fetch(`/api/workflow?fileId=${workflowFileId}`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-
-      const mappedFeed: FeedItem[] = Array.isArray(data?.feed)
-        ? (data.feed as WorkflowFeedApiItem[]).map((item) => ({
-            id: String(item.id),
-            author: String(item.author ?? ""),
-            role: String(item.role ?? ""),
-            timeLabel: formatFeedTime(String(item.created_at ?? "")),
-            text: String(item.text ?? ""),
-          }))
-        : [];
-
-      setFeedItems(mappedFeed);
-    } catch (err) {
-      console.error("Failed to load workflow feed", err);
-      setFeedItems([]);
-    } finally {
-      setFeedLoading(false);
     }
   }, []);
 
@@ -529,61 +391,6 @@ export default function WorkflowPage() {
       return haystack.includes(query);
     });
   }, [sortedFiles, searchQuery]);
-
-  const selectedFile =
-    filteredFiles.find((file) => file.id === selectedFileId) ||
-    sortedFiles.find((file) => file.id === selectedFileId) ||
-    filteredFiles[0] ||
-    sortedFiles[0] ||
-    null;
-
-  useEffect(() => {
-    if (!selectedFile && filteredFiles.length === 0) return;
-
-    if (!selectedFileId && filteredFiles[0]) {
-      setSelectedFileId(filteredFiles[0].id);
-      return;
-    }
-
-    const exists = filteredFiles.some((file) => file.id === selectedFileId);
-    if (!exists && filteredFiles[0]) {
-      setSelectedFileId(filteredFiles[0].id);
-    }
-  }, [filteredFiles, selectedFile, selectedFileId]);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      setFeedItems([]);
-      return;
-    }
-
-    setAssignedProcessor(selectedFile.processor || "Unassigned");
-    setHandoffUrgency(selectedFile.urgency || "Priority");
-    setTargetCloseDate(toDateInputValue(selectedFile.targetClose));
-
-    setEditBorrowerName(selectedFile.borrowerName);
-    setEditPurpose(selectedFile.purpose);
-    setEditAmount(String(selectedFile.amount || ""));
-    setEditLoanOfficer(selectedFile.loanOfficer);
-    setEditStatus(selectedFile.status);
-    setEditUrgency(selectedFile.urgency);
-    setEditOccupancy(selectedFile.occupancy);
-    setEditTargetClose(toDateInputValue(selectedFile.targetClose));
-    setEditBlocker(selectedFile.blocker);
-    setEditNextInternalAction(selectedFile.nextInternalAction);
-    setEditNextBorrowerAction(selectedFile.nextBorrowerAction);
-    setEditLatestUpdate(selectedFile.latestUpdate);
-    setEditRequestedProcessorNote(selectedFile.requestedProcessorNote || "");
-    setEditProcessor(selectedFile.processor || "Unassigned");
-    setFileEditStatus("");
-
-    loadFeed(selectedFile.id);
-  }, [selectedFile, loadFeed]);
-
-  const handleSignOut = async () => {
-    await fetch("/api/team-auth/logout", { method: "POST" });
-    setActiveUser(null);
-  };
 
   const pipelineCounts = useMemo(() => {
     return {
@@ -681,8 +488,6 @@ export default function WorkflowPage() {
         return;
       }
 
-      const newId = String(data?.file?.id ?? "");
-
       setCreateBorrowerName("");
       setCreatePurpose("Purchase");
       setCreateAmount("");
@@ -694,197 +499,12 @@ export default function WorkflowPage() {
       setCreateRequestedProcessorNote("");
       setCreateStatusMessage("Workflow file created successfully.");
 
-      await loadFiles(newId);
-      if (newId) {
-        await loadFeed(newId);
-      }
+      await loadFiles();
     } catch (err) {
       console.error(err);
       setCreateStatusMessage("Unable to create workflow file.");
     } finally {
       setIsCreatingFile(false);
-    }
-  };
-
-  const saveFileEdits = async () => {
-    if (!selectedFile) return;
-
-    try {
-      setIsSavingFileEdit(true);
-      setFileEditStatus("");
-
-      const response = await fetch("/api/workflow", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "update_file",
-          workflowFileId: selectedFile.id,
-          borrowerName: editBorrowerName,
-          purpose: editPurpose,
-          amount: Number(editAmount || 0),
-          loanOfficer: editLoanOfficer,
-          status: editStatus,
-          urgency: editUrgency,
-          occupancy: editOccupancy,
-          targetClose: editTargetClose,
-          blocker: editBlocker,
-          nextInternalAction: editNextInternalAction,
-          nextBorrowerAction: editNextBorrowerAction,
-          latestUpdate: editLatestUpdate,
-          requestedProcessorNote: editRequestedProcessorNote,
-          processor: editProcessor,
-          author: activeUser?.name || "Team User",
-          role: activeUser?.role || "Professional",
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data?.success) {
-        setFileEditStatus(data?.error || "Unable to save file changes.");
-        return;
-      }
-
-      await loadFiles(selectedFile.id);
-      await loadFeed(selectedFile.id);
-      setFileEditStatus("File changes saved successfully.");
-    } catch (err) {
-      console.error(err);
-      setFileEditStatus("Unable to save file changes.");
-    } finally {
-      setIsSavingFileEdit(false);
-    }
-  };
-
-  const deleteSelectedFile = async () => {
-    if (!selectedFile) return;
-
-    const confirmed = window.confirm(
-      `Delete workflow file for ${selectedFile.borrowerName}? This cannot be undone.`
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setIsDeletingFile(true);
-      setFileEditStatus("");
-
-      const response = await fetch("/api/workflow", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          workflowFileId: selectedFile.id,
-          author: activeUser?.name || "Team User",
-          role: activeUser?.role || "Professional",
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data?.success) {
-        setFileEditStatus(data?.error || "Unable to delete file.");
-        return;
-      }
-
-      const remaining = files.filter((item) => item.id !== selectedFile.id);
-      const nextSelectedId = remaining[0]?.id || "";
-      await loadFiles(nextSelectedId);
-      setSelectedFileId(nextSelectedId);
-      setFeedItems([]);
-      setFileEditStatus("File deleted successfully.");
-    } catch (err) {
-      console.error(err);
-      setFileEditStatus("Unable to delete file.");
-    } finally {
-      setIsDeletingFile(false);
-    }
-  };
-
-  const submitProcessingHandoff = async () => {
-    if (!selectedFile) return;
-
-    try {
-      setIsSavingHandoff(true);
-      setHandoffStatus("");
-
-      const response = await fetch("/api/workflow", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "handoff",
-          workflowFileId: selectedFile.id,
-          processor: assignedProcessor,
-          targetClose: targetCloseDate,
-          urgency: handoffUrgency,
-          handoffNote,
-          author: activeUser?.name || "Team User",
-          role: activeUser?.role || "Professional",
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data?.success) {
-        setHandoffStatus(data?.error || "Unable to save handoff.");
-        return;
-      }
-
-      await loadFiles(selectedFile.id);
-      await loadFeed(selectedFile.id);
-
-      setHandoffStatus(
-        canManageProcessing
-          ? "Processing handoff and processor assignment saved successfully."
-          : "Processing note sent successfully. Processor assignment remains under Production Manager control."
-      );
-      setHandoffNote("");
-    } catch (err) {
-      console.error(err);
-      setHandoffStatus("Unable to save handoff.");
-    } finally {
-      setIsSavingHandoff(false);
-    }
-  };
-
-  const addInternalUpdate = async () => {
-    const trimmed = internalUpdateInput.trim();
-    if (!trimmed || !selectedFile) return;
-
-    try {
-      setIsSavingFeed(true);
-
-      const response = await fetch("/api/workflow", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "add_feed",
-          workflowFileId: selectedFile.id,
-          author: activeUser?.name || "Team User",
-          role: activeUser?.role || "Professional",
-          text: trimmed,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data?.success) {
-        return;
-      }
-
-      setInternalUpdateInput("");
-      await loadFeed(selectedFile.id);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSavingFeed(false);
     }
   };
 
@@ -969,7 +589,7 @@ export default function WorkflowPage() {
                 through closing.
               </h1>
               <p style={styles.heroText}>
-                Built for loan officers, processors, assistants, leadership
+                Built for loan officers, processors, assistants, and leadership
                 teams who need one disciplined operating layer to manage file
                 handoff, milestone visibility, accountability, and internal
                 communication from processing entry to clear-to-close.
@@ -989,10 +609,10 @@ export default function WorkflowPage() {
               <div style={styles.heroPurposeCard}>
                 <div style={styles.heroPurposeTitle}>COMMAND PURPOSE</div>
                 <div style={styles.heroPurposeList}>
-                  <div>• Trigger processing handoff with structure and urgency.</div>
-                  <div>• Keep loan officer and processor aligned in one file room.</div>
-                  <div>• Track milestones, blockers, and next actions visibly.</div>
+                  <div>• Open each file as a true operational record.</div>
                   <div>• Keep production assignment under Production Manager control.</div>
+                  <div>• Sort the queue by urgency and execution priority.</div>
+                  <div>• Keep updates, visibility, and accountability in one place.</div>
                 </div>
 
                 <div style={styles.heroActionRow}>
@@ -1114,86 +734,78 @@ export default function WorkflowPage() {
                   {filteredFiles.map((file) => {
                     const statusTone = getStatusTone(file.status);
                     const urgencyTone = getUrgencyTone(file.urgency);
-                    const isSelected = selectedFile?.id === file.id;
 
                     return (
-                      <button
+                      <Link
                         key={file.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedFileId(file.id);
-                          setAssignedProcessor(file.processor);
-                          setHandoffUrgency(file.urgency);
-                          setTargetCloseDate(toDateInputValue(file.targetClose));
-                          setHandoffStatus("");
-                        }}
-                        style={{
-                          ...styles.fileCard,
-                          ...(isSelected ? styles.fileCardSelected : {}),
-                        }}
+                        href={`/workflow/${file.id}`}
+                        style={styles.fileLink}
                       >
-                        <div style={styles.fileCardTop}>
-                          <div>
-                            <div style={styles.fileBorrower}>
-                              {file.borrowerName}
+                        <div style={styles.fileCard}>
+                          <div style={styles.fileCardTop}>
+                            <div>
+                              <div style={styles.fileBorrower}>
+                                {file.borrowerName}
+                              </div>
+                              <div style={styles.fileMeta}>
+                                {file.id} · {file.purpose} ·{" "}
+                                {formatCurrency(file.amount)}
+                              </div>
                             </div>
-                            <div style={styles.fileMeta}>
-                              {file.id} · {file.purpose} · {formatCurrency(file.amount)}
+
+                            <div style={styles.badgeRow}>
+                              <span
+                                style={{
+                                  ...styles.badge,
+                                  backgroundColor: statusTone.bg,
+                                  borderColor: statusTone.border,
+                                  color: statusTone.text,
+                                }}
+                              >
+                                {getStatusLabel(file.status)}
+                              </span>
+
+                              <span
+                                style={{
+                                  ...styles.badge,
+                                  backgroundColor: urgencyTone.bg,
+                                  borderColor: urgencyTone.border,
+                                  color: urgencyTone.text,
+                                }}
+                              >
+                                {file.urgency}
+                              </span>
                             </div>
                           </div>
 
-                          <div style={styles.badgeRow}>
-                            <span
-                              style={{
-                                ...styles.badge,
-                                backgroundColor: statusTone.bg,
-                                borderColor: statusTone.border,
-                                color: statusTone.text,
-                              }}
-                            >
-                              {getStatusLabel(file.status)}
-                            </span>
-
-                            <span
-                              style={{
-                                ...styles.badge,
-                                backgroundColor: urgencyTone.bg,
-                                borderColor: urgencyTone.border,
-                                color: urgencyTone.text,
-                              }}
-                            >
-                              {file.urgency}
-                            </span>
+                          <div className="bf-mini-grid" style={styles.miniGrid}>
+                            <MiniDataCard
+                              label="LOAN OFFICER"
+                              value={file.loanOfficer}
+                            />
+                            <MiniDataCard
+                              label="PRODUCTION MANAGER"
+                              value={file.productionManager || "Pending Assignment"}
+                            />
+                            <MiniDataCard
+                              label="PROCESSOR"
+                              value={file.processor || "Unassigned"}
+                            />
+                            <MiniDataCard
+                              label="TARGET CLOSE"
+                              value={formatTargetClose(file.targetClose)}
+                            />
+                            <MiniDataCard
+                              label="FILE AGE"
+                              value={`${file.fileAgeDays} days`}
+                            />
+                            <MiniDataCard
+                              label="OPEN RECORD"
+                              value="View full file"
+                            />
                           </div>
                         </div>
-
-                        <div className="bf-mini-grid" style={styles.miniGrid}>
-                          <MiniDataCard
-                            label="LOAN OFFICER"
-                            value={file.loanOfficer}
-                          />
-                          <MiniDataCard
-                            label="PRODUCTION MANAGER"
-                            value={file.productionManager || "Pending Assignment"}
-                          />
-                          <MiniDataCard
-                            label="PROCESSOR"
-                            value={file.processor || "Unassigned"}
-                          />
-                          <MiniDataCard
-                            label="TARGET CLOSE"
-                            value={formatTargetClose(file.targetClose)}
-                          />
-                          <MiniDataCard
-                            label="FILE AGE"
-                            value={`${file.fileAgeDays} days`}
-                          />
-                          <MiniDataCard
-                            label="REQUESTED PROCESSOR NOTE"
-                            value={file.requestedProcessorNote || "None"}
-                          />
-                        </div>
-                      </button>
+                      </Link>
                     );
                   })}
 
@@ -1217,69 +829,27 @@ export default function WorkflowPage() {
                   </div>
                 ) : (
                   urgentItems.map((item) => (
-                    <div key={`urgent-${item.id}`} style={styles.attentionCard}>
-                      <div>
-                        <div style={styles.attentionName}>
-                          {item.borrowerName}
+                    <Link
+                      key={`urgent-${item.id}`}
+                      href={`/workflow/${item.id}`}
+                      style={styles.attentionLink}
+                    >
+                      <div style={styles.attentionCard}>
+                        <div>
+                          <div style={styles.attentionName}>
+                            {item.borrowerName}
+                          </div>
+                          <div style={styles.attentionMeta}>
+                            {getStatusLabel(item.status)} · {item.fileAgeDays} days
+                            in workflow
+                          </div>
                         </div>
-                        <div style={styles.attentionMeta}>
-                          {getStatusLabel(item.status)} · {item.fileAgeDays} days in
-                          workflow
-                        </div>
+                        <div style={styles.attentionIssue}>{item.blocker}</div>
                       </div>
-                      <div style={styles.attentionIssue}>{item.blocker}</div>
-                    </div>
+                    </Link>
                   ))
                 )}
               </div>
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>INTERNAL FILE FEED</div>
-              <h2 style={styles.sectionTitle}>
-                Loan officer and processor activity
-              </h2>
-
-              <label style={styles.label}>Add internal update</label>
-              <textarea
-                value={internalUpdateInput}
-                onChange={(e) => setInternalUpdateInput(e.target.value)}
-                placeholder="Post a structured internal update for the active file."
-                rows={3}
-                style={styles.textarea}
-              />
-              <button
-                type="button"
-                onClick={addInternalUpdate}
-                style={styles.gradientButton}
-                disabled={!selectedFile || isSavingFeed}
-              >
-                {isSavingFeed ? "Saving Update..." : "Add Internal Update"}
-              </button>
-
-              {feedLoading ? (
-                <div style={styles.placeholderBox}>Loading file activity...</div>
-              ) : (
-                <div style={styles.feedList}>
-                  {feedItems.length === 0 ? (
-                    <div style={styles.placeholderBox}>
-                      No internal updates yet for this file.
-                    </div>
-                  ) : (
-                    feedItems.map((item) => (
-                      <div key={item.id} style={styles.feedCard}>
-                        <div style={styles.feedHeader}>
-                          <div style={styles.feedAuthor}>{item.author}</div>
-                          <div style={styles.feedMeta}>
-                            {item.role} · {item.timeLabel}
-                          </div>
-                        </div>
-                        <div style={styles.feedText}>{item.text}</div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
             </div>
           </section>
 
@@ -1325,7 +895,9 @@ export default function WorkflowPage() {
                 placeholder="Loan officer name"
               />
 
-              <label style={styles.label}>Requested processor note to Production Manager</label>
+              <label style={styles.label}>
+                Requested processor note to Production Manager
+              </label>
               <textarea
                 value={createRequestedProcessorNote}
                 onChange={(e) => setCreateRequestedProcessorNote(e.target.value)}
@@ -1348,6 +920,7 @@ export default function WorkflowPage() {
                   </option>
                 ))}
               </select>
+
               {!canManageProcessing ? (
                 <div style={styles.infoBox}>
                   Processor assignment is controlled by the Production Manager.
@@ -1407,382 +980,30 @@ export default function WorkflowPage() {
             </div>
 
             <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>FILE COMMAND</div>
-
-              {selectedFile ? (
-                <>
-                  <div style={styles.commandTopRow}>
-                    <h2 style={{ ...styles.sectionTitle, marginBottom: 0 }}>
-                      {selectedFile.borrowerName}
-                    </h2>
-
-                    <span
-                      style={{
-                        ...styles.badge,
-                        backgroundColor: getStatusTone(selectedFile.status).bg,
-                        borderColor: getStatusTone(selectedFile.status).border,
-                        color: getStatusTone(selectedFile.status).text,
-                      }}
-                    >
-                      {getStatusLabel(selectedFile.status)}
-                    </span>
-                  </div>
-
-                  <div className="bf-command-grid" style={styles.commandGrid}>
-                    <MiniDataCard
-                      label="LOAN OFFICER"
-                      value={selectedFile.loanOfficer}
-                    />
-                    <MiniDataCard
-                      label="PRODUCTION MANAGER"
-                      value={selectedFile.productionManager || "Pending Assignment"}
-                    />
-                    <MiniDataCard
-                      label="PROCESSOR"
-                      value={selectedFile.processor || "Unassigned"}
-                    />
-                    <MiniDataCard
-                      label="TARGET CLOSE"
-                      value={formatTargetClose(selectedFile.targetClose)}
-                    />
-                    <MiniDataCard
-                      label="LOAN PURPOSE"
-                      value={selectedFile.purpose}
-                    />
-                    <MiniDataCard
-                      label="OCCUPANCY"
-                      value={selectedFile.occupancy}
-                    />
-                    <MiniDataCard
-                      label="AMOUNT"
-                      value={formatCurrency(selectedFile.amount)}
-                    />
-                    <MiniDataCard
-                      label="REQUESTED PROCESSOR NOTE"
-                      value={selectedFile.requestedProcessorNote || "None"}
-                    />
-                  </div>
-
-                  <div style={styles.commandNote}>
-                    <strong>Current blocker:</strong> {selectedFile.blocker}
-                  </div>
-                  <div style={styles.commandNote}>
-                    <strong>Next internal action:</strong>{" "}
-                    {selectedFile.nextInternalAction}
-                  </div>
-                  <div style={styles.commandNote}>
-                    <strong>Next borrower action:</strong>{" "}
-                    {selectedFile.nextBorrowerAction}
-                  </div>
-                  <div style={styles.commandNote}>
-                    <strong>Latest file update:</strong>{" "}
-                    {selectedFile.latestUpdate}
-                  </div>
-                </>
-              ) : (
-                <div style={styles.placeholderBox}>
-                  Select a file to view command details.
-                </div>
-              )}
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>EDIT FILE</div>
-              <h2 style={styles.sectionTitle}>Update workflow file</h2>
-
-              {selectedFile ? (
-                <>
-                  <label style={styles.label}>Borrower full name</label>
-                  <input
-                    value={editBorrowerName}
-                    onChange={(e) => setEditBorrowerName(e.target.value)}
-                    style={styles.input}
-                  />
-
-                  <label style={styles.label}>Loan purpose</label>
-                  <select
-                    value={editPurpose}
-                    onChange={(e) => setEditPurpose(e.target.value)}
-                    style={styles.input}
-                  >
-                    <option value="Purchase">Purchase</option>
-                    <option value="Rate/Term Refinance">Rate/Term Refinance</option>
-                    <option value="Cash-Out Refinance">Cash-Out Refinance</option>
-                    <option value="HELOC">HELOC</option>
-                    <option value="DSCR">DSCR</option>
-                  </select>
-
-                  <label style={styles.label}>Amount</label>
-                  <input
-                    value={editAmount}
-                    onChange={(e) => setEditAmount(e.target.value)}
-                    style={styles.input}
-                  />
-
-                  <label style={styles.label}>Loan officer</label>
-                  <input
-                    value={editLoanOfficer}
-                    onChange={(e) => setEditLoanOfficer(e.target.value)}
-                    style={styles.input}
-                  />
-
-                  <label style={styles.label}>Status</label>
-                  <select
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value as WorkflowStatus)}
-                    style={styles.input}
-                  >
-                    <option value="new_scenario">New Scenario</option>
-                    <option value="pre_approval_review">Pre-Approval Review</option>
-                    <option value="sent_to_processing">Sent to Processing</option>
-                    <option value="processing_active">Processing Active</option>
-                    <option value="submitted_to_lender">Submitted to Lender</option>
-                    <option value="conditional_approval">Conditional Approval</option>
-                    <option value="clear_to_close">Clear to Close</option>
-                    <option value="closed">Closed</option>
-                  </select>
-
-                  <label style={styles.label}>Urgency</label>
-                  <select
-                    value={editUrgency}
-                    onChange={(e) =>
-                      setEditUrgency(e.target.value as WorkflowUrgency)
-                    }
-                    style={styles.input}
-                  >
-                    <option value="Standard">Standard</option>
-                    <option value="Priority">Priority</option>
-                    <option value="Rush">Rush</option>
-                  </select>
-
-                  <label style={styles.label}>Occupancy</label>
-                  <input
-                    value={editOccupancy}
-                    onChange={(e) => setEditOccupancy(e.target.value)}
-                    style={styles.input}
-                  />
-
-                  <label style={styles.label}>Target close date</label>
-                  <input
-                    type="date"
-                    value={editTargetClose}
-                    onChange={(e) => setEditTargetClose(e.target.value)}
-                    style={styles.input}
-                  />
-
-                  <label style={styles.label}>Current blocker</label>
-                  <textarea
-                    value={editBlocker}
-                    onChange={(e) => setEditBlocker(e.target.value)}
-                    rows={3}
-                    style={styles.textarea}
-                  />
-
-                  <label style={styles.label}>Next internal action</label>
-                  <textarea
-                    value={editNextInternalAction}
-                    onChange={(e) => setEditNextInternalAction(e.target.value)}
-                    rows={3}
-                    style={styles.textarea}
-                  />
-
-                  <label style={styles.label}>Next borrower action</label>
-                  <textarea
-                    value={editNextBorrowerAction}
-                    onChange={(e) => setEditNextBorrowerAction(e.target.value)}
-                    rows={3}
-                    style={styles.textarea}
-                  />
-
-                  <label style={styles.label}>Latest file update</label>
-                  <textarea
-                    value={editLatestUpdate}
-                    onChange={(e) => setEditLatestUpdate(e.target.value)}
-                    rows={3}
-                    style={styles.textarea}
-                  />
-
-                  <label style={styles.label}>Requested processor note to Production Manager</label>
-                  <textarea
-                    value={editRequestedProcessorNote}
-                    onChange={(e) => setEditRequestedProcessorNote(e.target.value)}
-                    rows={3}
-                    style={styles.textarea}
-                  />
-
-                  <label style={styles.label}>Production Manager</label>
-                  <input
-                    value={selectedFile.productionManager || "Pending Assignment"}
-                    readOnly
-                    style={styles.inputReadOnly}
-                  />
-
-                  <label style={styles.label}>Assigned processor</label>
-                  <select
-                    value={editProcessor}
-                    onChange={(e) => setEditProcessor(e.target.value)}
-                    style={canManageProcessing ? styles.input : styles.inputReadOnly}
-                    disabled={!canManageProcessing}
-                  >
-                    <option value="Unassigned">Unassigned</option>
-                    {PROCESSORS.map((processor) => (
-                      <option key={processor.id} value={processor.name}>
-                        {processor.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  {!canManageProcessing ? (
-                    <div style={styles.infoBox}>
-                      Only the Production Manager can assign or change the processor.
-                      Loan Officers may update the requested processor note instead.
-                    </div>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={saveFileEdits}
-                    style={styles.commandButton}
-                    disabled={isSavingFileEdit}
-                  >
-                    {isSavingFileEdit ? "Saving File..." : "Save File Changes"}
-                  </button>
-
-                  {canDeleteFile ? (
-                    <button
-                      type="button"
-                      onClick={deleteSelectedFile}
-                      style={styles.deleteButton}
-                      disabled={isDeletingFile}
-                    >
-                      {isDeletingFile ? "Deleting File..." : "Delete File"}
-                    </button>
-                  ) : null}
-
-                  {fileEditStatus ? (
-                    <div style={styles.infoBox}>{fileEditStatus}</div>
-                  ) : null}
-                </>
-              ) : (
-                <div style={styles.placeholderBox}>
-                  Select a file to edit.
-                </div>
-              )}
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>PROCESSING HANDOFF</div>
-              <h2 style={styles.sectionTitle}>Trigger and alert processing</h2>
-
-              <label style={styles.label}>Assign processor</label>
-              <select
-                value={assignedProcessor}
-                onChange={(e) => setAssignedProcessor(e.target.value)}
-                style={canManageProcessing ? styles.input : styles.inputReadOnly}
-                disabled={!canManageProcessing}
-              >
-                <option value="Unassigned">Unassigned</option>
-                {PROCESSORS.map((processor) => (
-                  <option key={processor.id} value={processor.name}>
-                    {processor.name}
-                  </option>
-                ))}
-              </select>
-
-              {!canManageProcessing ? (
-                <div style={styles.infoBox}>
-                  Only the Production Manager can assign the processor. Your note
-                  below will be sent without changing processor ownership.
-                </div>
-              ) : null}
-
-              <label style={styles.label}>Target close date</label>
-              <input
-                type="date"
-                value={targetCloseDate}
-                onChange={(e) => setTargetCloseDate(e.target.value)}
-                style={styles.input}
-              />
-
-              <label style={styles.label}>Urgency</label>
-              <select
-                value={handoffUrgency}
-                onChange={(e) =>
-                  setHandoffUrgency(e.target.value as WorkflowUrgency)
-                }
-                style={styles.input}
-              >
-                <option value="Standard">Standard</option>
-                <option value="Priority">Priority</option>
-                <option value="Rush">Rush</option>
-              </select>
-
-              <label style={styles.label}>
-                {canManageProcessing
-                  ? "Production Manager handoff note"
-                  : "Note to Production Manager"}
-              </label>
-              <textarea
-                value={handoffNote}
-                onChange={(e) => setHandoffNote(e.target.value)}
-                rows={4}
-                placeholder={
-                  canManageProcessing
-                    ? "Example: Assigned to Bia Marques. Please issue first checklist today."
-                    : "Example: If possible, please assign Bia Marques because the borrower needs Portuguese support."
-                }
-                style={styles.textarea}
-              />
-
-              <button
-                type="button"
-                onClick={submitProcessingHandoff}
-                style={styles.commandButton}
-                disabled={!selectedFile || isSavingHandoff}
-              >
-                {isSavingHandoff ? "Saving..." : "Send to Processing"}
-              </button>
-
-              {handoffStatus ? (
-                <div style={styles.infoBox}>{handoffStatus}</div>
-              ) : null}
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.sectionEyebrow}>COMMAND PACKAGE</div>
-              <h2 style={styles.sectionTitle}>What this module becomes</h2>
+              <div style={styles.sectionEyebrow}>FILE RECORDS</div>
+              <h2 style={styles.sectionTitle}>How Phase 3 works</h2>
 
               <div style={styles.moduleStack}>
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Production-Controlled Assignment</div>
+                  <div style={styles.moduleTitle}>Open by file</div>
                   <div style={styles.moduleText}>
-                    Processor assignment is controlled by the Production Manager,
-                    while Loan Officers can still request a preferred processor
-                    through a documented note.
+                    Click any workflow card to open its dedicated record page.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Editable File Workspace</div>
+                  <div style={styles.moduleTitle}>Full operational view</div>
                   <div style={styles.moduleText}>
-                    The file can now be updated after creation so the team can
-                    maintain one current operational record.
+                    Each file can now become its own working page with full history,
+                    edit controls, and production governance.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Protected Deletion Authority</div>
+                  <div style={styles.moduleTitle}>Priority-first visibility</div>
                   <div style={styles.moduleText}>
-                    Only the Branch Manager can delete a workflow file, which keeps
-                    file control disciplined and traceable.
-                  </div>
-                </div>
-
-                <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Priority-First Queue</div>
-                  <div style={styles.moduleText}>
-                    Rush files remain on top, then Priority, then Standard, so the
-                    most critical work stays visible first.
+                    Rush files remain at the top, then Priority, then Standard,
+                    so the queue stays operationally disciplined.
                   </div>
                 </div>
               </div>
@@ -1903,10 +1124,6 @@ const responsiveCss = `
     .bf-main-grid {
       grid-template-columns: 1fr !important;
     }
-
-    .bf-hero-grid {
-      grid-template-columns: 1fr !important;
-    }
   }
 
   @media (max-width: 1080px) {
@@ -1918,7 +1135,6 @@ const responsiveCss = `
   @media (max-width: 920px) {
     .bf-stat-grid,
     .bf-pipeline-grid,
-    .bf-command-grid,
     .bf-mini-grid {
       grid-template-columns: 1fr 1fr !important;
     }
@@ -1931,7 +1147,6 @@ const responsiveCss = `
 
     .bf-stat-grid,
     .bf-pipeline-grid,
-    .bf-command-grid,
     .bf-mini-grid {
       grid-template-columns: 1fr !important;
     }
@@ -2233,6 +1448,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 16,
     marginTop: 8,
   },
+  fileLink: {
+    textDecoration: "none",
+    color: "inherit",
+  },
   fileCard: {
     width: "100%",
     textAlign: "left",
@@ -2241,11 +1460,6 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#ffffff",
     padding: 16,
     cursor: "pointer",
-  },
-  fileCardSelected: {
-    backgroundColor: "#F4FBFF",
-    border: "1px solid #A5E3F5",
-    boxShadow: "inset 0 0 0 1px rgba(0,150,199,0.08)",
   },
   fileCardTop: {
     display: "flex",
@@ -2306,31 +1520,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.5,
     wordBreak: "break-word",
   },
-  commandTopRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    alignItems: "center",
-    flexWrap: "wrap",
-    marginBottom: 16,
-  },
-  commandGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
-    gap: 12,
-    marginBottom: 18,
-  },
-  commandNote: {
-    borderRadius: 18,
-    border: "1px solid #D7E2F0",
-    backgroundColor: "#F8FAFC",
-    padding: "14px 16px",
-    color: "#526581",
-    fontSize: 15,
-    lineHeight: 1.65,
-    marginTop: 12,
-    wordBreak: "break-word",
-  },
   label: {
     display: "block",
     fontSize: 14,
@@ -2348,16 +1537,6 @@ const styles: Record<string, React.CSSProperties> = {
     outline: "none",
     color: "#0F172A",
     backgroundColor: "#ffffff",
-  },
-  inputReadOnly: {
-    width: "100%",
-    borderRadius: 18,
-    border: "1px solid #D7E2F0",
-    padding: "13px 16px",
-    fontSize: 15,
-    outline: "none",
-    color: "#64748B",
-    backgroundColor: "#F8FAFC",
   },
   textarea: {
     width: "100%",
@@ -2383,19 +1562,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     boxShadow: "0 10px 20px rgba(38,51,102,0.16)",
   },
-  deleteButton: {
-    width: "100%",
-    marginTop: 12,
-    border: "none",
-    borderRadius: 20,
-    backgroundColor: "#B91C1C",
-    color: "#ffffff",
-    padding: "16px 20px",
-    fontWeight: 900,
-    fontSize: 16,
-    cursor: "pointer",
-    boxShadow: "0 10px 20px rgba(185,28,28,0.16)",
-  },
   infoBox: {
     marginTop: 14,
     backgroundColor: "#F8FBFF",
@@ -2411,6 +1577,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 14,
     marginTop: 8,
+  },
+  attentionLink: {
+    textDecoration: "none",
+    color: "inherit",
   },
   attentionCard: {
     borderRadius: 20,
@@ -2439,53 +1609,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     fontSize: 14,
     lineHeight: 1.5,
-  },
-  gradientButton: {
-    width: "100%",
-    marginTop: 14,
-    border: "none",
-    borderRadius: 18,
-    background: "linear-gradient(90deg, #109BC9 0%, #34B7E2 100%)",
-    color: "#ffffff",
-    padding: "15px 18px",
-    fontWeight: 900,
-    fontSize: 16,
-    cursor: "pointer",
-  },
-  feedList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 14,
-    marginTop: 18,
-  },
-  feedCard: {
-    borderRadius: 20,
-    border: "1px solid #E2E8F0",
-    backgroundColor: "#ffffff",
-    padding: 16,
-  },
-  feedHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  feedAuthor: {
-    fontSize: 18,
-    fontWeight: 900,
-    color: "#2D3B78",
-  },
-  feedMeta: {
-    fontSize: 14,
-    color: "#64748B",
-    lineHeight: 1.5,
-  },
-  feedText: {
-    color: "#526581",
-    fontSize: 15,
-    lineHeight: 1.7,
   },
   moduleStack: {
     display: "flex",
