@@ -793,7 +793,7 @@ export default function WorkflowPage() {
               {selectedFile ? (
                 <>
                   <div style={styles.commandTopRow}>
-                    <h2 style={styles.sectionTitle} style={{ ...styles.sectionTitle, marginBottom: 0 }}>
+                    <h2 style={{ ...styles.sectionTitle, marginBottom: 0 }}>
                       {selectedFile.borrowerName}
                     </h2>
 
