@@ -161,7 +161,7 @@ export async function POST(req: Request) {
       : [];
     const trigger = (body?.trigger || "ai") as SummaryTrigger;
 
-    const fullName = String(lead.fullName || "").trim();
+        const fullName = String(lead.fullName || "").trim();
     const email = String(lead.email || "").trim();
     const phone = String(lead.phone || "").trim();
     const preferredLanguage = String(lead.preferredLanguage || "").trim();
@@ -169,7 +169,7 @@ export async function POST(req: Request) {
     const realtorName = String(lead.realtorName || "").trim();
     const realtorPhone = String(lead.realtorPhone || "").trim();
 
-    if (!fullName || !email || !phone || !preferredLanguage || !loanOfficer) {
+    if (!fullName || !email || !preferredLanguage || !loanOfficer) {
       return NextResponse.json(
         { success: false, error: "Missing lead details." },
         { status: 400 }
@@ -402,7 +402,7 @@ ${messages
       </div>
     `;
 
-    const resendResponse = await fetch("https://api.resend.com/emails", {
+        const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -417,11 +417,17 @@ ${messages
       }),
     });
 
+    const resendResult = await resendResponse.json().catch(() => null);
+
     if (!resendResponse.ok) {
-      const error = await resendResponse.text();
-      console.error("RESEND ERROR:", error);
-      return NextResponse.json({ success: false, error }, { status: 500 });
+      console.error("RESEND ERROR:", resendResult);
+      return NextResponse.json(
+        { success: false, error: resendResult || "Resend send failed." },
+        { status: 500 }
+      );
     }
+
+    console.log("RESEND SUCCESS:", resendResult);
 
     const smsResults: Array<{
       target: "loan_officer" | "realtor";
