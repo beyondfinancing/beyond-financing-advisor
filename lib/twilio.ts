@@ -83,15 +83,16 @@ export async function sendSmsAlert(params: {
       errorMessage: message.errorMessage,
     });
 
-    return message;
+        return message;
   } catch (error) {
     console.error("TWILIO SEND ERROR:", {
       to,
       usingMessagingServiceSid: !!payload.messagingServiceSid,
       from: payload.from || null,
       errorMessage: error instanceof Error ? error.message : "Unknown error",
+      error,
     });
 
     throw error;
   }
-}; // ✅ IMPORTANT: this semicolon fixes your build
+}
