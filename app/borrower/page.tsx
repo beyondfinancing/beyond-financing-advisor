@@ -147,8 +147,6 @@ const COPY = {
     emailOfficer: "Email Loan Officer",
     callOfficer: "Call Loan Officer",
     loading: "Loading...",
-    reviewReady:
-      "Thank you. Your intake has been organized. Please complete the property scenario so Finley can continue without repeating questions.",
   },
 } as const;
 
@@ -234,35 +232,6 @@ function extractAiText(data: unknown): string {
   return "";
 }
 
-function extractAiText(data: unknown): string {
-  if (typeof data === "string") return data;
-
-  if (typeof data === "object" && data !== null) {
-    const obj = data as {
-      choices?: Array<{ message?: { content?: string } }>;
-      reply?: string;
-      message?: string;
-      response?: string;
-      content?: string;
-      text?: string;
-      nextQuestion?: string;
-    };
-
-    return (
-      obj.choices?.[0]?.message?.content ||
-      obj.reply ||
-      obj.message ||
-      obj.response ||
-      obj.content ||
-      obj.text ||
-      obj.nextQuestion ||
-      ""
-    );
-  }
-
-  return "";
-}
-
 function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return null;
@@ -291,11 +260,6 @@ function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
     }) || null
   );
 }
-
-export default function BorrowerPage() {
-  const t = COPY.en;
-
-  const [accepted, setAccepted] = useState(false);
 
 export default function BorrowerPage() {
   const t = COPY.en;
@@ -346,11 +310,14 @@ export default function BorrowerPage() {
     const query = loanOfficerQuery.trim().toLowerCase();
     if (!query || loanOfficerConfirmed) return [];
 
-    return LOAN_OFFICERS.filter(
-      (officer) =>
+    return LOAN_OFFICERS.filter((officer) => {
+      const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
+      return (
         officer.name.toLowerCase().includes(query) ||
-        officer.nmls.toLowerCase().includes(query)
-    ).slice(0, 5);
+        officer.nmls.toLowerCase().includes(query) ||
+        display.includes(query)
+      );
+    }).slice(0, 5);
   }, [loanOfficerQuery, loanOfficerConfirmed]);
 
   const matchedOfficerFromQuery = resolveOfficerFromQuery(loanOfficerQuery);
@@ -376,7 +343,7 @@ export default function BorrowerPage() {
     !!transactionType &&
     intakeForm.fullName.trim() &&
     intakeForm.email.trim() &&
-    intakeForm.phone.trim() &&
+    normalizeDigitsOnly(intakeForm.phone).length >= 10 &&
     intakeForm.credit.trim() &&
     intakeForm.income.trim() &&
     intakeForm.debt.trim() &&
@@ -384,7 +351,8 @@ export default function BorrowerPage() {
     intakeForm.targetState.trim() &&
     !!realtorStatus &&
     (realtorStatus !== "yes" ||
-      (intakeForm.realtorName.trim() && intakeForm.realtorPhone.trim())) &&
+      (intakeForm.realtorName.trim() &&
+        normalizeDigitsOnly(intakeForm.realtorPhone).length >= 10)) &&
     loanOfficerConfirmed;
 
   const scenarioComplete =
@@ -472,7 +440,7 @@ Instructions:
   };
 
   const buildRoutingPayload = () => ({
-    language: "en",
+    language: "en" as LanguageCode,
     intakeComplete,
     scenarioComplete,
     loanOfficerQuery,
@@ -1136,7 +1104,10 @@ Keep the response practical and professional.`,
                   style={styles.input}
                   value={scenario.homePrice}
                   onChange={(e) =>
-                    setScenarioField("homePrice", formatNumberInput(e.target.value))
+                    setScenarioField(
+                      "homePrice",
+                      formatNumberInput(e.target.value)
+                    )
                   }
                   placeholder={t.homePrice}
                   disabled={scenarioConfirmed}
