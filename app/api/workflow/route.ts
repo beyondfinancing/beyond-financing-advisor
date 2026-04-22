@@ -37,17 +37,11 @@ function buildFileNumber() {
 }
 
 function isProductionManager(actorName?: string, actorRole?: string) {
-  return (
-    actorRole === "Production Manager" ||
-    actorName === "Amarilis Santos"
-  );
+  return actorRole === "Production Manager" || actorName === "Amarilis Santos";
 }
 
 function isBranchManager(actorName?: string, actorRole?: string) {
-  return (
-    actorRole === "Branch Manager" ||
-    actorName === "Sandro Pansini Souza"
-  );
+  return actorRole === "Branch Manager" || actorName === "Sandro Pansini Souza";
 }
 
 export async function GET(request: NextRequest) {
@@ -55,20 +49,20 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const fileId = url.searchParams.get("fileId");
 
-    const { data: files, error: filesError } = await supabaseAdmin
-      .from("workflow_files")
-      .select("*");
-
-    if (filesError) {
-      return NextResponse.json(
-        { success: false, error: filesError.message },
-        { status: 500 }
-      );
-    }
-
-    let feed: unknown[] = [];
-
     if (fileId) {
+      const { data: file, error: fileError } = await supabaseAdmin
+        .from("workflow_files")
+        .select("*")
+        .eq("id", fileId)
+        .single();
+
+      if (fileError) {
+        return NextResponse.json(
+          { success: false, error: fileError.message },
+          { status: 500 }
+        );
+      }
+
       const { data: feedRows, error: feedError } = await supabaseAdmin
         .from("workflow_feed")
         .select("*")
@@ -82,13 +76,28 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      feed = feedRows ?? [];
+      return NextResponse.json({
+        success: true,
+        file: file ?? null,
+        feed: feedRows ?? [],
+      });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("workflow_files")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      files: files ?? [],
-      feed,
+      files: data || [],
     });
   } catch (error) {
     return NextResponse.json(
@@ -310,14 +319,14 @@ export async function PATCH(request: NextRequest) {
         status: "sent_to_processing" as WorkflowStatus,
         target_close: targetClose || existingFile.target_close,
         urgency,
-        latest_update:
-          handoffNote || "File moved to processing workflow.",
+        latest_update: handoffNote || "File moved to processing workflow.",
         next_internal_action:
           "Processor to review handoff package and issue first checklist.",
       };
 
       if (canAssignProcessor) {
-        updatePayload.processor = processor || existingFile.processor || "Unassigned";
+        updatePayload.processor =
+          processor || existingFile.processor || "Unassigned";
         updatePayload.production_manager = actorName;
       }
 
@@ -337,7 +346,9 @@ export async function PATCH(request: NextRequest) {
 
       const feedText = canAssignProcessor
         ? handoffNote ||
-          `${existingFile.borrower_name} assigned to ${processor || existingFile.processor || "Unassigned"} by Production Manager.`
+          `${existingFile.borrower_name} assigned to ${
+            processor || existingFile.processor || "Unassigned"
+          } by Production Manager.`
         : handoffNote ||
           `${existingFile.borrower_name} sent a processing note. Processor assignment remains under Production Manager control.`;
 
@@ -392,10 +403,14 @@ export async function PATCH(request: NextRequest) {
       const canAssignProcessor = isProductionManager(actorName, actorRole);
 
       const updatePayload: Record<string, unknown> = {
-        borrower_name: String(body?.borrowerName ?? existingFile.borrower_name).trim(),
+        borrower_name: String(
+          body?.borrowerName ?? existingFile.borrower_name
+        ).trim(),
         purpose: String(body?.purpose ?? existingFile.purpose).trim(),
         amount: Number(body?.amount ?? existingFile.amount ?? 0),
-        loan_officer: String(body?.loanOfficer ?? existingFile.loan_officer).trim(),
+        loan_officer: String(
+          body?.loanOfficer ?? existingFile.loan_officer
+        ).trim(),
         target_close:
           normalizeDate(body?.targetClose) || existingFile.target_close,
         urgency: (String(body?.urgency ?? existingFile.urgency).trim() ||
@@ -414,7 +429,9 @@ export async function PATCH(request: NextRequest) {
           body?.latestUpdate ?? existingFile.latest_update
         ).trim(),
         requested_processor_note: String(
-          body?.requestedProcessorNote ?? existingFile.requested_processor_note ?? ""
+          body?.requestedProcessorNote ??
+            existingFile.requested_processor_note ??
+            ""
         ).trim(),
       };
 
@@ -440,7 +457,10 @@ export async function PATCH(request: NextRequest) {
       }
 
       const feedLines: string[] = ["File details updated."];
-      if (!canAssignProcessor && String(body?.requestedProcessorNote ?? "").trim()) {
+      if (
+        !canAssignProcessor &&
+        String(body?.requestedProcessorNote ?? "").trim()
+      ) {
         feedLines.push(
           `Loan Officer note to Production Manager: ${String(
             body.requestedProcessorNote
