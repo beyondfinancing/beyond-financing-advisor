@@ -1211,19 +1211,28 @@ Keep the response practical and professional.`,
                 ))}
               </div>
 
-              <textarea
+                            <textarea
                 style={styles.textarea}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder={t.chatPlaceholder}
+                disabled={!conversationReady || chatLoading}
               />
 
               <button
                 type="button"
                 onClick={sendChatMessage}
+                disabled={!conversationReady || chatLoading || !chatInput.trim()}
                 style={{
                   ...styles.sendButton,
-                  backgroundColor: "#8A95B8",
+                  backgroundColor:
+                    !conversationReady || chatLoading || !chatInput.trim()
+                      ? "#B7C0D6"
+                      : "#8A95B8",
+                  cursor:
+                    !conversationReady || chatLoading || !chatInput.trim()
+                      ? "not-allowed"
+                      : "pointer",
                 }}
               >
                 {chatLoading ? t.loading : t.sendMessage}
