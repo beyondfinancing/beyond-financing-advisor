@@ -70,7 +70,6 @@ export async function sendSmsAlert(params: {
   }
 
   try {
-        try {
     const message = await client.messages.create(payload);
 
     console.log("TWILIO SMS SENT:", {
@@ -83,7 +82,7 @@ export async function sendSmsAlert(params: {
       errorMessage: message.errorMessage,
     });
 
-        return message;
+    return message;
   } catch (error) {
     console.error("TWILIO SEND ERROR:", {
       to,
