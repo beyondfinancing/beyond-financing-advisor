@@ -70,7 +70,7 @@ export async function sendSmsAlert(params: {
   }
 
   try {
-      try {
+        try {
     const message = await client.messages.create(payload);
 
     console.log("TWILIO SMS SENT:", {
@@ -90,9 +90,8 @@ export async function sendSmsAlert(params: {
       usingMessagingServiceSid: !!payload.messagingServiceSid,
       from: payload.from || null,
       errorMessage: error instanceof Error ? error.message : "Unknown error",
-      error,
     });
 
     throw error;
   }
-}
+}; // ✅ IMPORTANT: this semicolon fixes your build
