@@ -1,20 +1,32 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from("workflow_files")
-    .select("*")
-    .order("created_at", { ascending: false });
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("workflow_files")
+      .select("*")
+      .order("updated_at", { ascending: false });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      files: data || [],
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Unknown server error.",
+      },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ files: data });
 }
