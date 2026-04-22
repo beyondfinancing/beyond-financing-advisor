@@ -84,15 +84,18 @@ function glassCardStyle(): CSSProperties {
 const metrics = [
   {
     label: "Multi-lender logic",
-    value: "Agency, government, HELOC, second-lien, and non-QM direction in one structured engine.",
+    value:
+      "Agency, government, HELOC, second-lien, and non-QM direction in one structured engine.",
   },
   {
     label: "Operational clarity",
-    value: "Cleaner intake, cleaner handoff, cleaner internal decision support.",
+    value:
+      "Cleaner intake, cleaner handoff, cleaner internal decision support.",
   },
   {
     label: "Built for real teams",
-    value: "Borrowers, loan officers, assistants, processors, and leadership.",
+    value:
+      "Borrowers, loan officers, assistants, processors, and leadership.",
   },
 ];
 
@@ -123,6 +126,41 @@ const featureCards = [
   },
 ];
 
+const navStyles: Record<string, CSSProperties> = {
+  topBar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 18,
+    padding: "4px 2px",
+    flexWrap: "wrap",
+  },
+  brand: {
+    textDecoration: "none",
+    color: "#263366",
+    fontSize: 15,
+    fontWeight: 800,
+    letterSpacing: 0.2,
+  },
+  topBarLinks: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  topBarLink: {
+    textDecoration: "none",
+    color: "#263366",
+    background: "#F7F9FD",
+    border: "1px solid #C9D5EA",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1,
+  },
+};
+
 export default function HomePage() {
   return (
     <main
@@ -151,6 +189,10 @@ export default function HomePage() {
 
           .bi-feature-grid {
             grid-template-columns: 1fr 1fr !important;
+          }
+
+          .bi-bottom-grid {
+            grid-template-columns: 1fr !important;
           }
         }
 
@@ -205,6 +247,23 @@ export default function HomePage() {
           padding: "26px 20px 40px",
         }}
       >
+        <div style={navStyles.topBar}>
+          <Link href="/" style={navStyles.brand}>
+            Beyond Intelligence™
+          </Link>
+          <div style={navStyles.topBarLinks}>
+            <Link href="/" style={navStyles.topBarLink}>
+              Home
+            </Link>
+            <Link href="/borrower" style={navStyles.topBarLink}>
+              Start as Borrower
+            </Link>
+            <Link href="/team" style={navStyles.topBarLink}>
+              Team Workspace
+            </Link>
+          </div>
+        </div>
+
         <section
           className="bi-hero-grid"
           style={{
@@ -421,106 +480,104 @@ export default function HomePage() {
               </p>
             </div>
 
-<div style={{ marginTop: 26 }}>
-  {/* Qualification / Positioning Block */}
-  <div
-    style={{
-      borderRadius: 18,
-      padding: 18,
-      marginBottom: 18,
-      background: "rgba(255,255,255,0.6)",
-      border: "1px solid rgba(38,51,102,0.08)",
-      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)",
-      backdropFilter: "blur(10px)",
-      WebkitBackdropFilter: "blur(10px)",
-    }}
-  >
-    <div
-      style={{
-        fontSize: 13,
-        fontWeight: 800,
-        letterSpacing: 0.4,
-        color: "#0096C7",
-        marginBottom: 10,
-      }}
-    >
-      ACCESS & COLLABORATION
-    </div>
+            <div style={{ marginTop: 26 }}>
+              <div
+                style={{
+                  borderRadius: 18,
+                  padding: 18,
+                  marginBottom: 18,
+                  background: "rgba(255,255,255,0.6)",
+                  border: "1px solid rgba(38,51,102,0.08)",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)",
+                  backdropFilter: "blur(10px)",
+                  WebkitBackdropFilter: "blur(10px)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 800,
+                    letterSpacing: 0.4,
+                    color: "#0096C7",
+                    marginBottom: 10,
+                  }}
+                >
+                  ACCESS & COLLABORATION
+                </div>
 
-    <div
-      style={{
-        fontSize: 15,
-        lineHeight: 1.6,
-        color: "#34445E",
-        marginBottom: 14,
-      }}
-    >
-      Designed for established mortgage companies and licensed professionals
-      seeking a more structured and intelligent approach to borrower
-      qualification and program direction.
-    </div>
+                <div
+                  style={{
+                    fontSize: 15,
+                    lineHeight: 1.6,
+                    color: "#34445E",
+                    marginBottom: 14,
+                  }}
+                >
+                  Designed for established mortgage companies and licensed
+                  professionals seeking a more structured and intelligent
+                  approach to borrower qualification and program direction.
+                </div>
 
-    <div
-      style={{
-        fontSize: 14,
-        lineHeight: 1.6,
-        color: "#52627A",
-        marginBottom: 14,
-      }}
-    >
-      Access is currently extended on a selective basis. Company profile and/or
-      Mortgage Loan Originator NMLS identification is required for
-      consideration.
-    </div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    color: "#52627A",
+                    marginBottom: 14,
+                  }}
+                >
+                  Access is currently extended on a selective basis. Company
+                  profile and/or Mortgage Loan Originator NMLS identification is
+                  required for consideration.
+                </div>
 
-    <a
-      href="mailto:mtgpro@beyondintelligence.io?subject=Beyond%20Intelligence%20Platform%20Inquiry&body=Hello%2C%0A%0AI%20would%20like%20to%20inquire%20about%20Beyond%20Intelligence.%0A%0ACompany%20Name%3A%0ANMLS%20%23%3A%0A%0AThank%20you."
-      style={{
-        display: "inline-block",
-        fontWeight: 800,
-        fontSize: 14,
-        color: "#0096C7",
-        textDecoration: "none",
-      }}
-    >
-      Inquire about platform access →
-    </a>
-  </div>
+                <a
+                  href="mailto:mtgpro@beyondintelligence.io?subject=Beyond%20Intelligence%20Platform%20Inquiry&body=Hello%2C%0A%0AI%20would%20like%20to%20inquire%20about%20Beyond%20Intelligence.%0A%0ACompany%20Name%3A%0ANMLS%20%23%3A%0A%0AThank%20you."
+                  style={{
+                    display: "inline-block",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    color: "#0096C7",
+                    textDecoration: "none",
+                  }}
+                >
+                  Inquire about platform access →
+                </a>
+              </div>
 
-  {/* CTAs */}
-  <div
-    className="bi-button-stack"
-    style={{
-      display: "grid",
-      gridTemplateColumns: "1fr",
-      gap: 12,
-    }}
-  >
-    <Link href="/borrower" style={ctaStyle("primary")}>
-      Start as Borrower
-    </Link>
+              <div
+                className="bi-button-stack"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr",
+                  gap: 12,
+                }}
+              >
+                <Link href="/borrower" style={ctaStyle("primary")}>
+                  Start as Borrower
+                </Link>
 
-    <Link href="/team" style={ctaStyle("secondary")}>
-      Enter Team Workspace
-    </Link>
-  </div>
+                <Link href="/team" style={ctaStyle("secondary")}>
+                  Enter Team Workspace
+                </Link>
+              </div>
 
-  <div
-    style={{
-      marginTop: 18,
-      paddingTop: 18,
-      borderTop: "1px solid rgba(38,51,102,0.08)",
-      color: "#52627A",
-      fontSize: 15,
-      lineHeight: 1.65,
-    }}
-  >
-    Beyond Intelligence™ provides preliminary decision support only. All
-    scenarios remain subject to licensed loan officer review, investor and
-    agency guidelines, documentation, verification, underwriting, appraisal,
-    title, and program requirements.
-  </div>
-</div>
+              <div
+                style={{
+                  marginTop: 18,
+                  paddingTop: 18,
+                  borderTop: "1px solid rgba(38,51,102,0.08)",
+                  color: "#52627A",
+                  fontSize: 15,
+                  lineHeight: 1.65,
+                }}
+              >
+                Beyond Intelligence™ provides preliminary decision support only.
+                All scenarios remain subject to licensed loan officer review,
+                investor and agency guidelines, documentation, verification,
+                underwriting, appraisal, title, and program requirements.
+              </div>
+            </div>
           </div>
         </section>
 
@@ -580,6 +637,7 @@ export default function HomePage() {
           }}
         >
           <div
+            className="bi-bottom-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "1.15fr 0.85fr",
@@ -646,20 +704,21 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        <footer
+          style={{
+            marginTop: 40,
+            paddingTop: 24,
+            borderTop: "1px solid rgba(38,51,102,0.08)",
+            textAlign: "center",
+            fontSize: 13,
+            color: "#6A7A94",
+            letterSpacing: 0.2,
+          }}
+        >
+          Powered and Designed by Beyond Intelligence™ © 2026
+        </footer>
       </div>
-      <footer
-  style={{
-    marginTop: 40,
-    paddingTop: 24,
-    borderTop: "1px solid rgba(38,51,102,0.08)",
-    textAlign: "center",
-    fontSize: 13,
-    color: "#6A7A94",
-    letterSpacing: 0.2,
-  }}
->
-  Powered and Designed by Beyond Intelligence™ © 2026
-</footer>
     </main>
   );
 }
