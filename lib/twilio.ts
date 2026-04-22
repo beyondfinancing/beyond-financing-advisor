@@ -37,12 +37,13 @@ export async function sendSmsAlert(params: {
 }) {
   const to = normalizePhone(params.to);
   const normalizedFrom = fromNumber ? normalizePhone(fromNumber) : "";
+  const messageBody = String(params.body || "").trim();
 
   if (!to) {
     throw new Error("Missing or invalid destination phone number.");
   }
 
-  if (!params.body?.trim()) {
+  if (!messageBody) {
     throw new Error("Missing SMS body.");
   }
 
@@ -55,7 +56,7 @@ export async function sendSmsAlert(params: {
     messagingServiceSid?: string;
   } = {
     to,
-    body: params.body.trim(),
+    body: messageBody,
   };
 
   if (messagingServiceSid?.trim()) {
@@ -69,6 +70,7 @@ export async function sendSmsAlert(params: {
   }
 
   try {
+      try {
     const message = await client.messages.create(payload);
 
     console.log("TWILIO SMS SENT:", {
@@ -87,6 +89,7 @@ export async function sendSmsAlert(params: {
       to,
       usingMessagingServiceSid: !!payload.messagingServiceSid,
       from: payload.from || null,
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
       error,
     });
 
