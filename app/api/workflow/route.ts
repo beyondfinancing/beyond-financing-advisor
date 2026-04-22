@@ -13,76 +13,32 @@ type WorkflowStatus =
 
 type WorkflowUrgency = "Standard" | "Priority" | "Rush";
 
-function normalizeDate(value?: string | null) {
-  if (!value) return null;
+function normalizeStatus(value: unknown): WorkflowStatus {
+  const allowed: WorkflowStatus[] = [
+    "new_scenario",
+    "pre_approval_review",
+    "sent_to_processing",
+    "processing_active",
+    "submitted_to_lender",
+    "conditional_approval",
+    "clear_to_close",
+    "closed",
+  ];
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return allowed.includes(value as WorkflowStatus)
+    ? (value as WorkflowStatus)
+    : "new_scenario";
 }
 
-function buildFileNumber() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const stamp = String(now.getTime()).slice(-6);
-  return `WF-${year}-${stamp}`;
+function normalizeUrgency(value: unknown): WorkflowUrgency {
+  const allowed: WorkflowUrgency[] = ["Standard", "Priority", "Rush"];
+  return allowed.includes(value as WorkflowUrgency)
+    ? (value as WorkflowUrgency)
+    : "Priority";
 }
 
-function isProductionManager(actorName?: string, actorRole?: string) {
-  return actorRole === "Production Manager" || actorName === "Amarilis Santos";
-}
-
-function isBranchManager(actorName?: string, actorRole?: string) {
-  return actorRole === "Branch Manager" || actorName === "Sandro Pansini Souza";
-}
-
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const url = new URL(request.url);
-    const fileId = url.searchParams.get("fileId");
-
-    if (fileId) {
-      const { data: file, error: fileError } = await supabaseAdmin
-        .from("workflow_files")
-        .select("*")
-        .eq("id", fileId)
-        .single();
-
-      if (fileError) {
-        return NextResponse.json(
-          { success: false, error: fileError.message },
-          { status: 500 }
-        );
-      }
-
-      const { data: feedRows, error: feedError } = await supabaseAdmin
-        .from("workflow_feed")
-        .select("*")
-        .eq("workflow_file_id", fileId)
-        .order("created_at", { ascending: false });
-
-      if (feedError) {
-        return NextResponse.json(
-          { success: false, error: feedError.message },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        file: file ?? null,
-        feed: feedRows ?? [],
-      });
-    }
-
     const { data, error } = await supabaseAdmin
       .from("workflow_files")
       .select("*")
@@ -97,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      files: data || [],
+      files: data ?? [],
     });
   } catch (error) {
     return NextResponse.json(
@@ -114,441 +70,153 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
     const action = String(body?.action ?? "");
 
-    if (action === "create_file") {
-      const borrowerName = String(body?.borrowerName ?? "").trim();
-      const purpose = String(body?.purpose ?? "").trim() || "Purchase";
-      const loanOfficer = String(body?.loanOfficer ?? "").trim();
-      const processor = String(body?.processor ?? "").trim() || "";
-      const occupancy =
-        String(body?.occupancy ?? "").trim() || "Primary Residence";
-      const blocker = String(body?.blocker ?? "").trim() || "None currently.";
-      const urgency = (String(body?.urgency ?? "Priority").trim() ||
-        "Priority") as WorkflowUrgency;
-      const targetClose = normalizeDate(body?.targetClose);
-      const amount = Number(body?.amount ?? 0);
-      const nextInternalAction =
-        String(body?.nextInternalAction ?? "").trim() ||
-        "Processor to review file and issue initial checklist.";
-      const nextBorrowerAction =
-        String(body?.nextBorrowerAction ?? "").trim() ||
-        "Stand by for document checklist.";
-      const latestUpdate =
-        String(body?.latestUpdate ?? "").trim() || "Workflow file created.";
-      const author = String(body?.author ?? "").trim() || "Team User";
-      const role = String(body?.role ?? "").trim() || "Professional";
-      const requestedProcessorNote = String(
-        body?.requestedProcessorNote ?? ""
-      ).trim();
-
-      if (!borrowerName || !loanOfficer) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Borrower name and loan officer are required.",
-          },
-          { status: 400 }
-        );
-      }
-
-      const canAssignProcessor = isProductionManager(author, role);
-
-      const insertPayload = {
-        file_number: buildFileNumber(),
-        borrower_name: borrowerName,
-        purpose,
-        amount: Number.isFinite(amount) ? amount : 0,
-        status: "new_scenario" as WorkflowStatus,
-        urgency,
-        loan_officer: loanOfficer,
-        processor: canAssignProcessor ? processor || "Unassigned" : "Unassigned",
-        production_manager: canAssignProcessor ? author : "Pending Assignment",
-        target_close: targetClose,
-        file_age_days: 0,
-        occupancy,
-        blocker,
-        next_internal_action: nextInternalAction,
-        next_borrower_action: nextBorrowerAction,
-        latest_update: latestUpdate,
-        requested_processor_note: requestedProcessorNote || null,
-      };
-
-      const { data: createdFile, error: createError } = await supabaseAdmin
-        .from("workflow_files")
-        .insert(insertPayload)
-        .select("*")
-        .single();
-
-      if (createError) {
-        return NextResponse.json(
-          { success: false, error: createError.message },
-          { status: 500 }
-        );
-      }
-
-      const feedEntries = [
-        {
-          workflow_file_id: createdFile.id,
-          author,
-          role,
-          text: `${borrowerName} added to Workflow Intelligence.`,
-        },
-      ];
-
-      if (requestedProcessorNote) {
-        feedEntries.push({
-          workflow_file_id: createdFile.id,
-          author,
-          role,
-          text: `Loan Officer note to Production Manager: ${requestedProcessorNote}`,
-        });
-      }
-
-      const { error: feedError } = await supabaseAdmin
-        .from("workflow_feed")
-        .insert(feedEntries);
-
-      if (feedError) {
-        return NextResponse.json(
-          { success: false, error: feedError.message },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        file: createdFile,
-      });
-    }
-
-    if (action === "add_feed") {
-      const workflowFileId = String(body?.workflowFileId ?? "").trim();
-      const author = String(body?.author ?? "").trim() || "Team User";
-      const role = String(body?.role ?? "").trim() || "Professional";
-      const text = String(body?.text ?? "").trim();
-
-      if (!workflowFileId || !text) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "workflowFileId and text are required.",
-          },
-          { status: 400 }
-        );
-      }
-
-      const { data: createdFeed, error: feedError } = await supabaseAdmin
-        .from("workflow_feed")
-        .insert({
-          workflow_file_id: workflowFileId,
-          author,
-          role,
-          text,
-        })
-        .select("*")
-        .single();
-
-      if (feedError) {
-        return NextResponse.json(
-          { success: false, error: feedError.message },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        feed: createdFeed,
-      });
-    }
-
-    return NextResponse.json(
-      { success: false, error: "Unsupported action." },
-      { status: 400 }
-    );
-  } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Unknown server error.",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PATCH(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const action = String(body?.action ?? "");
-    const actorName = String(body?.author ?? "").trim() || "Team User";
-    const actorRole = String(body?.role ?? "").trim() || "Professional";
-
-    if (action === "handoff") {
-      const workflowFileId = String(body?.workflowFileId ?? "").trim();
-      const processor = String(body?.processor ?? "").trim();
-      const targetClose = normalizeDate(body?.targetClose);
-      const urgency = (String(body?.urgency ?? "Priority").trim() ||
-        "Priority") as WorkflowUrgency;
-      const handoffNote = String(body?.handoffNote ?? "").trim();
-
-      if (!workflowFileId) {
-        return NextResponse.json(
-          { success: false, error: "workflowFileId is required." },
-          { status: 400 }
-        );
-      }
-
-      const { data: existingFile, error: existingError } = await supabaseAdmin
-        .from("workflow_files")
-        .select("*")
-        .eq("id", workflowFileId)
-        .single();
-
-      if (existingError || !existingFile) {
-        return NextResponse.json(
-          { success: false, error: "Workflow file not found." },
-          { status: 404 }
-        );
-      }
-
-      const canAssignProcessor = isProductionManager(actorName, actorRole);
-
-      const updatePayload: Record<string, unknown> = {
-        status: "sent_to_processing" as WorkflowStatus,
-        target_close: targetClose || existingFile.target_close,
-        urgency,
-        latest_update: handoffNote || "File moved to processing workflow.",
-        next_internal_action:
-          "Processor to review handoff package and issue first checklist.",
-      };
-
-      if (canAssignProcessor) {
-        updatePayload.processor =
-          processor || existingFile.processor || "Unassigned";
-        updatePayload.production_manager = actorName;
-      }
-
-      const { data: updatedFile, error: updateError } = await supabaseAdmin
-        .from("workflow_files")
-        .update(updatePayload)
-        .eq("id", workflowFileId)
-        .select("*")
-        .single();
-
-      if (updateError) {
-        return NextResponse.json(
-          { success: false, error: updateError.message },
-          { status: 500 }
-        );
-      }
-
-      const feedText = canAssignProcessor
-        ? handoffNote ||
-          `${existingFile.borrower_name} assigned to ${
-            processor || existingFile.processor || "Unassigned"
-          } by Production Manager.`
-        : handoffNote ||
-          `${existingFile.borrower_name} sent a processing note. Processor assignment remains under Production Manager control.`;
-
-      const { data: feedEntry, error: feedError } = await supabaseAdmin
-        .from("workflow_feed")
-        .insert({
-          workflow_file_id: workflowFileId,
-          author: actorName,
-          role: actorRole,
-          text: feedText,
-        })
-        .select("*")
-        .single();
-
-      if (feedError) {
-        return NextResponse.json(
-          { success: false, error: feedError.message },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        file: updatedFile,
-        feed: feedEntry,
-      });
-    }
-
-    if (action === "update_file") {
-      const workflowFileId = String(body?.workflowFileId ?? "").trim();
-
-      if (!workflowFileId) {
-        return NextResponse.json(
-          { success: false, error: "workflowFileId is required." },
-          { status: 400 }
-        );
-      }
-
-      const { data: existingFile, error: existingError } = await supabaseAdmin
-        .from("workflow_files")
-        .select("*")
-        .eq("id", workflowFileId)
-        .single();
-
-      if (existingError || !existingFile) {
-        return NextResponse.json(
-          { success: false, error: "Workflow file not found." },
-          { status: 404 }
-        );
-      }
-
-      const canAssignProcessor = isProductionManager(actorName, actorRole);
-
-      const updatePayload: Record<string, unknown> = {
-        borrower_name: String(
-          body?.borrowerName ?? existingFile.borrower_name
-        ).trim(),
-        purpose: String(body?.purpose ?? existingFile.purpose).trim(),
-        amount: Number(body?.amount ?? existingFile.amount ?? 0),
-        loan_officer: String(
-          body?.loanOfficer ?? existingFile.loan_officer
-        ).trim(),
-        target_close:
-          normalizeDate(body?.targetClose) || existingFile.target_close,
-        urgency: (String(body?.urgency ?? existingFile.urgency).trim() ||
-          existingFile.urgency) as WorkflowUrgency,
-        occupancy: String(body?.occupancy ?? existingFile.occupancy).trim(),
-        blocker: String(body?.blocker ?? existingFile.blocker).trim(),
-        status: (String(body?.status ?? existingFile.status).trim() ||
-          existingFile.status) as WorkflowStatus,
-        next_internal_action: String(
-          body?.nextInternalAction ?? existingFile.next_internal_action
-        ).trim(),
-        next_borrower_action: String(
-          body?.nextBorrowerAction ?? existingFile.next_borrower_action
-        ).trim(),
-        latest_update: String(
-          body?.latestUpdate ?? existingFile.latest_update
-        ).trim(),
-        requested_processor_note: String(
-          body?.requestedProcessorNote ??
-            existingFile.requested_processor_note ??
-            ""
-        ).trim(),
-      };
-
-      if (canAssignProcessor) {
-        updatePayload.processor = String(
-          body?.processor ?? existingFile.processor ?? "Unassigned"
-        ).trim();
-        updatePayload.production_manager = actorName;
-      }
-
-      const { data: updatedFile, error: updateError } = await supabaseAdmin
-        .from("workflow_files")
-        .update(updatePayload)
-        .eq("id", workflowFileId)
-        .select("*")
-        .single();
-
-      if (updateError) {
-        return NextResponse.json(
-          { success: false, error: updateError.message },
-          { status: 500 }
-        );
-      }
-
-      const feedLines: string[] = ["File details updated."];
-      if (
-        !canAssignProcessor &&
-        String(body?.requestedProcessorNote ?? "").trim()
-      ) {
-        feedLines.push(
-          `Loan Officer note to Production Manager: ${String(
-            body.requestedProcessorNote
-          ).trim()}`
-        );
-      }
-      if (canAssignProcessor) {
-        feedLines.push(
-          `Production Manager assignment: ${String(
-            body?.processor ?? existingFile.processor ?? "Unassigned"
-          ).trim()}`
-        );
-      }
-
-      const { error: feedError } = await supabaseAdmin.from("workflow_feed").insert({
-        workflow_file_id: workflowFileId,
-        author: actorName,
-        role: actorRole,
-        text: feedLines.join(" "),
-      });
-
-      if (feedError) {
-        return NextResponse.json(
-          { success: false, error: feedError.message },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        file: updatedFile,
-      });
-    }
-
-    return NextResponse.json(
-      { success: false, error: "Unsupported action." },
-      { status: 400 }
-    );
-  } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Unknown server error.",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const workflowFileId = String(body?.workflowFileId ?? "").trim();
-    const actorName = String(body?.author ?? "").trim() || "Team User";
-    const actorRole = String(body?.role ?? "").trim() || "Professional";
-
-    if (!workflowFileId) {
+    if (action !== "create_file") {
       return NextResponse.json(
-        { success: false, error: "workflowFileId is required." },
+        { success: false, error: "Unsupported action." },
         { status: 400 }
       );
     }
 
-    if (!isBranchManager(actorName, actorRole)) {
+    const borrowerName = String(body?.borrowerName ?? "").trim();
+    const loanNumber = String(body?.loanNumber ?? "").trim();
+    const purpose = String(body?.purpose ?? "Purchase").trim();
+    const amount = Number(body?.amount ?? 0);
+    const loanOfficer = String(body?.loanOfficer ?? "").trim();
+    const occupancy = String(body?.occupancy ?? "Primary Residence").trim();
+    const blocker = String(body?.blocker ?? "None currently.").trim();
+    const targetClose = String(body?.targetClose ?? "").trim() || null;
+    const requestedProcessorNote = String(
+      body?.requestedProcessorNote ?? ""
+    ).trim();
+    const author = String(body?.author ?? "Team User").trim();
+    const role = String(body?.role ?? "Professional").trim();
+
+    const status = normalizeStatus(body?.status ?? "new_scenario");
+    const urgency = normalizeUrgency(body?.urgency ?? "Priority");
+
+    let processor = String(body?.processor ?? "Unassigned").trim();
+    let productionManager = String(body?.productionManager ?? "").trim();
+
+    const isProductionManager =
+      role === "Production Manager" || author === "Amarilis Santos";
+
+    if (!borrowerName) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Only the Branch Manager can delete a workflow file.",
-        },
-        { status: 403 }
+        { success: false, error: "Borrower name is required." },
+        { status: 400 }
       );
     }
 
-    const { error } = await supabaseAdmin
-      .from("workflow_files")
-      .delete()
-      .eq("id", workflowFileId);
-
-    if (error) {
+    if (!loanNumber) {
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: "Loan number is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!loanOfficer) {
+      return NextResponse.json(
+        { success: false, error: "Loan officer is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!Number.isFinite(amount) || amount < 0) {
+      return NextResponse.json(
+        { success: false, error: "Amount must be a valid number." },
+        { status: 400 }
+      );
+    }
+
+    if (!isProductionManager) {
+      processor = "Unassigned";
+      productionManager = "";
+    } else if (!productionManager) {
+      productionManager = author;
+    }
+
+    const { data: existingLoanNumber, error: loanNumberCheckError } =
+      await supabaseAdmin
+        .from("workflow_files")
+        .select("id")
+        .eq("file_number", loanNumber)
+        .maybeSingle();
+
+    if (loanNumberCheckError) {
+      return NextResponse.json(
+        { success: false, error: loanNumberCheckError.message },
+        { status: 500 }
+      );
+    }
+
+    if (existingLoanNumber) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This loan number already exists in Workflow Intelligence.",
+        },
+        { status: 409 }
+      );
+    }
+
+    const insertPayload = {
+      file_number: loanNumber,
+      borrower_name: borrowerName,
+      purpose,
+      amount,
+      status,
+      urgency,
+      loan_officer: loanOfficer,
+      processor,
+      production_manager: productionManager || null,
+      requested_processor_note: requestedProcessorNote || null,
+      target_close: targetClose,
+      occupancy,
+      blocker,
+      next_internal_action:
+        processor && processor !== "Unassigned"
+          ? "Processor to review file and issue initial checklist."
+          : "Production Manager to assign processor and review intake.",
+      next_borrower_action: "Stand by for document checklist.",
+      latest_update: "Workflow file created.",
+    };
+
+    const { data: insertedFile, error: insertError } = await supabaseAdmin
+      .from("workflow_files")
+      .insert(insertPayload)
+      .select("*")
+      .single();
+
+    if (insertError) {
+      return NextResponse.json(
+        { success: false, error: insertError.message },
+        { status: 500 }
+      );
+    }
+
+    const { error: feedError } = await supabaseAdmin.from("workflow_feed").insert({
+      workflow_file_id: insertedFile.id,
+      author,
+      role,
+      text: `${borrowerName} added to Workflow Intelligence.`,
+    });
+
+    if (feedError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `File created, but feed entry failed: ${feedError.message}`,
+        },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
+      file: insertedFile,
     });
   } catch (error) {
     return NextResponse.json(
