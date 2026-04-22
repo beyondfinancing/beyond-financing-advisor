@@ -42,6 +42,7 @@ type ProcessorOption = {
 
 type WorkflowFile = {
   id: string;
+  loanNumber: string;
   borrowerName: string;
   purpose: string;
   amount: number;
@@ -62,6 +63,7 @@ type WorkflowFile = {
 
 type WorkflowApiFile = {
   id: string;
+  file_number?: string | null;
   borrower_name: string;
   purpose: string;
   amount: number | string | null;
@@ -108,7 +110,7 @@ function formatCurrency(value: number) {
 }
 
 function formatTargetClose(value: string) {
-  if (!value) return "";
+  if (!value) return "No date set";
   const isoMatch = /^\d{4}-\d{2}-\d{2}$/.test(value);
   if (!isoMatch) return value;
 
@@ -144,82 +146,34 @@ function getStatusLabel(status: WorkflowStatus) {
 function getStatusTone(status: WorkflowStatus) {
   switch (status) {
     case "new_scenario":
-      return {
-        bg: "#EEF2FF",
-        border: "#C7D2FE",
-        text: "#3755A5",
-      };
+      return { bg: "#EEF2FF", border: "#C7D2FE", text: "#3755A5" };
     case "pre_approval_review":
-      return {
-        bg: "#F3F0FF",
-        border: "#D8CCFF",
-        text: "#5B3DB4",
-      };
+      return { bg: "#F3F0FF", border: "#D8CCFF", text: "#5B3DB4" };
     case "sent_to_processing":
-      return {
-        bg: "#ECFEFF",
-        border: "#A5F3FC",
-        text: "#0E7490",
-      };
+      return { bg: "#ECFEFF", border: "#A5F3FC", text: "#0E7490" };
     case "processing_active":
-      return {
-        bg: "#ECFDF3",
-        border: "#BBF7D0",
-        text: "#15803D",
-      };
+      return { bg: "#ECFDF3", border: "#BBF7D0", text: "#15803D" };
     case "submitted_to_lender":
-      return {
-        bg: "#FFF7ED",
-        border: "#FDBA74",
-        text: "#C2410C",
-      };
+      return { bg: "#FFF7ED", border: "#FDBA74", text: "#C2410C" };
     case "conditional_approval":
-      return {
-        bg: "#FFF7ED",
-        border: "#FDBA74",
-        text: "#C2410C",
-      };
+      return { bg: "#FFF7ED", border: "#FDBA74", text: "#C2410C" };
     case "clear_to_close":
-      return {
-        bg: "#ECFDF3",
-        border: "#86EFAC",
-        text: "#047857",
-      };
+      return { bg: "#ECFDF3", border: "#86EFAC", text: "#047857" };
     case "closed":
-      return {
-        bg: "#F3F4F6",
-        border: "#D1D5DB",
-        text: "#374151",
-      };
+      return { bg: "#F3F4F6", border: "#D1D5DB", text: "#374151" };
     default:
-      return {
-        bg: "#F8FAFC",
-        border: "#CBD5E1",
-        text: "#475569",
-      };
+      return { bg: "#F8FAFC", border: "#CBD5E1", text: "#475569" };
   }
 }
 
 function getUrgencyTone(urgency: WorkflowUrgency) {
   switch (urgency) {
     case "Rush":
-      return {
-        bg: "#FDF2F8",
-        border: "#F9A8D4",
-        text: "#BE185D",
-      };
+      return { bg: "#FDF2F8", border: "#F9A8D4", text: "#BE185D" };
     case "Priority":
-      return {
-        bg: "#FFF7ED",
-        border: "#FDBA74",
-        text: "#C2410C",
-      };
+      return { bg: "#FFF7ED", border: "#FDBA74", text: "#C2410C" };
     default:
-      return {
-        bg: "#F8FAFC",
-        border: "#CBD5E1",
-        text: "#475569",
-      };
+      return { bg: "#F8FAFC", border: "#CBD5E1", text: "#475569" };
   }
 }
 
@@ -278,6 +232,7 @@ export default function WorkflowPage() {
   const [filesLoading, setFilesLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
+  const [createLoanNumber, setCreateLoanNumber] = useState("");
   const [createBorrowerName, setCreateBorrowerName] = useState("");
   const [createPurpose, setCreatePurpose] = useState("Purchase");
   const [createAmount, setCreateAmount] = useState("");
@@ -298,6 +253,12 @@ export default function WorkflowPage() {
     activeUser?.role === "Production Manager" ||
     activeUser?.name === "Amarilis Santos";
 
+  const handleSignOut = async () => {
+    await fetch("/api/team-auth/logout", { method: "POST" });
+    setActiveUser(null);
+    window.location.href = "/team";
+  };
+
   const loadFiles = useCallback(async () => {
     try {
       setFilesLoading(true);
@@ -308,6 +269,7 @@ export default function WorkflowPage() {
       const mappedFiles: WorkflowFile[] = Array.isArray(data?.files)
         ? (data.files as WorkflowApiFile[]).map((f) => ({
             id: String(f.id ?? ""),
+            loanNumber: String(f.file_number ?? ""),
             borrowerName: String(f.borrower_name ?? ""),
             purpose: String(f.purpose ?? ""),
             amount: Number(f.amount ?? 0),
@@ -367,11 +329,6 @@ export default function WorkflowPage() {
     loadFiles();
   }, [loadFiles]);
 
-  const handleSignOut = async () => {
-    await fetch("/api/team-auth/logout", { method: "POST" });
-    setActiveUser(null);
-  };
-
   const sortedFiles = useMemo(() => {
     return [...files].sort(compareWorkflowFiles);
   }, [files]);
@@ -382,13 +339,14 @@ export default function WorkflowPage() {
 
     return sortedFiles.filter((file) => {
       const haystack = [
+        file.loanNumber,
         file.borrowerName,
         file.loanOfficer,
         file.processor,
         file.productionManager,
-        file.id,
         file.purpose,
         getStatusLabel(file.status),
+        file.latestUpdate,
       ]
         .join(" ")
         .toLowerCase();
@@ -450,10 +408,11 @@ export default function WorkflowPage() {
   const createWorkflowFile = async () => {
     const borrowerName = createBorrowerName.trim();
     const loanOfficer = createLoanOfficer.trim() || activeUser?.name || "";
+    const loanNumber = createLoanNumber.trim();
 
-    if (!borrowerName || !loanOfficer) {
+    if (!borrowerName || !loanOfficer || !loanNumber) {
       setCreateStatusMessage(
-        "Borrower name and loan officer are required to create a workflow file."
+        "Loan number, borrower name, and loan officer are required."
       );
       return;
     }
@@ -469,6 +428,7 @@ export default function WorkflowPage() {
         },
         body: JSON.stringify({
           action: "create_file",
+          loanNumber,
           borrowerName,
           purpose: createPurpose,
           amount: Number(createAmount || 0),
@@ -493,6 +453,7 @@ export default function WorkflowPage() {
         return;
       }
 
+      setCreateLoanNumber("");
       setCreateBorrowerName("");
       setCreatePurpose("Purchase");
       setCreateAmount("");
@@ -580,10 +541,7 @@ export default function WorkflowPage() {
         <TopNav active="workflow" />
 
         <section style={styles.hero}>
-          <div
-            className="bf-workflow-hero-top"
-            style={styles.workflowHeroTopBar}
-          >
+          <div className="bf-workflow-hero-top" style={styles.workflowHeroTopBar}>
             <div style={styles.workflowHeroLeft}>
               <div style={styles.heroBadge}>TEAM COMMAND CENTER</div>
               <h1 style={styles.heroTitle}>
@@ -676,53 +634,21 @@ export default function WorkflowPage() {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search borrower, loan officer, production manager, processor, file ID, or purpose"
+                placeholder="Search loan #, borrower, loan officer, processor, status, or update"
                 style={styles.searchInput}
               />
             </div>
           </div>
 
           <div className="bf-pipeline-grid" style={styles.pipelineGrid}>
-            <PipelineCard
-              label="New Scenario"
-              value={pipelineCounts.newScenario}
-              status="new_scenario"
-            />
-            <PipelineCard
-              label="Pre-Approval Review"
-              value={pipelineCounts.preApprovalReview}
-              status="pre_approval_review"
-            />
-            <PipelineCard
-              label="Sent to Processing"
-              value={pipelineCounts.sentToProcessing}
-              status="sent_to_processing"
-            />
-            <PipelineCard
-              label="Processing Active"
-              value={pipelineCounts.processingActive}
-              status="processing_active"
-            />
-            <PipelineCard
-              label="Submitted to Lender"
-              value={pipelineCounts.submittedToLender}
-              status="submitted_to_lender"
-            />
-            <PipelineCard
-              label="Conditional Approval"
-              value={pipelineCounts.conditionalApproval}
-              status="conditional_approval"
-            />
-            <PipelineCard
-              label="Clear to Close"
-              value={pipelineCounts.clearToClose}
-              status="clear_to_close"
-            />
-            <PipelineCard
-              label="Closed"
-              value={pipelineCounts.closed}
-              status="closed"
-            />
+            <PipelineCard label="New Scenario" value={pipelineCounts.newScenario} status="new_scenario" />
+            <PipelineCard label="Pre-Approval Review" value={pipelineCounts.preApprovalReview} status="pre_approval_review" />
+            <PipelineCard label="Sent to Processing" value={pipelineCounts.sentToProcessing} status="sent_to_processing" />
+            <PipelineCard label="Processing Active" value={pipelineCounts.processingActive} status="processing_active" />
+            <PipelineCard label="Submitted to Lender" value={pipelineCounts.submittedToLender} status="submitted_to_lender" />
+            <PipelineCard label="Conditional Approval" value={pipelineCounts.conditionalApproval} status="conditional_approval" />
+            <PipelineCard label="Clear to Close" value={pipelineCounts.clearToClose} status="clear_to_close" />
+            <PipelineCard label="Closed" value={pipelineCounts.closed} status="closed" />
           </div>
         </section>
 
@@ -735,7 +661,7 @@ export default function WorkflowPage() {
               {filesLoading ? (
                 <div style={styles.placeholderBox}>Loading workflow files...</div>
               ) : (
-                <div style={styles.fileList}>
+                <div style={styles.slimList}>
                   {filteredFiles.map((file) => {
                     const statusTone = getStatusTone(file.status);
                     const urgencyTone = getUrgencyTone(file.urgency);
@@ -744,70 +670,43 @@ export default function WorkflowPage() {
                       <Link
                         key={file.id}
                         href={`/workflow/${file.id}`}
-                        style={styles.fileLink}
+                        style={styles.slimFileLink}
                       >
-                        <div style={styles.fileCard}>
-                          <div style={styles.fileCardTop}>
-                            <div>
-                              <div style={styles.fileBorrower}>
-                                {file.borrowerName}
-                              </div>
-                              <div style={styles.fileMeta}>
-                                {file.id} · {file.purpose} ·{" "}
-                                {formatCurrency(file.amount)}
-                              </div>
+                        <div style={styles.slimFileCard}>
+                          <div style={styles.slimFileLeft}>
+                            <div style={styles.slimBorrower}>{file.borrowerName}</div>
+                            <div style={styles.slimMeta}>
+                              Loan # {file.loanNumber || "Not Assigned"} · {file.purpose} · {formatCurrency(file.amount)}
                             </div>
-
-                            <div style={styles.badgeRow}>
-                              <span
-                                style={{
-                                  ...styles.badge,
-                                  backgroundColor: statusTone.bg,
-                                  borderColor: statusTone.border,
-                                  color: statusTone.text,
-                                }}
-                              >
-                                {getStatusLabel(file.status)}
-                              </span>
-
-                              <span
-                                style={{
-                                  ...styles.badge,
-                                  backgroundColor: urgencyTone.bg,
-                                  borderColor: urgencyTone.border,
-                                  color: urgencyTone.text,
-                                }}
-                              >
-                                {file.urgency}
-                              </span>
+                            <div style={styles.slimMetaSecondary}>
+                              Last update: {file.latestUpdate || "No update yet."}
                             </div>
                           </div>
 
-                          <div className="bf-mini-grid" style={styles.miniGrid}>
-                            <MiniDataCard
-                              label="LOAN OFFICER"
-                              value={file.loanOfficer}
-                            />
-                            <MiniDataCard
-                              label="PRODUCTION MANAGER"
-                              value={file.productionManager || "Pending Assignment"}
-                            />
-                            <MiniDataCard
-                              label="PROCESSOR"
-                              value={file.processor || "Unassigned"}
-                            />
-                            <MiniDataCard
-                              label="TARGET CLOSE"
-                              value={formatTargetClose(file.targetClose)}
-                            />
-                            <MiniDataCard
-                              label="FILE AGE"
-                              value={`${file.fileAgeDays} days`}
-                            />
-                            <MiniDataCard
-                              label="OPEN RECORD"
-                              value="View full file"
-                            />
+                          <div style={styles.slimFileRight}>
+                            <span
+                              style={{
+                                ...styles.badge,
+                                backgroundColor: statusTone.bg,
+                                borderColor: statusTone.border,
+                                color: statusTone.text,
+                              }}
+                            >
+                              {getStatusLabel(file.status)}
+                            </span>
+
+                            <span
+                              style={{
+                                ...styles.badge,
+                                backgroundColor: urgencyTone.bg,
+                                borderColor: urgencyTone.border,
+                                color: urgencyTone.text,
+                              }}
+                            >
+                              {file.urgency}
+                            </span>
+
+                            <div style={styles.slimOpenText}>Open record</div>
                           </div>
                         </div>
                       </Link>
@@ -841,12 +740,9 @@ export default function WorkflowPage() {
                     >
                       <div style={styles.attentionCard}>
                         <div>
-                          <div style={styles.attentionName}>
-                            {item.borrowerName}
-                          </div>
+                          <div style={styles.attentionName}>{item.borrowerName}</div>
                           <div style={styles.attentionMeta}>
-                            {getStatusLabel(item.status)} · {item.fileAgeDays} days
-                            in workflow
+                            Loan # {item.loanNumber || "Not Assigned"} · {getStatusLabel(item.status)} · {item.fileAgeDays} days in workflow
                           </div>
                         </div>
                         <div style={styles.attentionIssue}>{item.blocker}</div>
@@ -862,6 +758,14 @@ export default function WorkflowPage() {
             <div style={styles.card}>
               <div style={styles.sectionEyebrow}>ADD LOAN APP</div>
               <h2 style={styles.sectionTitle}>Create workflow file</h2>
+
+              <label style={styles.label}>Loan number</label>
+              <input
+                value={createLoanNumber}
+                onChange={(e) => setCreateLoanNumber(e.target.value)}
+                style={styles.input}
+                placeholder="Example: 2026-00124 or ARIVE loan number"
+              />
 
               <label style={styles.label}>Borrower full name</label>
               <input
@@ -997,18 +901,16 @@ export default function WorkflowPage() {
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Full operational view</div>
+                  <div style={styles.moduleTitle}>Loan number aligned</div>
                   <div style={styles.moduleText}>
-                    Each file can now become its own working page with full history,
-                    edit controls, and production governance.
+                    The visible workflow identifier is now the loan number, so it can stay consistent with ARIVE and internal operations.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Priority-first visibility</div>
                   <div style={styles.moduleText}>
-                    Rush files remain at the top, then Priority, then Standard,
-                    so the queue stays operationally disciplined.
+                    Rush files remain at the top, then Priority, then Standard, so the queue stays operationally disciplined.
                   </div>
                 </div>
               </div>
@@ -1106,15 +1008,6 @@ function PipelineCard({
   );
 }
 
-function MiniDataCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={styles.miniCard}>
-      <div style={styles.miniLabel}>{label}</div>
-      <div style={styles.miniValue}>{value}</div>
-    </div>
-  );
-}
-
 const responsiveCss = `
   * {
     box-sizing: border-box;
@@ -1139,8 +1032,7 @@ const responsiveCss = `
 
   @media (max-width: 920px) {
     .bf-stat-grid,
-    .bf-pipeline-grid,
-    .bf-mini-grid {
+    .bf-pipeline-grid {
       grid-template-columns: 1fr 1fr !important;
     }
   }
@@ -1151,8 +1043,7 @@ const responsiveCss = `
     }
 
     .bf-stat-grid,
-    .bf-pipeline-grid,
-    .bf-mini-grid {
+    .bf-pipeline-grid {
       grid-template-columns: 1fr !important;
     }
   }
@@ -1439,7 +1330,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   mainGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 0.9fr",
+    gridTemplateColumns: "1fr 0.95fr",
     gap: 20,
     alignItems: "start",
   },
@@ -1447,49 +1338,61 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
   },
-  fileList: {
+  slimList: {
     display: "flex",
     flexDirection: "column",
-    gap: 16,
+    gap: 14,
     marginTop: 8,
   },
-  fileLink: {
+  slimFileLink: {
     textDecoration: "none",
     color: "inherit",
   },
-  fileCard: {
-    width: "100%",
-    textAlign: "left",
-    borderRadius: 24,
+  slimFileCard: {
+    borderRadius: 22,
     border: "1px solid #D7E2F0",
     backgroundColor: "#ffffff",
     padding: 16,
-    cursor: "pointer",
-  },
-  fileCardTop: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 14,
-    alignItems: "flex-start",
+    gap: 16,
+    alignItems: "center",
     flexWrap: "wrap",
-    marginBottom: 14,
   },
-  fileBorrower: {
-    fontSize: 22,
+  slimFileLeft: {
+    minWidth: 0,
+    flex: 1,
+  },
+  slimBorrower: {
+    fontSize: 18,
     fontWeight: 900,
     color: "#2D3B78",
     marginBottom: 6,
   },
-  fileMeta: {
+  slimMeta: {
     color: "#64748B",
     fontSize: 14,
     lineHeight: 1.5,
     wordBreak: "break-word",
   },
-  badgeRow: {
+  slimMetaSecondary: {
+    color: "#526581",
+    fontSize: 14,
+    lineHeight: 1.5,
+    marginTop: 4,
+    wordBreak: "break-word",
+  },
+  slimFileRight: {
     display: "flex",
     gap: 10,
+    alignItems: "center",
     flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  slimOpenText: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#263366",
   },
   badge: {
     borderRadius: 999,
@@ -1498,32 +1401,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 900,
     whiteSpace: "nowrap",
-  },
-  miniGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 12,
-  },
-  miniCard: {
-    borderRadius: 18,
-    border: "1px solid #D7E2F0",
-    backgroundColor: "#F9FBFE",
-    padding: 14,
-  },
-  miniLabel: {
-    fontSize: 12,
-    fontWeight: 900,
-    color: "#64748B",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    marginBottom: 8,
-  },
-  miniValue: {
-    fontSize: 16,
-    fontWeight: 800,
-    color: "#2D3B78",
-    lineHeight: 1.5,
-    wordBreak: "break-word",
   },
   label: {
     display: "block",
