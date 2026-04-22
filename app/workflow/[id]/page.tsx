@@ -81,12 +81,37 @@ type FeedItem = {
   created_at: string;
 };
 
+type WorkflowRouteRole =
+  | "loan_officer"
+  | "processing"
+  | "assistant";
+
+type NotificationTarget = {
+  role: WorkflowRouteRole;
+  name: string;
+  email: string;
+};
+
 const PROCESSORS = [
   "Unassigned",
   "Amarilis Santos",
   "Kyle Nicholson",
   "Bia Marques",
 ];
+
+const DEFAULT_PROCESSING_EMAIL = "myloan@beyondfinancing.com";
+
+const PROCESSOR_EMAILS: Record<string, string> = {
+  "Amarilis Santos": "myloan@beyondfinancing.com",
+  "Kyle Nicholson": "myloan@beyondfinancing.com",
+  "Bia Marques": "myloan@beyondfinancing.com",
+};
+
+const LOAN_OFFICER_EMAILS: Record<string, string> = {
+  "Sandro Pansini Souza": "pansini@beyondfinancing.com",
+  "Warren Wendt": "warren@beyondfinancing.com",
+  "Finley Beyond": "finley@beyondfinancing.com",
+};
 
 function formatCurrency(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "$0";
@@ -185,6 +210,118 @@ function formatFeedTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function mapRoleToWorkflow(role: TeamRole): WorkflowRouteRole {
+  if (role === "Processor") return "processing";
+  if (role === "Loan Officer Assistant") return "assistant";
+  return "loan_officer";
+}
+
+function getProcessorNotificationEmail(name: string) {
+  return PROCESSOR_EMAILS[name] || DEFAULT_PROCESSING_EMAIL;
+}
+
+function getLoanOfficerNotificationEmail(name: string) {
+  return LOAN_OFFICER_EMAILS[name] || "pansini@beyondfinancing.com";
+}
+
+function resolveNotificationTarget(
+  file: WorkflowFile,
+  activeUser: TeamUser
+): NotificationTarget {
+  if (activeUser.role === "Processor") {
+    return {
+      role: "loan_officer",
+      name: file.loanOfficer || "Loan Officer",
+      email: getLoanOfficerNotificationEmail(file.loanOfficer),
+    };
+  }
+
+  return {
+    role: "processing",
+    name:
+      file.processor && file.processor !== "Unassigned"
+        ? file.processor
+        : "Processing Team",
+    email: getProcessorNotificationEmail(file.processor),
+  };
+}
+
+function buildChangedFieldsSummary(params: {
+  file: WorkflowFile;
+  status: WorkflowStatus;
+  urgency: WorkflowUrgency;
+  targetClose: string;
+  occupancy: string;
+  processor: string;
+  requestedProcessorNote: string;
+  blocker: string;
+  nextInternalAction: string;
+  nextBorrowerAction: string;
+  latestUpdate: string;
+}) {
+  const {
+    file,
+    status,
+    urgency,
+    targetClose,
+    occupancy,
+    processor,
+    requestedProcessorNote,
+    blocker,
+    nextInternalAction,
+    nextBorrowerAction,
+    latestUpdate,
+  } = params;
+
+  const changedFields: string[] = [];
+
+  if (status !== file.status) {
+    changedFields.push(
+      `Status: ${getStatusLabel(file.status)} → ${getStatusLabel(status)}`
+    );
+  }
+
+  if (urgency !== file.urgency) {
+    changedFields.push(`Urgency: ${file.urgency} → ${urgency}`);
+  }
+
+  if ((targetClose || "") !== toDateInputValue(file.targetClose || "")) {
+    changedFields.push(
+      `Target close date: ${formatTargetClose(file.targetClose)} → ${formatTargetClose(targetClose)}`
+    );
+  }
+
+  if ((occupancy || "").trim() !== (file.occupancy || "").trim()) {
+    changedFields.push(`Occupancy: ${file.occupancy || "Not set"} → ${occupancy || "Not set"}`);
+  }
+
+  if ((processor || "").trim() !== (file.processor || "").trim()) {
+    changedFields.push(`Assigned processor: ${file.processor || "Unassigned"} → ${processor || "Unassigned"}`);
+  }
+
+  if ((requestedProcessorNote || "").trim() !== (file.requestedProcessorNote || "").trim()) {
+    changedFields.push("Requested processor note updated");
+  }
+
+  if ((blocker || "").trim() !== (file.blocker || "").trim()) {
+    changedFields.push("Current blocker updated");
+  }
+
+  if ((nextInternalAction || "").trim() !== (file.nextInternalAction || "").trim()) {
+    changedFields.push("Next internal action updated");
+  }
+
+  if ((nextBorrowerAction || "").trim() !== (file.nextBorrowerAction || "").trim()) {
+    changedFields.push("Next borrower action updated");
+  }
+
+  if ((latestUpdate || "").trim() !== (file.latestUpdate || "").trim()) {
+    changedFields.push("Latest file update updated");
+  }
+
+  return changedFields;
 }
 
 export default function WorkflowFileDetailPage() {
@@ -347,7 +484,7 @@ export default function WorkflowFileDetailPage() {
   );
 
   const saveFileChanges = async () => {
-    if (!file) return;
+    if (!file || !activeUser) return;
 
     try {
       setSaving(true);
@@ -369,8 +506,8 @@ export default function WorkflowFileDetailPage() {
         nextBorrowerAction: nextBorrowerAction.trim(),
         latestUpdate: latestUpdate.trim(),
         requestedProcessorNote: requestedProcessorNote.trim(),
-        author: activeUser?.name || "Team User",
-        role: activeUser?.role || "Professional",
+        author: activeUser.name || "Team User",
+        role: activeUser.role || "Professional",
       };
 
       if (canManageProcessing) {
@@ -395,7 +532,63 @@ export default function WorkflowFileDetailPage() {
       const mappedFile = mapFile(data.file as WorkflowApiFile);
       setFile(mappedFile);
       syncForm(mappedFile);
-      setSaveMessage("Workflow file updated successfully.");
+
+      const changedFields = buildChangedFieldsSummary({
+        file,
+        status,
+        urgency,
+        targetClose,
+        occupancy,
+        processor: canManageProcessing ? processor : file.processor,
+        requestedProcessorNote,
+        blocker,
+        nextInternalAction,
+        nextBorrowerAction,
+        latestUpdate,
+      });
+
+      if (changedFields.length === 0) {
+        setSaveMessage("Workflow file updated successfully.");
+        return;
+      }
+
+      const target = resolveNotificationTarget(file, activeUser);
+
+      try {
+        const notifyResponse = await fetch("/api/workflow/file-change", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            loanId: file.loanNumber || file.borrowerName || file.id,
+            fileId: file.id,
+            changedByRole: mapRoleToWorkflow(activeUser.role),
+            changedByName: activeUser.name,
+            changedByEmail: activeUser.email,
+            notifyName: target.name,
+            notifyEmail: target.email,
+            receiptEmail: activeUser.email,
+            changeSummary: `Workflow file updated by ${activeUser.name}.`,
+            changedFields,
+          }),
+        });
+
+        const notifyData = await notifyResponse.json().catch(() => null);
+
+        if (notifyResponse.ok && notifyData?.success) {
+          setSaveMessage("Workflow file updated and notification emails sent.");
+        } else {
+          setSaveMessage(
+            "Workflow file updated, but notification email could not be confirmed."
+          );
+        }
+      } catch (notifyError) {
+        console.error("WORKFLOW FILE CHANGE NOTIFY ERROR:", notifyError);
+        setSaveMessage(
+          "Workflow file updated, but notification email could not be confirmed."
+        );
+      }
     } catch (error) {
       console.error(error);
       setSaveError("Unable to save workflow file changes.");
@@ -405,7 +598,7 @@ export default function WorkflowFileDetailPage() {
   };
 
   const addInternalUpdate = async () => {
-    if (!file) return;
+    if (!file || !activeUser) return;
 
     const trimmed = internalUpdateText.trim();
     if (!trimmed) return;
@@ -422,8 +615,8 @@ export default function WorkflowFileDetailPage() {
         },
         body: JSON.stringify({
           action: "add_feed_entry",
-          author: activeUser?.name || "Team User",
-          role: activeUser?.role || "Professional",
+          author: activeUser.name || "Team User",
+          role: activeUser.role || "Professional",
           text: trimmed,
         }),
       });
@@ -435,9 +628,48 @@ export default function WorkflowFileDetailPage() {
         return;
       }
 
-      setInternalUpdateText("");
-      await loadFile();
-      setSaveMessage("Internal update added successfully.");
+      const target = resolveNotificationTarget(file, activeUser);
+
+      try {
+        const noteResponse = await fetch("/api/workflow/note", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            loanId: file.loanNumber || file.borrowerName || file.id,
+            fileId: file.id,
+            fromRole: mapRoleToWorkflow(activeUser.role),
+            fromName: activeUser.name,
+            fromEmail: activeUser.email,
+            toRole: target.role,
+            toName: target.name,
+            toEmail: target.email,
+            noteType: "internal_update",
+            message: trimmed,
+          }),
+        });
+
+        const noteData = await noteResponse.json().catch(() => null);
+
+        setInternalUpdateText("");
+        await loadFile();
+
+        if (noteResponse.ok && noteData?.success) {
+          setSaveMessage("Internal update added and notification emails sent.");
+        } else {
+          setSaveMessage(
+            "Internal update added, but notification email could not be confirmed."
+          );
+        }
+      } catch (notifyError) {
+        console.error("WORKFLOW NOTE NOTIFY ERROR:", notifyError);
+        setInternalUpdateText("");
+        await loadFile();
+        setSaveMessage(
+          "Internal update added, but notification email could not be confirmed."
+        );
+      }
     } catch (error) {
       console.error(error);
       setSaveError("Unable to add internal update.");
@@ -567,6 +799,9 @@ export default function WorkflowFileDetailPage() {
                 </Link>
                 <button type="button" onClick={loadFile} style={styles.heroActionButton}>
                   Refresh File
+                </button>
+                <button type="button" onClick={handleSignOut} style={styles.heroActionButton}>
+                  Sign Out
                 </button>
               </div>
             </div>
