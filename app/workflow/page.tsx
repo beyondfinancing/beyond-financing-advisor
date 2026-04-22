@@ -132,7 +132,8 @@ const INITIAL_FILES: WorkflowFile[] = [
     occupancy: "Primary Residence",
     blocker: "Conditions package not fully cleared.",
     nextInternalAction: "Review lender condition list with borrower today.",
-    nextBorrowerAction: "Provide updated large deposit letter and insurance binder.",
+    nextBorrowerAction:
+      "Provide updated large deposit letter and insurance binder.",
     latestUpdate:
       "Conditional approval received. Conditions list sent to borrower.",
   },
@@ -275,12 +276,16 @@ export default function WorkflowPage() {
   const [authCheckLoading, setAuthCheckLoading] = useState(true);
 
   const [files, setFiles] = useState<WorkflowFile[]>(INITIAL_FILES);
-  const [selectedFileId, setSelectedFileId] = useState<string>(INITIAL_FILES[0]?.id || "");
+  const [selectedFileId, setSelectedFileId] = useState<string>(
+    INITIAL_FILES[0]?.id || ""
+  );
   const [searchQuery, setSearchQuery] = useState("");
 
-  const [assignedProcessor, setAssignedProcessor] = useState("Amarilis Santos");
+  const [assignedProcessor, setAssignedProcessor] =
+    useState("Amarilis Santos");
   const [targetCloseDate, setTargetCloseDate] = useState("");
-  const [handoffUrgency, setHandoffUrgency] = useState<WorkflowUrgency>("Priority");
+  const [handoffUrgency, setHandoffUrgency] =
+    useState<WorkflowUrgency>("Priority");
   const [handoffNote, setHandoffNote] = useState("");
   const [handoffStatus, setHandoffStatus] = useState("");
 
@@ -372,11 +377,17 @@ export default function WorkflowPage() {
   const pipelineCounts = useMemo(() => {
     return {
       newScenario: files.filter((f) => f.status === "new_scenario").length,
-      preApprovalReview: files.filter((f) => f.status === "pre_approval_review").length,
-      sentToProcessing: files.filter((f) => f.status === "sent_to_processing").length,
-      processingActive: files.filter((f) => f.status === "processing_active").length,
-      submittedToLender: files.filter((f) => f.status === "submitted_to_lender").length,
-      conditionalApproval: files.filter((f) => f.status === "conditional_approval").length,
+      preApprovalReview: files.filter((f) => f.status === "pre_approval_review")
+        .length,
+      sentToProcessing: files.filter((f) => f.status === "sent_to_processing")
+        .length,
+      processingActive: files.filter((f) => f.status === "processing_active")
+        .length,
+      submittedToLender: files.filter((f) => f.status === "submitted_to_lender")
+        .length,
+      conditionalApproval: files.filter(
+        (f) => f.status === "conditional_approval"
+      ).length,
       clearToClose: files.filter((f) => f.status === "clear_to_close").length,
       closed: files.filter((f) => f.status === "closed").length,
     };
@@ -397,7 +408,9 @@ export default function WorkflowPage() {
   const rushFilesCount = files.filter((f) => f.urgency === "Rush").length;
 
   const averageAge = files.length
-    ? Math.round(files.reduce((sum, file) => sum + file.fileAgeDays, 0) / files.length)
+    ? Math.round(
+        files.reduce((sum, file) => sum + file.fileAgeDays, 0) / files.length
+      )
     : 0;
 
   const urgentItems = files.filter(
@@ -409,8 +422,7 @@ export default function WorkflowPage() {
   const submitProcessingHandoff = () => {
     if (!selectedFile) return;
 
-    const effectiveTargetClose =
-      targetCloseDate.trim() || selectedFile.targetClose;
+    const effectiveTargetClose = targetCloseDate.trim() || selectedFile.targetClose;
 
     setFiles((prev) =>
       prev.map((file) =>
@@ -481,7 +493,9 @@ export default function WorkflowPage() {
           <TopNav />
           <section style={styles.hero}>
             <div style={styles.heroBadge}>TEAM WORKFLOW INTELLIGENCE</div>
-            <h1 style={styles.heroTitle}>Beyond Intelligence™ Team Workflow Intelligence</h1>
+            <h1 style={styles.heroTitle}>
+              Beyond Intelligence™ Team Workflow Intelligence
+            </h1>
             <p style={styles.heroText}>Loading protected workflow command center...</p>
           </section>
         </div>
@@ -497,18 +511,21 @@ export default function WorkflowPage() {
           <TopNav />
           <section style={styles.hero}>
             <div style={styles.heroBadge}>TEAM WORKFLOW INTELLIGENCE</div>
-            <h1 style={styles.heroTitle}>Beyond Intelligence™ Team Workflow Intelligence</h1>
+            <h1 style={styles.heroTitle}>
+              Beyond Intelligence™ Team Workflow Intelligence
+            </h1>
             <p style={styles.heroText}>
-              Processing handoff, file command, milestone visibility, and execution tracking
-              from pre-approval through closing.
+              Processing handoff, file command, milestone visibility, and execution
+              tracking from pre-approval through closing.
             </p>
           </section>
 
           <div style={styles.loginCard}>
             <h2 style={styles.sectionTitle}>Protected Professional Access</h2>
             <p style={styles.sectionText}>
-              This page uses the same professional authentication layer as Team Mortgage
-              Intelligence. Please sign in through your protected team access first.
+              This page uses the same professional authentication layer as Team
+              Mortgage Intelligence. Please sign in through your protected team
+              access first.
             </p>
 
             <div style={styles.loginActions}>
@@ -533,8 +550,8 @@ export default function WorkflowPage() {
         <TopNav active="workflow" />
 
         <section style={styles.hero}>
-          <div className="bf-hero-grid" style={styles.heroGrid}>
-            <div>
+          <div className="bf-workflow-hero-top" style={styles.workflowHeroTopBar}>
+            <div style={styles.workflowHeroLeft}>
               <div style={styles.heroBadge}>TEAM COMMAND CENTER</div>
               <h1 style={styles.heroTitle}>
                 Mortgage workflow intelligence
@@ -544,30 +561,49 @@ export default function WorkflowPage() {
                 through closing.
               </h1>
               <p style={styles.heroText}>
-                Built for loan officers, processors, assistants, and leadership teams who
-                need one disciplined operating layer to manage file handoff, milestone
-                visibility, accountability, and internal communication from processing
-                entry to clear-to-close.
+                Built for loan officers, processors, assistants, and leadership
+                teams who need one disciplined operating layer to manage file
+                handoff, milestone visibility, accountability, and internal
+                communication from processing entry to clear-to-close.
               </p>
             </div>
 
-            <div style={styles.heroPurposeCard}>
-              <div style={styles.heroPurposeTitle}>COMMAND PURPOSE</div>
-              <div style={styles.heroPurposeList}>
-                <div>• Trigger processing handoff with structure and urgency.</div>
-                <div>• Keep loan officer and processor aligned in one file room.</div>
-                <div>• Track milestones, blockers, and next actions visibly.</div>
-                <div>• Reduce drift between pre-approval and close.</div>
+            <div style={styles.workflowHeroRight}>
+              <div style={styles.userBadge}>
+                <div style={styles.userBadgeTitle}>
+                  Logged in as: {activeUser.name}
+                </div>
+                <div style={styles.userBadgeSubtext}>
+                  Role: {activeUser.role} · {activeUser.email}
+                </div>
               </div>
 
-              <div style={styles.heroActionRow}>
-                <a href="/" style={styles.heroActionOutline}>
-                  Back to Homepage
-                </a>
-                <a href="/borrower" style={styles.heroActionGhost}>
-                  Open Borrower Experience
-                </a>
+              <div style={styles.heroPurposeCard}>
+                <div style={styles.heroPurposeTitle}>COMMAND PURPOSE</div>
+                <div style={styles.heroPurposeList}>
+                  <div>• Trigger processing handoff with structure and urgency.</div>
+                  <div>• Keep loan officer and processor aligned in one file room.</div>
+                  <div>• Track milestones, blockers, and next actions visibly.</div>
+                  <div>• Reduce drift between pre-approval and close.</div>
+                </div>
+
+                <div style={styles.heroActionRow}>
+                  <a href="/" style={styles.heroActionOutline}>
+                    Back to Homepage
+                  </a>
+                  <a href="/borrower" style={styles.heroActionGhost}>
+                    Open Borrower Experience
+                  </a>
+                </div>
               </div>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                style={styles.signOutButton}
+              >
+                Sign Out
+              </button>
             </div>
           </div>
         </section>
@@ -721,7 +757,10 @@ export default function WorkflowPage() {
                         <MiniDataCard label="LOAN OFFICER" value={file.loanOfficer} />
                         <MiniDataCard label="PROCESSOR" value={file.processor} />
                         <MiniDataCard label="TARGET CLOSE" value={file.targetClose} />
-                        <MiniDataCard label="FILE AGE" value={`${file.fileAgeDays} days`} />
+                        <MiniDataCard
+                          label="FILE AGE"
+                          value={`${file.fileAgeDays} days`}
+                        />
                       </div>
                     </button>
                   );
@@ -745,7 +784,8 @@ export default function WorkflowPage() {
                     <div>
                       <div style={styles.attentionName}>{item.borrowerName}</div>
                       <div style={styles.attentionMeta}>
-                        {getStatusLabel(item.status)} · {item.fileAgeDays} days in workflow
+                        {getStatusLabel(item.status)} · {item.fileAgeDays} days in
+                        workflow
                       </div>
                     </div>
                     <div style={styles.attentionIssue}>{item.blocker}</div>
@@ -756,7 +796,9 @@ export default function WorkflowPage() {
 
             <div style={styles.card}>
               <div style={styles.sectionEyebrow}>INTERNAL FILE FEED</div>
-              <h2 style={styles.sectionTitle}>Loan officer and processor activity</h2>
+              <h2 style={styles.sectionTitle}>
+                Loan officer and processor activity
+              </h2>
 
               <label style={styles.label}>Add internal update</label>
               <textarea
@@ -766,7 +808,11 @@ export default function WorkflowPage() {
                 rows={3}
                 style={styles.textarea}
               />
-              <button type="button" onClick={addInternalUpdate} style={styles.gradientButton}>
+              <button
+                type="button"
+                onClick={addInternalUpdate}
+                style={styles.gradientButton}
+              >
                 Add Internal Update
               </button>
 
@@ -810,11 +856,26 @@ export default function WorkflowPage() {
                   </div>
 
                   <div className="bf-command-grid" style={styles.commandGrid}>
-                    <MiniDataCard label="LOAN OFFICER" value={selectedFile.loanOfficer} />
-                    <MiniDataCard label="PROCESSOR" value={selectedFile.processor} />
-                    <MiniDataCard label="TARGET CLOSE" value={selectedFile.targetClose} />
-                    <MiniDataCard label="LOAN PURPOSE" value={selectedFile.purpose} />
-                    <MiniDataCard label="OCCUPANCY" value={selectedFile.occupancy} />
+                    <MiniDataCard
+                      label="LOAN OFFICER"
+                      value={selectedFile.loanOfficer}
+                    />
+                    <MiniDataCard
+                      label="PROCESSOR"
+                      value={selectedFile.processor}
+                    />
+                    <MiniDataCard
+                      label="TARGET CLOSE"
+                      value={selectedFile.targetClose}
+                    />
+                    <MiniDataCard
+                      label="LOAN PURPOSE"
+                      value={selectedFile.purpose}
+                    />
+                    <MiniDataCard
+                      label="OCCUPANCY"
+                      value={selectedFile.occupancy}
+                    />
                     <MiniDataCard
                       label="AMOUNT"
                       value={formatCurrency(selectedFile.amount)}
@@ -825,17 +886,21 @@ export default function WorkflowPage() {
                     <strong>Current blocker:</strong> {selectedFile.blocker}
                   </div>
                   <div style={styles.commandNote}>
-                    <strong>Next internal action:</strong> {selectedFile.nextInternalAction}
+                    <strong>Next internal action:</strong>{" "}
+                    {selectedFile.nextInternalAction}
                   </div>
                   <div style={styles.commandNote}>
-                    <strong>Next borrower action:</strong> {selectedFile.nextBorrowerAction}
+                    <strong>Next borrower action:</strong>{" "}
+                    {selectedFile.nextBorrowerAction}
                   </div>
                   <div style={styles.commandNote}>
                     <strong>Latest file update:</strong> {selectedFile.latestUpdate}
                   </div>
                 </>
               ) : (
-                <div style={styles.placeholderBox}>Select a file to view command details.</div>
+                <div style={styles.placeholderBox}>
+                  Select a file to view command details.
+                </div>
               )}
             </div>
 
@@ -884,7 +949,11 @@ export default function WorkflowPage() {
                 style={styles.textarea}
               />
 
-              <button type="button" onClick={submitProcessingHandoff} style={styles.commandButton}>
+              <button
+                type="button"
+                onClick={submitProcessingHandoff}
+                style={styles.commandButton}
+              >
                 Send to Processing
               </button>
 
@@ -899,24 +968,24 @@ export default function WorkflowPage() {
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Processing Handoff</div>
                   <div style={styles.moduleText}>
-                    Loan officer triggers file handoff with processor assignment, urgency,
-                    and operational note in one action.
+                    Loan officer triggers file handoff with processor assignment,
+                    urgency, and operational note in one action.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Open File Communication</div>
                   <div style={styles.moduleText}>
-                    Shared internal updates keep loan officer and processor aligned from
-                    handoff through close.
+                    Shared internal updates keep loan officer and processor aligned
+                    from handoff through close.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>Timeline Visibility</div>
                   <div style={styles.moduleText}>
-                    File age, milestone stage, target close date, and blockers stay visible
-                    to the team without losing context.
+                    File age, milestone stage, target close date, and blockers stay
+                    visible to the team without losing context.
                   </div>
                 </div>
 
@@ -956,14 +1025,18 @@ function TopNav({ active = "workflow" }: { active?: "team" | "workflow" }) {
         </a>
         <a
           href="/team"
-          style={active === "team" ? navStyles.topBarLinkActive : navStyles.topBarLink}
+          style={
+            active === "team" ? navStyles.topBarLinkActive : navStyles.topBarLink
+          }
         >
           Mortgage Intelligence
         </a>
         <a
           href="/workflow"
           style={
-            active === "workflow" ? navStyles.topBarLinkActive : navStyles.topBarLink
+            active === "workflow"
+              ? navStyles.topBarLinkActive
+              : navStyles.topBarLink
           }
         >
           Workflow Intelligence
@@ -1045,6 +1118,12 @@ const responsiveCss = `
     }
   }
 
+  @media (max-width: 1080px) {
+    .bf-workflow-hero-top {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
   @media (max-width: 920px) {
     .bf-stat-grid,
     .bf-pipeline-grid,
@@ -1093,6 +1172,48 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: "1.2fr 0.8fr",
     gap: 22,
     alignItems: "start",
+  },
+  workflowHeroTopBar: {
+    display: "grid",
+    gridTemplateColumns: "1.2fr 0.8fr",
+    gap: 22,
+    alignItems: "start",
+  },
+  workflowHeroLeft: {
+    minWidth: 0,
+  },
+  workflowHeroRight: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    minWidth: 320,
+  },
+  userBadge: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    borderRadius: 20,
+    padding: 16,
+  },
+  userBadgeTitle: {
+    fontWeight: 800,
+    fontSize: 15,
+    marginBottom: 4,
+    color: "#ffffff",
+  },
+  userBadgeSubtext: {
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: "rgba(255,255,255,0.92)",
+  },
+  signOutButton: {
+    border: "1px solid rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    color: "#ffffff",
+    borderRadius: 16,
+    padding: "14px 16px",
+    fontWeight: 800,
+    cursor: "pointer",
+    fontSize: 15,
   },
   heroBadge: {
     display: "inline-block",
