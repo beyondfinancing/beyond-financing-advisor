@@ -59,6 +59,28 @@ type ProgramMatch = {
   reason: string;
 };
 
+type WorkflowRoleApi =
+  | "loan_officer"
+  | "processing"
+  | "assistant"
+  | "real_estate_agent";
+
+type WorkflowActivityItem = {
+  id: string;
+  loan_id: string;
+  file_id?: string;
+  from_role: string;
+  from_name?: string;
+  from_email?: string;
+  to_role: string;
+  to_name?: string;
+  to_email?: string;
+  note_type: string;
+  message: string;
+  status: string;
+  created_at: string;
+};
+
 const APP_URL = "https://www.beyondfinancing.com/apply-now";
 const CONTACT_URL = "https://www.beyondfinancing.com/contact-us";
 
@@ -558,6 +580,20 @@ Scenario snapshot:
 `.trim();
 }
 
+function mapTeamRoleToWorkflowRole(role: TeamRole): WorkflowRoleApi {
+  if (role === "Loan Officer") return "loan_officer";
+  if (role === "Loan Officer Assistant") return "assistant";
+  if (role === "Processor") return "processing";
+  return "real_estate_agent";
+}
+
+function formatWorkflowTime(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
 export default function TeamPage() {
   const [language, setLanguage] = useState<LanguageCode>("en");
   const [credential, setCredential] = useState("");
@@ -598,6 +634,13 @@ export default function TeamPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [chatError, setChatError] = useState("");
   const [summaryStatus, setSummaryStatus] = useState("");
+
+  const [workflowToName, setWorkflowToName] = useState("Processing Team");
+  const [workflowToEmail, setWorkflowToEmail] = useState("myloan@beyondfinancing.com");
+  const [workflowMessage, setWorkflowMessage] = useState("");
+  const [workflowSending, setWorkflowSending] = useState(false);
+  const [workflowStatus, setWorkflowStatus] = useState("");
+  const [workflowActivity, setWorkflowActivity] = useState<WorkflowActivityItem[]>([]);
 
   const t = COPY[language];
 
@@ -714,6 +757,9 @@ export default function TeamPage() {
     setChatError("");
     setSummaryStatus("");
     setPasswordHint("");
+    setWorkflowStatus("");
+    setWorkflowMessage("");
+    setWorkflowActivity([]);
   };
 
   const setLeadField = (key: keyof TeamLeadForm, value: string) => {
@@ -938,6 +984,68 @@ Estimated LTV: ${
     }
   };
 
+  const sendWorkflowNote = async () => {
+    if (!activeUser) {
+      setWorkflowStatus("No active user found.");
+      return;
+    }
+
+    if (!leadForm.fullName.trim()) {
+      setWorkflowStatus("Enter the borrower full name before sending a workflow note.");
+      return;
+    }
+
+    if (!workflowToEmail.trim() || !workflowMessage.trim()) {
+      setWorkflowStatus("Enter recipient email and workflow note.");
+      return;
+    }
+
+    setWorkflowSending(true);
+    setWorkflowStatus("");
+
+    try {
+      const response = await fetch("/api/workflow/note", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          loanId: leadForm.fullName.trim(),
+          fileId: leadForm.email.trim() || "TEAM-FILE",
+          fromRole: mapTeamRoleToWorkflowRole(activeUser.role),
+          fromName: activeUser.name,
+          fromEmail: activeUser.email,
+          toRole: "processing",
+          toName: workflowToName.trim() || "Processing Team",
+          toEmail: workflowToEmail.trim(),
+          noteType: "team_note",
+          message: workflowMessage.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.error === "string" ? data.error : "Workflow note failed."
+        );
+      }
+
+      if (data?.activity) {
+        setWorkflowActivity((prev) => [data.activity, ...prev]);
+      }
+
+      setWorkflowStatus("Workflow note sent and logged successfully.");
+      setWorkflowMessage("");
+    } catch (error) {
+      setWorkflowStatus(
+        error instanceof Error ? error.message : "Unable to send workflow note."
+      );
+    } finally {
+      setWorkflowSending(false);
+    }
+  };
+
   const resetSession = () => {
     setLeadForm({
       fullName: "",
@@ -967,6 +1075,12 @@ Estimated LTV: ${
     setSummaryLoading(false);
     setChatError("");
     setSummaryStatus("");
+    setWorkflowToName("Processing Team");
+    setWorkflowToEmail("myloan@beyondfinancing.com");
+    setWorkflowMessage("");
+    setWorkflowSending(false);
+    setWorkflowStatus("");
+    setWorkflowActivity([]);
   };
 
   if (authCheckLoading) {
@@ -1637,6 +1751,91 @@ Estimated LTV: ${
             </div>
 
             <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Workflow Accountability</h2>
+
+              <div style={styles.formGridSingle}>
+                <div>
+                  <label style={styles.label}>Send To</label>
+                  <input
+                    style={styles.input}
+                    value={workflowToName}
+                    onChange={(e) => setWorkflowToName(e.target.value)}
+                    placeholder="Processing Team"
+                  />
+                </div>
+
+                <div>
+                  <label style={styles.label}>Recipient Email</label>
+                  <input
+                    style={styles.input}
+                    value={workflowToEmail}
+                    onChange={(e) => setWorkflowToEmail(e.target.value)}
+                    placeholder="myloan@beyondfinancing.com"
+                    type="email"
+                  />
+                </div>
+
+                <div>
+                  <label style={styles.label}>Workflow Note</label>
+                  <textarea
+                    style={styles.textarea}
+                    rows={4}
+                    value={workflowMessage}
+                    onChange={(e) => setWorkflowMessage(e.target.value)}
+                    placeholder="Enter the note, update request, condition reminder, file status question, or processing instruction."
+                  />
+                </div>
+              </div>
+
+              <div style={styles.buttonRow}>
+                <button
+                  type="button"
+                  onClick={sendWorkflowNote}
+                  disabled={workflowSending || !workflowMessage.trim()}
+                  style={{
+                    ...styles.primaryButton,
+                    opacity: workflowSending || !workflowMessage.trim() ? 0.7 : 1,
+                    cursor:
+                      workflowSending || !workflowMessage.trim()
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {workflowSending ? "Sending Workflow Note..." : "Send Workflow Note"}
+                </button>
+              </div>
+
+              {workflowStatus ? <div style={styles.infoBox}>{workflowStatus}</div> : null}
+
+              <div style={{ marginTop: 18 }}>
+                <div style={styles.routeTitle}>Session Activity</div>
+
+                {workflowActivity.length === 0 ? (
+                  <div style={styles.placeholderBox}>
+                    No workflow notes have been sent in this session yet.
+                  </div>
+                ) : (
+                  <div style={styles.workflowList}>
+                    {workflowActivity.map((item) => (
+                      <div key={item.id} style={styles.workflowCard}>
+                        <div style={styles.workflowTopRow}>
+                          <div style={styles.workflowTitle}>
+                            {item.from_name || item.from_email} → {item.to_name || item.to_email}
+                          </div>
+                          <div style={styles.workflowStatusBadge}>{item.status}</div>
+                        </div>
+                        <div style={styles.workflowMeta}>
+                          Loan: {item.loan_id} · {formatWorkflowTime(item.created_at)}
+                        </div>
+                        <div style={styles.workflowMessage}>{item.message}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={styles.card}>
               <h2 style={styles.sectionTitle}>{t.thinkingCardTitle}</h2>
 
               <div style={styles.moduleList}>
@@ -2064,6 +2263,51 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: 14,
+  },
+  workflowList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+  workflowCard: {
+    borderRadius: 16,
+    backgroundColor: "#F8FAFC",
+    border: "1px solid #E2E8F0",
+    padding: 14,
+  },
+  workflowTopRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  workflowTitle: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#111827",
+  },
+  workflowStatusBadge: {
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontSize: 12,
+    fontWeight: 800,
+    backgroundColor: "#DCFCE7",
+    color: "#166534",
+    textTransform: "capitalize",
+  },
+  workflowMeta: {
+    marginTop: 6,
+    fontSize: 12,
+    color: "#64748B",
+    lineHeight: 1.5,
+  },
+  workflowMessage: {
+    marginTop: 10,
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 1.7,
+    whiteSpace: "pre-wrap",
   },
   recommendationCard: {
     borderRadius: 16,
