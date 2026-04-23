@@ -64,6 +64,8 @@ const EMPTY_FORM: FormState = {
   isActive: true,
 };
 
+const APPROVED_ADMIN_EMAIL = "pansini@beyondfinancing.com";
+
 function formatPhoneDisplay(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 10);
 
@@ -120,11 +122,11 @@ export default function AdminPage() {
           const user = data.user as AuthUser;
           setActiveUser(user);
 
-          const canAccess =
-            user.role === "Branch Manager" ||
-            user.role === "Production Manager";
+          const isApprovedAdmin =
+            String(user.email || "").trim().toLowerCase() ===
+            APPROVED_ADMIN_EMAIL;
 
-          setAuthorized(canAccess);
+          setAuthorized(isApprovedAdmin);
         } else {
           setAuthorized(false);
         }
@@ -359,15 +361,15 @@ export default function AdminPage() {
             <div style={styles.heroBadge}>ADMIN COMMAND</div>
             <h1 style={styles.heroTitle}>Beyond Intelligence™ Admin Command</h1>
             <p style={styles.heroText}>
-              This area is reserved for authorized administrative roles.
+              This area is currently reserved for the approved administrator only.
             </p>
           </section>
 
           <div style={styles.card}>
             <h2 style={styles.sectionTitle}>Access Restricted</h2>
             <p style={styles.sectionText}>
-              Branch Manager or Production Manager access is required to enter
-              the Admin Command Page.
+              At this time, only the approved administrator account may enter the
+              Admin Command Page.
             </p>
 
             <div style={styles.actionRow}>
