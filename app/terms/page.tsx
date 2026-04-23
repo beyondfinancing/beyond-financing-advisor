@@ -47,15 +47,15 @@ AI-powered mortgage intelligence supervised by licensed professionals
 
         <h2 style={styles.heading}>Limitation of Liability</h2>
         <p style={styles.text}>
-          Beyond Financing, Inc. is not liable for decisions made based on
+          Beyond Intelligence, LLC. is not liable for decisions made based on
           preliminary guidance provided by the system.
         </p>
 
         <h2 style={styles.heading}>Contact</h2>
         <p style={styles.text}>
-          Beyond Financing, Inc.
+          Beyond Intelligence, LLC.
           <br />
-          support@beyondfinancing.com
+          support@beyondintelligence.io
         </p>
       </div>
     </main>
