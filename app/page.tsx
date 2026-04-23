@@ -4,347 +4,282 @@ import React, { useState } from "react";
 import SiteHeader from "@/app/components/SiteHeader";
 import { SiteLanguage } from "@/app/components/site-header-translations";
 
-const HOME_COPY: Record<
-  SiteLanguage,
+type LanguageCode = "en" | "pt" | "es";
+
+const COPY: Record<
+  LanguageCode,
   {
-    badge: string;
-    heroTitle: React.ReactNode;
+    heroBadge: string;
+    heroTitle1: string;
+    heroTitle2: string;
+    heroTitle3: string;
+    heroTitle4: string;
     heroText: string;
     structureTitle: string;
     structureText: string;
-    structureBullets: string[];
-    startHere: string;
-    finleyTitle: string;
-    finleyText: string;
-    finleyButton: string;
-    finleySubtext: string;
+    structureLine1: string;
+    structureLine2: string;
+    structureLine3: string;
+    startHereTitle: string;
+    startHereHeadline: string;
+    startHereText: string;
+    startHereButton: string;
+    startHereFootnote: string;
     borrowerEyebrow: string;
-    borrowerTitle: React.ReactNode;
+    borrowerTitle1: string;
+    borrowerTitle2: string;
     borrowerText: string;
-    borrowerBullets: string[];
-    borrowerAction: string;
+    borrowerBullet1: string;
+    borrowerBullet2: string;
+    borrowerBullet3: string;
+    borrowerBullet4: string;
+    borrowerButton: string;
     teamEyebrow: string;
-    teamTitle: React.ReactNode;
+    teamTitle1: string;
+    teamTitle2: string;
     teamText: string;
-    teamBullets: string[];
-    teamAction: string;
+    teamBullet1: string;
+    teamBullet2: string;
+    teamBullet3: string;
+    teamBullet4: string;
+    teamButton: string;
     workflowEyebrow: string;
-    workflowTitle: React.ReactNode;
+    workflowTitle1: string;
+    workflowTitle2: string;
     workflowText: string;
-    workflowBullets: string[];
-    workflowAction: string;
+    workflowBullet1: string;
+    workflowBullet2: string;
+    workflowBullet3: string;
+    workflowBullet4: string;
+    workflowButton: string;
     architectureEyebrow: string;
     architectureTitle: string;
     architectureText: string;
-    architectureOneTitle: string;
-    architectureOneText: string;
-    architectureTwoTitle: string;
-    architectureTwoText: string;
-    architectureThreeTitle: string;
-    architectureThreeText: string;
-    footer: string;
+    archCard1Title: string;
+    archCard1Text: string;
+    archCard2Title: string;
+    archCard2Text: string;
+    archCard3Title: string;
+    archCard3Text: string;
+    footerText: string;
     footerTag: string;
   }
 > = {
   en: {
-    badge: "BEYOND INTELLIGENCE™",
-    heroTitle: (
-      <>
-        Mortgage intelligence
-        <br />
-        for borrower guidance,
-        <br />
-        professional analysis,
-        <br />
-        and workflow execution.
-      </>
-    ),
+    heroBadge: "BEYOND INTELLIGENCE™",
+    heroTitle1: "Mortgage intelligence",
+    heroTitle2: "for borrower guidance,",
+    heroTitle3: "professional analysis,",
+    heroTitle4: "and workflow execution.",
     heroText:
       "Beyond Intelligence™ is an AI-powered mortgage operating system supervised by an Independent Certified Mortgage Advisor. It is designed to separate borrower interaction, professional mortgage thinking, and team workflow execution into disciplined product layers that scale cleanly.",
     structureTitle: "PLATFORM STRUCTURE",
     structureText:
       "One system. Three environments. Each with a distinct role in the mortgage journey.",
-    structureBullets: [
-      "Borrower Intelligence for guided client interaction.",
-      "Team Mortgage Intelligence for professional analysis.",
-      "Team Workflow Intelligence for execution and file command.",
-    ],
-    startHere: "START HERE",
-    finleyTitle: "Talk to Finley Beyond",
-    finleyText:
+    structureLine1: "• Borrower Intelligence for guided client interaction.",
+    structureLine2:
+      "• Team Workspace for protected professional research, Finley chat, product direction, lender and investor knowledge, and internal analysis.",
+    structureLine3:
+      "• Workflow Intelligence for protected file execution, milestone visibility, and production coordination.",
+    startHereTitle: "START HERE",
+    startHereHeadline: "Talk to Finley Beyond",
+    startHereText:
       "Begin your borrower interaction here to review your mortgage scenario, answer qualification questions, and get routed toward the right next step.",
-    finleyButton: "Start Borrower Conversation",
-    finleySubtext:
+    startHereButton: "Start Borrower Conversation",
+    startHereFootnote:
       "Designed for borrowers who want to begin with guided mortgage intake and Finley Beyond interaction.",
     borrowerEyebrow: "BORROWER EXPERIENCE",
-    borrowerTitle: (
-      <>
-        Borrower
-        <br />
-        Intelligence
-      </>
-    ),
+    borrowerTitle1: "Borrower",
+    borrowerTitle2: "Intelligence",
     borrowerText:
       "Client-facing intake, mortgage guidance, routed loan officer matching, and Finley Beyond conversation flow with required disclaimer handling.",
-    borrowerBullets: [
-      "Guided mortgage intake",
-      "Loan officer routing",
-      "Scenario review and borrower chat",
-      "Apply, schedule, and contact actions",
-    ],
-    borrowerAction: "Open Borrower Intelligence",
-    teamEyebrow: "PROFESSIONAL THINKING LAYER",
-    teamTitle: (
-      <>
-        Team Mortgage
-        <br />
-        Intelligence
-      </>
-    ),
+    borrowerBullet1: "• Guided mortgage intake",
+    borrowerBullet2: "• Loan officer routing",
+    borrowerBullet3: "• Scenario review and borrower chat",
+    borrowerBullet4: "• Apply, schedule, and contact actions",
+    borrowerButton: "Open Borrower Intelligence",
+    teamEyebrow: "PROTECTED PROFESSIONAL RESEARCH",
+    teamTitle1: "Team Workspace",
+    teamTitle2: "& Mortgage Intelligence",
     teamText:
-      "Internal borrower analysis, directional program thinking, summary generation, and professional review support for licensed mortgage teams.",
-    teamBullets: [
-      "Borrower scenario review",
-      "Directional program analysis",
-      "Finley professional decision support",
-      "Internal summary email generation",
-    ],
-    teamAction: "Enter Mortgage Intelligence",
-    workflowEyebrow: "PROFESSIONAL EXECUTION LAYER",
-    workflowTitle: (
-      <>
-        Team Workflow
-        <br />
-        Intelligence
-      </>
-    ),
+      "Password-protected professional access for mortgage teams to chat with Finley, research products, review lender and investor direction, and strengthen internal mortgage analysis.",
+    teamBullet1: "• Finley professional knowledge chat",
+    teamBullet2: "• Product, lender, and investor research",
+    teamBullet3: "• Borrower scenario review",
+    teamBullet4: "• Internal summary and advisory support",
+    teamButton: "Enter Team Workspace",
+    workflowEyebrow: "PROTECTED EXECUTION LAYER",
+    workflowTitle1: "Workflow",
+    workflowTitle2: "Intelligence",
     workflowText:
-      "Command-center visibility for processing handoff, internal file coordination, milestone tracking, blockers, urgency, and close management.",
-    workflowBullets: [
-      "Processing handoff",
-      "Active file queue and command panel",
-      "Milestones, blockers, and urgency",
-      "Internal file feed and execution tracking",
-    ],
-    workflowAction: "Enter Workflow Intelligence",
+      "Password-protected command-center visibility for processing handoff, internal file coordination, milestone tracking, blockers, urgency, and close management.",
+    workflowBullet1: "• Processing handoff",
+    workflowBullet2: "• Active file queue and command panel",
+    workflowBullet3: "• Milestones, blockers, and urgency",
+    workflowBullet4: "• Internal file feed and execution tracking",
+    workflowButton: "Enter Workflow Intelligence",
     architectureEyebrow: "PRODUCT ARCHITECTURE",
     architectureTitle: "A cleaner operating system for mortgage teams",
     architectureText:
-      "The platform now separates interaction, analysis, and execution so each environment can become stronger without overcrowding the others. This gives Beyond Intelligence™ a more disciplined, premium, and scalable product structure.",
-    architectureOneTitle: "Borrower Interaction",
-    architectureOneText:
+      "The platform separates borrower interaction, protected professional intelligence, and workflow execution so each environment can grow stronger without overcrowding the others. Administrative control remains separate from professional access.",
+    archCard1Title: "Borrower Interaction",
+    archCard1Text:
       "The borrower-facing environment captures the scenario, educates the client, and moves the conversation toward a licensed advisor.",
-    architectureTwoTitle: "Mortgage Thinking",
-    architectureTwoText:
-      "The professional intelligence layer helps the team reason through structure, fit, missing items, and the next best action.",
-    architectureThreeTitle: "Workflow Execution",
-    architectureThreeText:
+    archCard2Title: "Protected Professional Intelligence",
+    archCard2Text:
+      "The professional workspace helps mortgage teams research products, compare direction, ask Finley structured questions, and think through next-best actions.",
+    archCard3Title: "Workflow Execution",
+    archCard3Text:
       "The command layer keeps handoff, processing, blockers, and closing visibility aligned from pre-approval through funding.",
-    footer:
-      "Beyond Intelligence™ helps organize borrower guidance, mortgage analysis, and professional workflow execution under one supervised system.",
+    footerText:
+      "Beyond Intelligence™ organizes borrower guidance, protected professional mortgage intelligence, and workflow execution under one supervised system.",
     footerTag: "MultiLender Intelligence™",
   },
   pt: {
-    badge: "BEYOND INTELLIGENCE™",
-    heroTitle: (
-      <>
-        Inteligência hipotecária
-        <br />
-        para orientação ao cliente,
-        <br />
-        análise profissional,
-        <br />
-        e execução de workflow.
-      </>
-    ),
+    heroBadge: "BEYOND INTELLIGENCE™",
+    heroTitle1: "Inteligência hipotecária",
+    heroTitle2: "para orientação do cliente,",
+    heroTitle3: "análise profissional,",
+    heroTitle4: "e execução operacional.",
     heroText:
-      "Beyond Intelligence™ é um sistema operacional hipotecário com IA supervisionado por um Independent Certified Mortgage Advisor. Ele foi projetado para separar a interação com o cliente, o raciocínio profissional hipotecário e a execução operacional da equipe em camadas de produto disciplinadas e escaláveis.",
+      "Beyond Intelligence™ é um sistema operacional hipotecário com IA, supervisionado por um Independent Certified Mortgage Advisor. Ele foi projetado para separar a interação com o cliente, o raciocínio hipotecário profissional e a execução operacional da equipe em camadas de produto disciplinadas e escaláveis.",
     structureTitle: "ESTRUTURA DA PLATAFORMA",
     structureText:
-      "Um sistema. Três ambientes. Cada um com um papel distinto na jornada hipotecária.",
-    structureBullets: [
-      "Borrower Intelligence para interação guiada com o cliente.",
-      "Team Mortgage Intelligence para análise profissional.",
-      "Team Workflow Intelligence para execução e comando do arquivo.",
-    ],
-    startHere: "COMECE AQUI",
-    finleyTitle: "Fale com Finley Beyond",
-    finleyText:
-      "Inicie aqui sua interação para revisar seu cenário hipotecário, responder perguntas de qualificação e ser direcionado ao próximo passo adequado.",
-    finleyButton: "Iniciar Conversa do Cliente",
-    finleySubtext:
-      "Desenvolvido para clientes que desejam começar com intake hipotecário guiado e interação com Finley Beyond.",
+      "Um sistema. Três ambientes. Cada um com uma função distinta na jornada hipotecária.",
+    structureLine1: "• Borrower Intelligence para interação guiada com o cliente.",
+    structureLine2:
+      "• Team Workspace para pesquisa profissional protegida, chat com Finley, direção de produtos, conhecimento sobre lenders e investidores, e análise interna.",
+    structureLine3:
+      "• Workflow Intelligence para execução protegida de arquivos, visibilidade de marcos e coordenação de produção.",
+    startHereTitle: "COMECE AQUI",
+    startHereHeadline: "Fale com Finley Beyond",
+    startHereText:
+      "Inicie aqui sua interação como cliente para revisar seu cenário hipotecário, responder perguntas de qualificação e ser direcionado ao próximo passo apropriado.",
+    startHereButton: "Iniciar Conversa do Cliente",
+    startHereFootnote:
+      "Desenvolvido para clientes que desejam começar com intake guiado e interação com Finley Beyond.",
     borrowerEyebrow: "EXPERIÊNCIA DO CLIENTE",
-    borrowerTitle: (
-      <>
-        Borrower
-        <br />
-        Intelligence
-      </>
-    ),
+    borrowerTitle1: "Borrower",
+    borrowerTitle2: "Intelligence",
     borrowerText:
-      "Intake voltado ao cliente, orientação hipotecária, direcionamento para loan officer e fluxo de conversa com Finley Beyond com aviso obrigatório.",
-    borrowerBullets: [
-      "Intake hipotecário guiado",
-      "Direcionamento de loan officer",
-      "Revisão de cenário e conversa com o cliente",
-      "Ações de aplicar, agendar e contato",
-    ],
-    borrowerAction: "Abrir Borrower Intelligence",
-    teamEyebrow: "CAMADA DE RACIOCÍNIO PROFISSIONAL",
-    teamTitle: (
-      <>
-        Team Mortgage
-        <br />
-        Intelligence
-      </>
-    ),
+      "Intake voltado ao cliente, orientação hipotecária, roteamento de loan officer e fluxo de conversa com Finley Beyond com aviso obrigatório.",
+    borrowerBullet1: "• Intake guiado",
+    borrowerBullet2: "• Roteamento de loan officer",
+    borrowerBullet3: "• Revisão de cenário e chat com o cliente",
+    borrowerBullet4: "• Ações de aplicar, agendar e contato",
+    borrowerButton: "Abrir Borrower Intelligence",
+    teamEyebrow: "PESQUISA PROFISSIONAL PROTEGIDA",
+    teamTitle1: "Team Workspace",
+    teamTitle2: "& Mortgage Intelligence",
     teamText:
-      "Análise interna do cliente, raciocínio direcional de programas, geração de resumos e suporte de revisão profissional para equipes hipotecárias licenciadas.",
-    teamBullets: [
-      "Revisão do cenário do cliente",
-      "Análise direcional de programas",
-      "Suporte profissional de decisão com Finley",
-      "Geração interna de email-resumo",
-    ],
-    teamAction: "Entrar em Mortgage Intelligence",
-    workflowEyebrow: "CAMADA DE EXECUÇÃO PROFISSIONAL",
-    workflowTitle: (
-      <>
-        Team Workflow
-        <br />
-        Intelligence
-      </>
-    ),
+      "Acesso profissional protegido por senha para equipes hipotecárias conversarem com Finley, pesquisarem produtos, revisarem direção de lenders e investidores e fortalecerem sua análise interna.",
+    teamBullet1: "• Chat profissional de conhecimento com Finley",
+    teamBullet2: "• Pesquisa de produtos, lenders e investidores",
+    teamBullet3: "• Revisão de cenário do cliente",
+    teamBullet4: "• Resumos internos e suporte consultivo",
+    teamButton: "Entrar na Área da Equipe",
+    workflowEyebrow: "CAMADA DE EXECUÇÃO PROTEGIDA",
+    workflowTitle1: "Workflow",
+    workflowTitle2: "Intelligence",
     workflowText:
-      "Visibilidade em centro de comando para handoff ao processamento, coordenação interna do arquivo, marcos, bloqueios, urgência e gestão até o fechamento.",
-    workflowBullets: [
-      "Handoff para processamento",
-      "Fila ativa de arquivos e painel de comando",
-      "Marcos, bloqueios e urgência",
-      "Feed interno do arquivo e execução",
-    ],
-    workflowAction: "Entrar em Workflow Intelligence",
+      "Visibilidade protegida por senha em estilo command center para handoff ao processing, coordenação interna de arquivos, marcos, bloqueios, urgência e gestão de fechamento.",
+    workflowBullet1: "• Handoff ao processing",
+    workflowBullet2: "• Fila ativa de arquivos e painel de comando",
+    workflowBullet3: "• Marcos, bloqueios e urgência",
+    workflowBullet4: "• Feed interno de arquivos e acompanhamento de execução",
+    workflowButton: "Entrar no Workflow Intelligence",
     architectureEyebrow: "ARQUITETURA DO PRODUTO",
     architectureTitle: "Um sistema operacional mais limpo para equipes hipotecárias",
     architectureText:
-      "A plataforma agora separa interação, análise e execução para que cada ambiente fique mais forte sem sobrecarregar os demais. Isso dá ao Beyond Intelligence™ uma estrutura mais disciplinada, premium e escalável.",
-    architectureOneTitle: "Interação com o Cliente",
-    architectureOneText:
+      "A plataforma separa interação com o cliente, inteligência profissional protegida e execução operacional para que cada ambiente evolua sem sobrecarregar os demais. O controle administrativo permanece separado do acesso profissional.",
+    archCard1Title: "Interação com o Cliente",
+    archCard1Text:
       "O ambiente voltado ao cliente captura o cenário, educa o cliente e move a conversa em direção a um advisor licenciado.",
-    architectureTwoTitle: "Raciocínio Hipotecário",
-    architectureTwoText:
-      "A camada profissional ajuda a equipe a raciocinar sobre estrutura, encaixe, itens faltantes e a melhor próxima ação.",
-    architectureThreeTitle: "Execução de Workflow",
-    architectureThreeText:
-      "A camada de comando mantém handoff, processamento, bloqueios e visibilidade de fechamento alinhados do pré-aprovação ao funding.",
-    footer:
-      "Beyond Intelligence™ ajuda a organizar orientação ao cliente, análise hipotecária e execução profissional de workflow sob um único sistema supervisionado.",
+    archCard2Title: "Inteligência Profissional Protegida",
+    archCard2Text:
+      "A área profissional ajuda equipes hipotecárias a pesquisar produtos, comparar direções, fazer perguntas estruturadas ao Finley e pensar no próximo melhor passo.",
+    archCard3Title: "Execução Operacional",
+    archCard3Text:
+      "A camada de comando mantém handoff, processing, bloqueios e visibilidade de fechamento alinhados do pre-approval ao funding.",
+    footerText:
+      "Beyond Intelligence™ organiza orientação ao cliente, inteligência hipotecária profissional protegida e execução operacional sob um sistema supervisionado.",
     footerTag: "MultiLender Intelligence™",
   },
   es: {
-    badge: "BEYOND INTELLIGENCE™",
-    heroTitle: (
-      <>
-        Inteligencia hipotecaria
-        <br />
-        para orientación al cliente,
-        <br />
-        análisis profesional,
-        <br />
-        y ejecución de workflow.
-      </>
-    ),
+    heroBadge: "BEYOND INTELLIGENCE™",
+    heroTitle1: "Inteligencia hipotecaria",
+    heroTitle2: "para orientación del cliente,",
+    heroTitle3: "análisis profesional,",
+    heroTitle4: "y ejecución operativa.",
     heroText:
-      "Beyond Intelligence™ es un sistema operativo hipotecario impulsado por IA supervisado por un Independent Certified Mortgage Advisor. Está diseñado para separar la interacción con el cliente, el pensamiento hipotecario profesional y la ejecución operativa del equipo en capas disciplinadas y escalables.",
+      "Beyond Intelligence™ es un sistema operativo hipotecario impulsado por IA y supervisado por un Independent Certified Mortgage Advisor. Está diseñado para separar la interacción con el cliente, el pensamiento hipotecario profesional y la ejecución operativa del equipo en capas disciplinadas y escalables.",
     structureTitle: "ESTRUCTURA DE LA PLATAFORMA",
     structureText:
-      "Un sistema. Tres entornos. Cada uno con un papel distinto en la jornada hipotecaria.",
-    structureBullets: [
-      "Borrower Intelligence para interacción guiada con el cliente.",
-      "Team Mortgage Intelligence para análisis profesional.",
-      "Team Workflow Intelligence para ejecución y control del archivo.",
-    ],
-    startHere: "COMIENCE AQUÍ",
-    finleyTitle: "Hable con Finley Beyond",
-    finleyText:
-      "Comience aquí su interacción para revisar su escenario hipotecario, responder preguntas de calificación y ser guiado hacia el siguiente paso adecuado.",
-    finleyButton: "Iniciar Conversación del Cliente",
-    finleySubtext:
-      "Diseñado para clientes que desean comenzar con intake hipotecario guiado e interacción con Finley Beyond.",
+      "Un sistema. Tres entornos. Cada uno con una función distinta en la trayectoria hipotecaria.",
+    structureLine1: "• Borrower Intelligence para interacción guiada con el cliente.",
+    structureLine2:
+      "• Team Workspace para investigación profesional protegida, chat con Finley, dirección de productos, conocimiento sobre lenders e inversionistas y análisis interno.",
+    structureLine3:
+      "• Workflow Intelligence para ejecución protegida de archivos, visibilidad de hitos y coordinación de producción.",
+    startHereTitle: "COMIENCE AQUÍ",
+    startHereHeadline: "Hable con Finley Beyond",
+    startHereText:
+      "Comience aquí su interacción como cliente para revisar su escenario hipotecario, responder preguntas de calificación y ser dirigido al siguiente paso correcto.",
+    startHereButton: "Iniciar Conversación del Cliente",
+    startHereFootnote:
+      "Diseñado para clientes que desean comenzar con intake guiado e interacción con Finley Beyond.",
     borrowerEyebrow: "EXPERIENCIA DEL CLIENTE",
-    borrowerTitle: (
-      <>
-        Borrower
-        <br />
-        Intelligence
-      </>
-    ),
+    borrowerTitle1: "Borrower",
+    borrowerTitle2: "Intelligence",
     borrowerText:
-      "Intake orientado al cliente, orientación hipotecaria, asignación de loan officer y flujo conversacional con Finley Beyond con aviso obligatorio.",
-    borrowerBullets: [
-      "Intake hipotecario guiado",
-      "Asignación de loan officer",
-      "Revisión de escenario y conversación con el cliente",
-      "Acciones para aplicar, agendar y contactar",
-    ],
-    borrowerAction: "Abrir Borrower Intelligence",
-    teamEyebrow: "CAPA DE PENSAMIENTO PROFESIONAL",
-    teamTitle: (
-      <>
-        Team Mortgage
-        <br />
-        Intelligence
-      </>
-    ),
+      "Intake orientado al cliente, orientación hipotecaria, asignación de loan officer y flujo de conversación con Finley Beyond con aviso obligatorio.",
+    borrowerBullet1: "• Intake guiado",
+    borrowerBullet2: "• Asignación de loan officer",
+    borrowerBullet3: "• Revisión de escenario y chat con el cliente",
+    borrowerBullet4: "• Acciones de aplicar, agendar y contacto",
+    borrowerButton: "Abrir Borrower Intelligence",
+    teamEyebrow: "INVESTIGACIÓN PROFESIONAL PROTEGIDA",
+    teamTitle1: "Team Workspace",
+    teamTitle2: "& Mortgage Intelligence",
     teamText:
-      "Análisis interno del cliente, pensamiento direccional de programas, generación de resúmenes y apoyo de revisión profesional para equipos hipotecarios licenciados.",
-    teamBullets: [
-      "Revisión del escenario del cliente",
-      "Análisis direccional de programas",
-      "Soporte profesional de decisión con Finley",
-      "Generación interna de email-resumen",
-    ],
-    teamAction: "Entrar en Mortgage Intelligence",
-    workflowEyebrow: "CAPA DE EJECUCIÓN PROFESIONAL",
-    workflowTitle: (
-      <>
-        Team Workflow
-        <br />
-        Intelligence
-      </>
-    ),
+      "Acceso profesional protegido por contraseña para que los equipos hipotecarios conversen con Finley, investiguen productos, revisen dirección de lenders e inversionistas y fortalezcan su análisis interno.",
+    teamBullet1: "• Chat profesional de conocimiento con Finley",
+    teamBullet2: "• Investigación de productos, lenders e inversionistas",
+    teamBullet3: "• Revisión de escenario del cliente",
+    teamBullet4: "• Resúmenes internos y apoyo consultivo",
+    teamButton: "Entrar al Team Workspace",
+    workflowEyebrow: "CAPA DE EJECUCIÓN PROTEGIDA",
+    workflowTitle1: "Workflow",
+    workflowTitle2: "Intelligence",
     workflowText:
-      "Visibilidad tipo centro de mando para handoff a processing, coordinación interna del archivo, hitos, bloqueos, urgencia y gestión hacia el cierre.",
-    workflowBullets: [
-      "Handoff a processing",
-      "Cola activa de archivos y panel de mando",
-      "Hitos, bloqueos y urgencia",
-      "Feed interno del archivo y seguimiento operativo",
-    ],
-    workflowAction: "Entrar en Workflow Intelligence",
+      "Visibilidad protegida por contraseña tipo command center para handoff a processing, coordinación interna de archivos, hitos, bloqueos, urgencia y gestión del cierre.",
+    workflowBullet1: "• Handoff a processing",
+    workflowBullet2: "• Cola activa de archivos y panel de comando",
+    workflowBullet3: "• Hitos, bloqueos y urgencia",
+    workflowBullet4: "• Flujo interno de archivos y seguimiento operativo",
+    workflowButton: "Entrar a Workflow Intelligence",
     architectureEyebrow: "ARQUITECTURA DEL PRODUCTO",
     architectureTitle: "Un sistema operativo más limpio para equipos hipotecarios",
     architectureText:
-      "La plataforma ahora separa interacción, análisis y ejecución para que cada entorno pueda fortalecerse sin sobrecargar a los demás. Esto le da a Beyond Intelligence™ una estructura más disciplinada, premium y escalable.",
-    architectureOneTitle: "Interacción con el Cliente",
-    architectureOneText:
-      "El entorno orientado al cliente captura el escenario, educa al cliente y mueve la conversación hacia un advisor con licencia.",
-    architectureTwoTitle: "Pensamiento Hipotecario",
-    architectureTwoText:
-      "La capa profesional ayuda al equipo a razonar sobre estructura, encaje, elementos faltantes y la mejor siguiente acción.",
-    architectureThreeTitle: "Ejecución de Workflow",
-    architectureThreeText:
-      "La capa de comando mantiene handoff, processing, bloqueos y visibilidad de cierre alineados desde la preaprobación hasta el funding.",
-    footer:
-      "Beyond Intelligence™ ayuda a organizar la orientación al cliente, el análisis hipotecario y la ejecución profesional del workflow bajo un sistema supervisado.",
+      "La plataforma separa interacción con el cliente, inteligencia profesional protegida y ejecución operativa para que cada entorno crezca sin sobrecargar a los demás. El control administrativo permanece separado del acceso profesional.",
+    archCard1Title: "Interacción con el Cliente",
+    archCard1Text:
+      "El entorno orientado al cliente captura el escenario, educa al cliente y mueve la conversación hacia un advisor licenciado.",
+    archCard2Title: "Inteligencia Profesional Protegida",
+    archCard2Text:
+      "El espacio profesional ayuda a los equipos hipotecarios a investigar productos, comparar dirección, hacer preguntas estructuradas a Finley y pensar en el siguiente mejor paso.",
+    archCard3Title: "Ejecución Operativa",
+    archCard3Text:
+      "La capa de comando mantiene alineados handoff, processing, bloqueos y visibilidad de cierre desde pre-approval hasta funding.",
+    footerText:
+      "Beyond Intelligence™ organiza orientación al cliente, inteligencia hipotecaria profesional protegida y ejecución operativa bajo un sistema supervisado.",
     footerTag: "MultiLender Intelligence™",
   },
 };
 
 export default function HomePage() {
   const [language, setLanguage] = useState<SiteLanguage>("en");
-  const t = HOME_COPY[language];
+  const t = COPY[language];
 
   return (
     <main style={styles.page}>
@@ -360,36 +295,46 @@ export default function HomePage() {
         <section style={styles.hero}>
           <div className="bf-hero-grid" style={styles.heroGrid}>
             <div>
-              <div style={styles.badge}>{t.badge}</div>
+              <div style={styles.badge}>{t.heroBadge}</div>
+
               <h1 className="bf-hero-title" style={styles.heroTitle}>
-                {t.heroTitle}
+                {t.heroTitle1}
+                <br />
+                {t.heroTitle2}
+                <br />
+                {t.heroTitle3}
+                <br />
+                {t.heroTitle4}
               </h1>
+
               <p style={styles.heroText}>{t.heroText}</p>
             </div>
 
-            <div style={styles.heroRightColumn}>
+            <div style={styles.heroStack}>
               <div style={styles.heroPanel}>
                 <div style={styles.heroPanelTitle}>{t.structureTitle}</div>
+
                 <div style={styles.heroPanelText}>{t.structureText}</div>
+
                 <div style={styles.heroPanelList}>
-                  {t.structureBullets.map((item) => (
-                    <div key={item}>• {item}</div>
-                  ))}
+                  <div>{t.structureLine1}</div>
+                  <div>{t.structureLine2}</div>
+                  <div>{t.structureLine3}</div>
                 </div>
               </div>
 
-              <div style={styles.finleyPanel}>
-                <div style={styles.finleyEyebrow}>{t.startHere}</div>
-                <h2 className="bf-finley-title" style={styles.finleyTitle}>
-                  {t.finleyTitle}
-                </h2>
-                <p style={styles.finleyText}>{t.finleyText}</p>
+              <div style={styles.heroPanel}>
+                <div style={styles.heroPanelTitle}>{t.startHereTitle}</div>
 
-                <a href="/borrower" style={styles.finleyButton}>
-                  {t.finleyButton}
+                <div style={styles.startHereHeadline}>{t.startHereHeadline}</div>
+
+                <div style={styles.heroPanelText}>{t.startHereText}</div>
+
+                <a href="/borrower" style={styles.startHereButton}>
+                  {t.startHereButton}
                 </a>
 
-                <div style={styles.finleySubtext}>{t.finleySubtext}</div>
+                <div style={styles.startHereFootnote}>{t.startHereFootnote}</div>
               </div>
             </div>
           </div>
@@ -399,19 +344,23 @@ export default function HomePage() {
           <div style={styles.card}>
             <div style={styles.cardEyebrow}>{t.borrowerEyebrow}</div>
             <h2 className="bf-card-title" style={styles.cardTitle}>
-              {t.borrowerTitle}
+              {t.borrowerTitle1}
+              <br />
+              {t.borrowerTitle2}
             </h2>
+
             <p style={styles.cardText}>{t.borrowerText}</p>
 
             <div style={styles.cardList}>
-              {t.borrowerBullets.map((item) => (
-                <div key={item}>• {item}</div>
-              ))}
+              <div>{t.borrowerBullet1}</div>
+              <div>{t.borrowerBullet2}</div>
+              <div>{t.borrowerBullet3}</div>
+              <div>{t.borrowerBullet4}</div>
             </div>
 
             <div style={styles.cardActions}>
               <a href="/borrower" style={styles.primaryAction}>
-                {t.borrowerAction}
+                {t.borrowerButton}
               </a>
             </div>
           </div>
@@ -419,19 +368,23 @@ export default function HomePage() {
           <div style={styles.card}>
             <div style={styles.cardEyebrow}>{t.teamEyebrow}</div>
             <h2 className="bf-card-title" style={styles.cardTitle}>
-              {t.teamTitle}
+              {t.teamTitle1}
+              <br />
+              {t.teamTitle2}
             </h2>
+
             <p style={styles.cardText}>{t.teamText}</p>
 
             <div style={styles.cardList}>
-              {t.teamBullets.map((item) => (
-                <div key={item}>• {item}</div>
-              ))}
+              <div>{t.teamBullet1}</div>
+              <div>{t.teamBullet2}</div>
+              <div>{t.teamBullet3}</div>
+              <div>{t.teamBullet4}</div>
             </div>
 
             <div style={styles.cardActions}>
               <a href="/team" style={styles.secondaryAction}>
-                {t.teamAction}
+                {t.teamButton}
               </a>
             </div>
           </div>
@@ -439,19 +392,23 @@ export default function HomePage() {
           <div style={styles.card}>
             <div style={styles.cardEyebrow}>{t.workflowEyebrow}</div>
             <h2 className="bf-card-title" style={styles.cardTitle}>
-              {t.workflowTitle}
+              {t.workflowTitle1}
+              <br />
+              {t.workflowTitle2}
             </h2>
+
             <p style={styles.cardText}>{t.workflowText}</p>
 
             <div style={styles.cardList}>
-              {t.workflowBullets.map((item) => (
-                <div key={item}>• {item}</div>
-              ))}
+              <div>{t.workflowBullet1}</div>
+              <div>{t.workflowBullet2}</div>
+              <div>{t.workflowBullet3}</div>
+              <div>{t.workflowBullet4}</div>
             </div>
 
             <div style={styles.cardActions}>
               <a href="/workflow" style={styles.outlineAction}>
-                {t.workflowAction}
+                {t.workflowButton}
               </a>
             </div>
           </div>
@@ -468,42 +425,68 @@ export default function HomePage() {
 
           <div className="bf-arch-grid" style={styles.architectureGrid}>
             <div style={styles.architectureItem}>
-              <div style={styles.architectureItemTitle}>
-                {t.architectureOneTitle}
-              </div>
-              <div style={styles.architectureItemText}>
-                {t.architectureOneText}
-              </div>
+              <div style={styles.architectureItemTitle}>{t.archCard1Title}</div>
+              <div style={styles.architectureItemText}>{t.archCard1Text}</div>
             </div>
 
             <div style={styles.architectureItem}>
-              <div style={styles.architectureItemTitle}>
-                {t.architectureTwoTitle}
-              </div>
-              <div style={styles.architectureItemText}>
-                {t.architectureTwoText}
-              </div>
+              <div style={styles.architectureItemTitle}>{t.archCard2Title}</div>
+              <div style={styles.architectureItemText}>{t.archCard2Text}</div>
             </div>
 
             <div style={styles.architectureItem}>
-              <div style={styles.architectureItemTitle}>
-                {t.architectureThreeTitle}
-              </div>
-              <div style={styles.architectureItemText}>
-                {t.architectureThreeText}
-              </div>
+              <div style={styles.architectureItemTitle}>{t.archCard3Title}</div>
+              <div style={styles.architectureItemText}>{t.archCard3Text}</div>
             </div>
           </div>
         </section>
 
         <div style={styles.footer}>
-          {t.footer}
+          {t.footerText}
           <div style={styles.footerTag}>{t.footerTag}</div>
         </div>
       </div>
     </main>
   );
 }
+
+const responsiveCss = `
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+
+  @media (max-width: 1160px) {
+    .bf-hero-grid,
+    .bf-main-grid,
+    .bf-arch-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .bf-wrap {
+      padding: 18px 12px 32px !important;
+    }
+
+    .bf-hero-title {
+      font-size: 38px !important;
+      line-height: 1.02 !important;
+    }
+
+    .bf-card-title {
+      font-size: 28px !important;
+    }
+
+    .bf-section-title {
+      font-size: 28px !important;
+    }
+  }
+`;
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -532,6 +515,11 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 22,
     alignItems: "start",
   },
+  heroStack: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 18,
+  },
   badge: {
     display: "inline-block",
     padding: "10px 14px",
@@ -557,11 +545,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 17,
     lineHeight: 1.75,
     color: "rgba(255,255,255,0.94)",
-  },
-  heroRightColumn: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 18,
   },
   heroPanel: {
     backgroundColor: "rgba(255,255,255,0.12)",
@@ -589,55 +572,34 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     lineHeight: 1.6,
   },
-  finleyPanel: {
-    backgroundColor: "rgba(255,255,255,0.14)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    borderRadius: 24,
-    padding: 22,
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
-  },
-  finleyEyebrow: {
-    fontSize: 13,
-    fontWeight: 900,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    color: "rgba(255,255,255,0.86)",
-    marginBottom: 10,
-  },
-  finleyTitle: {
-    margin: 0,
-    fontSize: 28,
+  startHereHeadline: {
+    fontSize: 24,
     lineHeight: 1.08,
     fontWeight: 900,
     color: "#ffffff",
+    marginBottom: 12,
   },
-  finleyText: {
-    marginTop: 12,
-    marginBottom: 18,
-    color: "rgba(255,255,255,0.95)",
-    fontSize: 15,
-    lineHeight: 1.7,
-  },
-  finleyButton: {
+  startHereButton: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    textDecoration: "none",
     width: "100%",
-    minHeight: 56,
+    minHeight: 52,
+    textDecoration: "none",
+    textAlign: "center",
     borderRadius: 18,
     backgroundColor: "#ffffff",
-    color: "#263366",
+    color: "#243F7C",
     padding: "14px 18px",
     fontWeight: 900,
     fontSize: 16,
-    boxShadow: "0 14px 24px rgba(15,23,42,0.14)",
+    boxShadow: "0 10px 20px rgba(20,35,80,0.14)",
   },
-  finleySubtext: {
-    marginTop: 12,
-    fontSize: 13,
+  startHereFootnote: {
+    marginTop: 14,
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 14,
     lineHeight: 1.6,
-    color: "rgba(255,255,255,0.82)",
   },
   grid: {
     display: "grid",
@@ -800,45 +762,3 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 0.4,
   },
 };
-
-const responsiveCss = `
-  * {
-    box-sizing: border-box;
-  }
-
-  html, body {
-    margin: 0;
-    padding: 0;
-  }
-
-  @media (max-width: 1160px) {
-    .bf-hero-grid,
-    .bf-main-grid,
-    .bf-arch-grid {
-      grid-template-columns: 1fr !important;
-    }
-  }
-
-  @media (max-width: 760px) {
-    .bf-wrap {
-      padding: 18px 12px 32px !important;
-    }
-
-    .bf-hero-title {
-      font-size: 38px !important;
-      line-height: 1.02 !important;
-    }
-
-    .bf-card-title {
-      font-size: 28px !important;
-    }
-
-    .bf-section-title {
-      font-size: 28px !important;
-    }
-
-    .bf-finley-title {
-      font-size: 24px !important;
-    }
-  }
-`;
