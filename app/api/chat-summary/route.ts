@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { sendSmsAlert } from "@/lib/twilio";
-import { supabaseAdmin } from "@/lib/supabase";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -17,7 +15,9 @@ type LeadPayload = {
   preferredLanguage?: PreferredLanguage;
   loanOfficer?: string;
   assignedEmail?: string;
+  assistantEmail?: string;
   realtorName?: string;
+  realtorEmail?: string;
   realtorPhone?: string;
 };
 
@@ -38,7 +38,7 @@ const loanOfficerMap: Record<string, string> = {
 };
 
 function escapeHtml(value: string): string {
-  return value
+  return String(value || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -48,6 +48,124 @@ function escapeHtml(value: string): string {
 
 function nl2br(value: string): string {
   return escapeHtml(value).replace(/\n/g, "<br />");
+}
+
+function normalizeEmail(value: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function parseJsonSafely<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function formatTriggerLabel(trigger: SummaryTrigger): string {
+  if (trigger === "apply") return "Apply Now";
+  if (trigger === "schedule") return "Schedule";
+  if (trigger === "contact") return "Contact";
+  return "AI Conversation";
+}
+
+function buildRecommendedNextStep(trigger: SummaryTrigger): string {
+  if (trigger === "apply") {
+    return "Borrower proceeded to the application flow. Review promptly, confirm documentation strategy, and follow up while engagement is high.";
+  }
+
+  if (trigger === "schedule") {
+    return "Borrower proceeded to scheduling. Review the transcript before the consultation and be prepared to confirm next steps, documentation, and timing.";
+  }
+
+  if (trigger === "contact") {
+    return "Borrower requested direct contact. Reach out promptly and confirm the best path forward based on the conversation and stated scenario.";
+  }
+
+  return "Borrower engaged with Finley Beyond and appears ready for licensed review and timely follow-up.";
+}
+
+function buildBorrowerConfirmationCopy(
+  preferredLanguage: string,
+  loanOfficer: string,
+  trigger: SummaryTrigger
+) {
+  if (preferredLanguage === "Português") {
+    return {
+      subject: "Sua consulta hipotecária foi recebida",
+      title: "Recebemos sua solicitação",
+      body:
+        trigger === "apply"
+          ? `Sua solicitação foi recebida com sucesso. ${loanOfficer} já foi notificado(a) e deverá revisar seu cenário e acompanhar os próximos passos após o envio da aplicação.`
+          : trigger === "schedule"
+          ? `Seu agendamento ou intenção de agendamento foi registrado. ${loanOfficer} já foi notificado(a) e acompanhará seu cenário hipotecário.`
+          : `Sua solicitação de contato foi recebida. ${loanOfficer} já foi notificado(a) e deverá acompanhar seu cenário hipotecário em breve.`,
+      footer:
+        "Esta comunicação confirma o recebimento da sua solicitação. Todas as opções permanecem sujeitas à revisão de um loan officer licenciado, documentação e diretrizes aplicáveis.",
+    };
+  }
+
+  if (preferredLanguage === "Español") {
+    return {
+      subject: "Su consulta hipotecaria ha sido recibida",
+      title: "Hemos recibido su solicitud",
+      body:
+        trigger === "apply"
+          ? `Su solicitud fue recibida correctamente. ${loanOfficer} ya fue notificado(a) y deberá revisar su escenario y dar seguimiento a los próximos pasos después del envío de la solicitud.`
+          : trigger === "schedule"
+          ? `Su cita o intención de agendar fue registrada. ${loanOfficer} ya fue notificado(a) y dará seguimiento a su escenario hipotecario.`
+          : `Su solicitud de contacto fue recibida. ${loanOfficer} ya fue notificado(a) y deberá dar seguimiento a su escenario hipotecario en breve.`,
+      footer:
+        "Esta comunicación confirma la recepción de su solicitud. Todas las opciones siguen sujetas a revisión por un loan officer con licencia, documentación y guías aplicables.",
+    };
+  }
+
+  return {
+    subject: "Your mortgage consultation has been received",
+    title: "Your request has been received",
+    body:
+      trigger === "apply"
+        ? `${loanOfficer} has already been notified and will review your scenario and follow up after your application is submitted.`
+        : trigger === "schedule"
+        ? `${loanOfficer} has already been notified and will follow up regarding your mortgage scenario and consultation.`
+        : `${loanOfficer} has already been notified and will follow up regarding your mortgage scenario shortly.`,
+    footer:
+      "This message confirms receipt of your request. All options remain subject to licensed loan officer review, documentation, and applicable guidelines.",
+  };
+}
+
+function buildRealtorConfirmationCopy(
+  preferredLanguage: string,
+  borrowerName: string,
+  loanOfficer: string
+) {
+  if (preferredLanguage === "Português") {
+    return {
+      subject: "Seu cliente já está sendo assistido",
+      title: "Seu cliente está sendo atendido",
+      body: `${borrowerName || "Seu cliente"} já está sendo assistido(a) pelo sistema Beyond Intelligence™. ${loanOfficer} já foi notificado(a) para revisar o cenário hipotecário e acompanhar os próximos passos.`,
+      footer:
+        "Esta mensagem é uma confirmação de acompanhamento inicial e não constitui aprovação de financiamento.",
+    };
+  }
+
+  if (preferredLanguage === "Español") {
+    return {
+      subject: "Su cliente ya está siendo asistido",
+      title: "Su cliente está siendo atendido",
+      body: `${borrowerName || "Su cliente"} ya está siendo asistido(a) por el sistema Beyond Intelligence™. ${loanOfficer} ya fue notificado(a) para revisar el escenario hipotecario y dar seguimiento a los próximos pasos.`,
+      footer:
+        "Este mensaje es una confirmación de atención inicial y no constituye aprobación de financiamiento.",
+    };
+  }
+
+  return {
+    subject: "Your borrower is already being assisted",
+    title: "Your borrower is now being assisted",
+    body: `${borrowerName || "Your borrower"} is already being assisted through Beyond Intelligence™. ${loanOfficer} has already been notified to review the mortgage scenario and follow up on next steps.`,
+    footer:
+      "This message is an initial service confirmation and does not constitute loan approval.",
+  };
 }
 
 function buildTranscriptHtml(messages: ChatMessage[]): string {
@@ -68,36 +186,6 @@ function buildTranscriptHtml(messages: ChatMessage[]): string {
     .join("");
 }
 
-function parseJsonSafely<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeDigitsOnly(value: string): string {
-  return String(value || "").replace(/\D/g, "");
-}
-
-function normalizePhoneForSms(value: string): string {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-
-  if (raw.startsWith("+")) {
-    const plusNormalized = `+${raw.slice(1).replace(/\D/g, "")}`;
-    return plusNormalized === "+" ? "" : plusNormalized;
-  }
-
-  const digits = normalizeDigitsOnly(raw);
-
-  if (!digits) return "";
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-
-  return `+${digits}`;
-}
-
 function buildFallbackSummary(
   lead: LeadPayload,
   messages: ChatMessage[],
@@ -108,116 +196,53 @@ function buildFallbackSummary(
     .map((msg) => msg.content)
     .join(" ");
 
+  const hasRealtor = !!String(lead.realtorName || "").trim();
+
   return {
     borrowerSummary:
       borrowerMessages ||
-      "The borrower engaged with Finley Beyond Advisor and requested mortgage guidance.",
+      "The borrower engaged with Finley Beyond and requested mortgage guidance.",
     likelyDirection:
-      "Borrower appears to be exploring a home financing scenario and may be ready for live review.",
+      "Borrower appears to be exploring a home financing scenario and may be ready for prompt live review.",
     strengths: [
-      "Lead submitted with full contact details.",
-      "Borrower engaged in a meaningful mortgage conversation.",
+      "Lead submitted with contact details.",
+      "Borrower engaged in a mortgage-focused conversation.",
       `Preferred language: ${lead.preferredLanguage || "Not provided"}.`,
-      lead.realtorName
-        ? `Realtor identified: ${lead.realtorName}.`
-        : "Realtor not identified yet.",
+      hasRealtor
+        ? `Borrower indicated realtor involvement: ${lead.realtorName}.`
+        : "No realtor name was provided.",
     ],
     openQuestions: [
-      "Confirm final documentation package.",
-      "Confirm property details, occupancy, and down payment funds if still pending.",
-      lead.realtorPhone
-        ? `Confirm coordination details with realtor at ${lead.realtorPhone}.`
-        : "Confirm whether a realtor is involved and collect contact information if applicable.",
+      "Confirm documentation strategy.",
+      "Confirm property details, occupancy, and source of funds if still pending.",
     ],
     provisionalPrograms: [
-      "Conventional financing review",
+      "Conventional review",
       "FHA review if needed",
-      "Alternative/self-employed review if applicable",
+      "Alternative income review if applicable",
     ],
-    recommendedNextStep:
-      trigger === "apply"
-        ? "Borrower clicked or was directed toward the application flow."
-        : trigger === "schedule"
-        ? "Borrower clicked or was directed toward consultation scheduling."
-        : trigger === "contact"
-        ? "Borrower clicked or was directed toward Beyond Financing contact page."
-        : "Borrower appears ready for a licensed loan officer to review and follow up.",
+    recommendedNextStep: buildRecommendedNextStep(trigger),
     loanOfficerActionPlan: [
-      "Review the transcript.",
+      "Review the transcript and borrower profile.",
       "Contact the borrower promptly.",
-      "Confirm income, credit, assets, and documentation strategy.",
-      "Move borrower toward application, pre-approval, or consultation as appropriate.",
+      "Confirm credit, income, assets, liabilities, and documentation strategy.",
+      "Coordinate with realtor if appropriate and authorized.",
+      "Move borrower toward application, consultation, or structured pre-approval review as appropriate.",
     ],
   };
 }
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
+async function createAiSummary(
+  lead: LeadPayload,
+  messages: ChatMessage[],
+  trigger: SummaryTrigger,
+  selectedEmail: string
+): Promise<SummaryPayload | null> {
+  if (!process.env.OPENAI_API_KEY || messages.length === 0) {
+    return null;
+  }
 
-    const lead = (body?.lead || {}) as LeadPayload;
-    const messages = Array.isArray(body?.messages)
-      ? (body.messages as ChatMessage[])
-      : [];
-    const trigger = (body?.trigger || "ai") as SummaryTrigger;
-
-        const fullName = String(lead.fullName || "").trim();
-    const email = String(lead.email || "").trim();
-    const phone = String(lead.phone || "").trim();
-    const preferredLanguage = String(lead.preferredLanguage || "").trim();
-    const loanOfficer = String(lead.loanOfficer || "").trim();
-    const realtorName = String(lead.realtorName || "").trim();
-    const realtorPhone = String(lead.realtorPhone || "").trim();
-
-    if (!fullName || !email || !preferredLanguage || !loanOfficer) {
-      return NextResponse.json(
-        { success: false, error: "Missing lead details." },
-        { status: 400 }
-      );
-    }
-
-    if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json(
-        { success: false, error: "Missing RESEND_API_KEY." },
-        { status: 500 }
-      );
-    }
-
-    const normalizedBorrowerPhone = normalizePhoneForSms(phone);
-    const normalizedRealtorPhone = normalizePhoneForSms(realtorPhone);
-
-    const selectedEmail =
-      String(lead.assignedEmail || "").trim() ||
-      loanOfficerMap[loanOfficer] ||
-      "finley@beyondfinancing.com";
-
-    let assignedLoanOfficerPhone = "";
-    let normalizedAssignedLoanOfficerPhone = "";
-
-    try {
-      const { data: teamUser, error: teamUserError } = await supabaseAdmin
-        .from("team_users")
-        .select("phone")
-        .eq("email", selectedEmail)
-        .maybeSingle();
-
-      if (teamUserError) {
-        console.error("TEAM USER LOOKUP ERROR:", teamUserError);
-      }
-
-      assignedLoanOfficerPhone = String(teamUser?.phone || "").trim();
-      normalizedAssignedLoanOfficerPhone =
-        normalizePhoneForSms(assignedLoanOfficerPhone);
-    } catch (lookupError) {
-      console.error("TEAM USER LOOKUP EXCEPTION:", lookupError);
-      assignedLoanOfficerPhone = "";
-      normalizedAssignedLoanOfficerPhone = "";
-    }
-
-    let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
-
-    if (process.env.OPENAI_API_KEY && messages.length > 0) {
-      const summaryPrompt = `
+  const summaryPrompt = `
 You are preparing an internal loan-officer briefing email for Beyond Financing.
 
 Return valid JSON only with this exact shape:
@@ -235,22 +260,21 @@ Rules:
 - Write for an internal mortgage loan officer
 - Be practical and concise
 - Use only information actually present in the conversation and lead details
-- If the borrower is self-employed, employed, immigrant, green card holder, conventional candidate, FHA fallback candidate, etc., note that only if supported by the transcript
+- Include realtor context only if actually provided
 - "provisionalPrograms" should be directional only, not lender-specific guarantees
-- Include realistic possible directions like Conventional, FHA, HomeReady/Home Possible style review, self-employed review, etc., only when supported by the scenario
 - Do not promise approval
-- Do not mention that no lender folder exists
 - Assume this is an internal pre-brief before full underwriting
 
 Lead details:
-- Full Name: ${fullName}
-- Email: ${email}
-- Phone: ${normalizedBorrowerPhone || phone}
-- Realtor Name: ${realtorName || "Not provided"}
-- Realtor Phone: ${normalizedRealtorPhone || realtorPhone || "Not provided"}
-- Preferred Language: ${preferredLanguage}
-- Selected Loan Officer: ${loanOfficer}
+- Full Name: ${String(lead.fullName || "").trim()}
+- Email: ${String(lead.email || "").trim()}
+- Phone: ${String(lead.phone || "").trim()}
+- Preferred Language: ${String(lead.preferredLanguage || "").trim()}
+- Selected Loan Officer: ${String(lead.loanOfficer || "").trim()}
 - Assigned Email: ${selectedEmail}
+- Realtor Name: ${String(lead.realtorName || "").trim() || "Not provided"}
+- Realtor Email: ${String(lead.realtorEmail || "").trim() || "Not provided"}
+- Realtor Phone: ${String(lead.realtorPhone || "").trim() || "Not provided"}
 - Trigger: ${trigger}
 
 Conversation transcript:
@@ -262,98 +286,182 @@ ${messages
   .join("\n")}
 `;
 
-      const summaryResponse = await fetch(
-        "https://api.openai.com/v1/chat/completions",
+  const summaryResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            temperature: 0.2,
-            response_format: { type: "json_object" },
-            messages: [
-              {
-                role: "system",
-                content:
-                  "You create concise internal mortgage advisor briefings in strict JSON.",
-              },
-              {
-                role: "user",
-                content: summaryPrompt,
-              },
-            ],
-          }),
-        }
+          role: "system",
+          content:
+            "You create concise internal mortgage advisor briefings in strict JSON.",
+        },
+        {
+          role: "user",
+          content: summaryPrompt,
+        },
+      ],
+    }),
+  });
+
+  if (!summaryResponse.ok) {
+    return null;
+  }
+
+  const summaryData = await summaryResponse.json();
+  const rawContent = summaryData?.choices?.[0]?.message?.content;
+  const parsed = rawContent ? parseJsonSafely<SummaryPayload>(rawContent) : null;
+
+  if (!parsed) return null;
+
+  return {
+    borrowerSummary: parsed.borrowerSummary || "",
+    likelyDirection: parsed.likelyDirection || "",
+    strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
+    openQuestions: Array.isArray(parsed.openQuestions) ? parsed.openQuestions : [],
+    provisionalPrograms: Array.isArray(parsed.provisionalPrograms)
+      ? parsed.provisionalPrograms
+      : [],
+    recommendedNextStep: parsed.recommendedNextStep || "",
+    loanOfficerActionPlan: Array.isArray(parsed.loanOfficerActionPlan)
+      ? parsed.loanOfficerActionPlan
+      : [],
+  };
+}
+
+async function sendEmail({
+  to,
+  cc,
+  replyTo,
+  subject,
+  html,
+}: {
+  to: string[];
+  cc?: string[];
+  replyTo?: string;
+  subject: string;
+  html: string;
+}) {
+  const resendResponse = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: "Finley Beyond <finley@beyondfinancing.com>",
+      to,
+      cc,
+      reply_to: replyTo,
+      subject,
+      html,
+    }),
+  });
+
+  if (!resendResponse.ok) {
+    const error = await resendResponse.text();
+    throw new Error(error || "Unable to send email.");
+  }
+
+  return resendResponse.json().catch(() => null);
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+
+    const lead = (body?.lead || {}) as LeadPayload;
+    const messages = Array.isArray(body?.messages)
+      ? (body.messages as ChatMessage[])
+      : [];
+    const trigger = (body?.trigger || "ai") as SummaryTrigger;
+
+    const fullName = String(lead.fullName || "").trim();
+    const email = normalizeEmail(lead.email || "");
+    const phone = String(lead.phone || "").trim();
+    const preferredLanguage = String(lead.preferredLanguage || "").trim();
+    const loanOfficer = String(lead.loanOfficer || "").trim();
+    const assignedEmailFromLead = normalizeEmail(lead.assignedEmail || "");
+    const assistantEmail = normalizeEmail(lead.assistantEmail || "");
+    const realtorName = String(lead.realtorName || "").trim();
+    const realtorEmail = normalizeEmail(lead.realtorEmail || "");
+    const realtorPhone = String(lead.realtorPhone || "").trim();
+
+    if (!fullName || !email || !phone || !preferredLanguage || !loanOfficer) {
+      return NextResponse.json(
+        { success: false, error: "Missing lead details." },
+        { status: 400 }
       );
+    }
 
-      if (summaryResponse.ok) {
-        const summaryData = await summaryResponse.json();
-        const rawContent = summaryData?.choices?.[0]?.message?.content;
-        const parsed = rawContent
-          ? parseJsonSafely<SummaryPayload>(rawContent)
-          : null;
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        { success: false, error: "Missing RESEND_API_KEY." },
+        { status: 500 }
+      );
+    }
 
-        if (parsed) {
-          summary = {
-            borrowerSummary: parsed.borrowerSummary || summary.borrowerSummary,
-            likelyDirection: parsed.likelyDirection || summary.likelyDirection,
-            strengths:
-              Array.isArray(parsed.strengths) && parsed.strengths.length > 0
-                ? parsed.strengths
-                : summary.strengths,
-            openQuestions:
-              Array.isArray(parsed.openQuestions) &&
-              parsed.openQuestions.length > 0
-                ? parsed.openQuestions
-                : summary.openQuestions,
-            provisionalPrograms:
-              Array.isArray(parsed.provisionalPrograms) &&
-              parsed.provisionalPrograms.length > 0
-                ? parsed.provisionalPrograms
-                : summary.provisionalPrograms,
-            recommendedNextStep:
-              parsed.recommendedNextStep || summary.recommendedNextStep,
-            loanOfficerActionPlan:
-              Array.isArray(parsed.loanOfficerActionPlan) &&
-              parsed.loanOfficerActionPlan.length > 0
-                ? parsed.loanOfficerActionPlan
-                : summary.loanOfficerActionPlan,
-          };
-        }
-      } else {
-        const openAiError = await summaryResponse.text();
-        console.error("OPENAI SUMMARY ERROR:", openAiError);
-      }
+    const selectedEmail =
+      assignedEmailFromLead ||
+      loanOfficerMap[loanOfficer.toLowerCase()] ||
+      "finley@beyondfinancing.com";
+
+    let summary = buildFallbackSummary(lead, messages, trigger);
+
+    const aiSummary = await createAiSummary(lead, messages, trigger, selectedEmail);
+
+    if (aiSummary) {
+      summary = {
+        borrowerSummary: aiSummary.borrowerSummary || summary.borrowerSummary,
+        likelyDirection: aiSummary.likelyDirection || summary.likelyDirection,
+        strengths:
+          Array.isArray(aiSummary.strengths) && aiSummary.strengths.length > 0
+            ? aiSummary.strengths
+            : summary.strengths,
+        openQuestions:
+          Array.isArray(aiSummary.openQuestions) && aiSummary.openQuestions.length > 0
+            ? aiSummary.openQuestions
+            : summary.openQuestions,
+        provisionalPrograms:
+          Array.isArray(aiSummary.provisionalPrograms) &&
+          aiSummary.provisionalPrograms.length > 0
+            ? aiSummary.provisionalPrograms
+            : summary.provisionalPrograms,
+        recommendedNextStep:
+          aiSummary.recommendedNextStep || summary.recommendedNextStep,
+        loanOfficerActionPlan:
+          Array.isArray(aiSummary.loanOfficerActionPlan) &&
+          aiSummary.loanOfficerActionPlan.length > 0
+            ? aiSummary.loanOfficerActionPlan
+            : summary.loanOfficerActionPlan,
+      };
     }
 
     const transcriptHtml = buildTranscriptHtml(messages);
 
-    const html = `
+    const internalHtml = `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
-        <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond Advisor</h1>
+        <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond</h1>
 
         <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
           <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
           <p><strong>Full Name:</strong> ${escapeHtml(fullName)}</p>
           <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-          <p><strong>Phone:</strong> ${escapeHtml(
-            normalizedBorrowerPhone || phone
-          )}</p>
-          <p><strong>Realtor Name:</strong> ${escapeHtml(
-            realtorName || "Not provided"
-          )}</p>
-          <p><strong>Realtor Phone:</strong> ${escapeHtml(
-            normalizedRealtorPhone || realtorPhone || "Not provided"
-          )}</p>
+          <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
           <p><strong>Language:</strong> ${escapeHtml(preferredLanguage)}</p>
-          <p><strong>Selected Loan Officer:</strong> ${escapeHtml(
-            loanOfficer
-          )}</p>
+          <p><strong>Selected Loan Officer:</strong> ${escapeHtml(loanOfficer)}</p>
           <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
-          <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
+          <p><strong>Assistant Email:</strong> ${escapeHtml(assistantEmail || "Not provided")}</p>
+          <p><strong>Trigger:</strong> ${escapeHtml(formatTriggerLabel(trigger))}</p>
+          <p><strong>Realtor Name:</strong> ${escapeHtml(realtorName || "Not provided")}</p>
+          <p><strong>Realtor Email:</strong> ${escapeHtml(realtorEmail || "Not provided")}</p>
+          <p><strong>Realtor Phone:</strong> ${escapeHtml(realtorPhone || "Not provided")}</p>
         </div>
 
         <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
@@ -372,9 +480,7 @@ ${messages
 
           <h3 style="margin:18px 0 8px 0;">Strengths</h3>
           <ul style="line-height:1.8;">
-            ${summary.strengths
-              .map((item) => `<li>${escapeHtml(item)}</li>`)
-              .join("")}
+            ${summary.strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
           </ul>
 
           <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
@@ -402,135 +508,79 @@ ${messages
       </div>
     `;
 
-        const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: "Finley Beyond <finley@beyondfinancing.com>",
-        to: [selectedEmail],
-        reply_to: email,
-        subject: `Conversation Summary: ${fullName}`,
-        html,
-      }),
+    const borrowerCopy = buildBorrowerConfirmationCopy(
+      preferredLanguage,
+      loanOfficer,
+      trigger
+    );
+
+    const borrowerHtml = `
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
+        <h1 style="margin:0 0 18px 0;color:#263366;">${escapeHtml(borrowerCopy.title)}</h1>
+        <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+          <p style="line-height:1.8;">Hello ${escapeHtml(fullName)},</p>
+          <p style="line-height:1.8;">${escapeHtml(borrowerCopy.body)}</p>
+          <p style="line-height:1.8;">${escapeHtml(borrowerCopy.footer)}</p>
+        </div>
+      </div>
+    `;
+
+    const realtorCopy = buildRealtorConfirmationCopy(
+      preferredLanguage,
+      fullName,
+      loanOfficer
+    );
+
+    const realtorHtml = `
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
+        <h1 style="margin:0 0 18px 0;color:#263366;">${escapeHtml(realtorCopy.title)}</h1>
+        <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+          <p style="line-height:1.8;">Hello ${escapeHtml(realtorName || "Realtor")},</p>
+          <p style="line-height:1.8;">${escapeHtml(realtorCopy.body)}</p>
+          <p style="line-height:1.8;">${escapeHtml(realtorCopy.footer)}</p>
+        </div>
+      </div>
+    `;
+
+    const internalTo = [selectedEmail];
+    const internalCc = assistantEmail && assistantEmail !== selectedEmail ? [assistantEmail] : undefined;
+
+    await sendEmail({
+      to: internalTo,
+      cc: internalCc,
+      replyTo: email,
+      subject: `Conversation Summary: ${fullName} (${formatTriggerLabel(trigger)})`,
+      html: internalHtml,
     });
 
-    const resendResult = await resendResponse.json().catch(() => null);
+    await sendEmail({
+      to: [email],
+      subject: borrowerCopy.subject,
+      html: borrowerHtml,
+    });
 
-    if (!resendResponse.ok) {
-      console.error("RESEND ERROR:", resendResult);
-      return NextResponse.json(
-        { success: false, error: resendResult || "Resend send failed." },
-        { status: 500 }
-      );
-    }
-
-    console.log("RESEND SUCCESS:", resendResult);
-
-    const smsResults: Array<{
-      target: "loan_officer" | "realtor";
-      phone: string;
-      success: boolean;
-      error?: string;
-    }> = [];
-
-    try {
-      const smsMessage = `New Finley Beyond Lead:
-${fullName}
-Borrower Phone: ${normalizedBorrowerPhone || phone}
-Trigger: ${trigger}
-
-Check your email for the full summary.`;
-
-      if (normalizedAssignedLoanOfficerPhone) {
-        try {
-          await sendSmsAlert({
-            to: normalizedAssignedLoanOfficerPhone,
-            body: smsMessage,
-          });
-
-          smsResults.push({
-            target: "loan_officer",
-            phone: normalizedAssignedLoanOfficerPhone,
-            success: true,
-          });
-        } catch (loanOfficerSmsError) {
-          console.error("LOAN OFFICER SMS ERROR:", loanOfficerSmsError);
-
-          smsResults.push({
-            target: "loan_officer",
-            phone: normalizedAssignedLoanOfficerPhone,
-            success: false,
-            error:
-              loanOfficerSmsError instanceof Error
-                ? loanOfficerSmsError.message
-                : "Unknown SMS error",
-          });
-        }
-      } else {
-        console.log("NO LO PHONE FOUND FOR:", selectedEmail);
-        smsResults.push({
-          target: "loan_officer",
-          phone: "",
-          success: false,
-          error: "No normalized loan officer phone found",
-        });
-      }
-
-      if (normalizedRealtorPhone) {
-        try {
-          await sendSmsAlert({
-            to: normalizedRealtorPhone,
-            body: `Update: Your client ${fullName} has interacted with Finley Beyond. The assigned loan officer has been notified and will review the scenario shortly.`,
-          });
-
-          smsResults.push({
-            target: "realtor",
-            phone: normalizedRealtorPhone,
-            success: true,
-          });
-        } catch (realtorSmsError) {
-          console.error("REALTOR SMS ERROR:", realtorSmsError);
-
-          smsResults.push({
-            target: "realtor",
-            phone: normalizedRealtorPhone,
-            success: false,
-            error:
-              realtorSmsError instanceof Error
-                ? realtorSmsError.message
-                : "Unknown SMS error",
-          });
-        }
-      } else {
-        console.log("NO REALTOR PHONE FOUND");
-        smsResults.push({
-          target: "realtor",
-          phone: "",
-          success: false,
-          error: "No normalized realtor phone found",
-        });
-      }
-    } catch (smsError) {
-      console.error("SMS ERROR:", smsError);
+    if (realtorEmail) {
+      await sendEmail({
+        to: [realtorEmail],
+        subject: realtorCopy.subject,
+        html: realtorHtml,
+      });
     }
 
     return NextResponse.json({
       success: true,
-      assignedEmail: selectedEmail,
-      assignedLoanOfficerPhoneRaw: assignedLoanOfficerPhone,
-      assignedLoanOfficerPhoneNormalized: normalizedAssignedLoanOfficerPhone,
-      borrowerPhoneNormalized: normalizedBorrowerPhone,
-      realtorPhoneNormalized: normalizedRealtorPhone,
-      smsResults,
+      internalSentTo: selectedEmail,
+      assistantSentTo: internalCc || [],
+      borrowerSentTo: email,
+      realtorSentTo: realtorEmail || null,
     });
   } catch (error) {
-    console.error("CHAT SUMMARY ROUTE ERROR:", error);
-
     return NextResponse.json(
-      { success: false, error: "Server error." },
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Server error.",
+      },
       { status: 500 }
     );
   }
