@@ -121,7 +121,8 @@ export default function AdminPage() {
           setActiveUser(user);
 
           const canAccess =
-            user.role === "Branch Manager" || user.role === "Production Manager";
+            user.role === "Branch Manager" ||
+            user.role === "Production Manager";
 
           setAuthorized(canAccess);
         } else {
@@ -186,11 +187,17 @@ export default function AdminPage() {
     });
   }, [users, searchQuery]);
 
-  const setCreateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+  const setCreateField = <K extends keyof FormState>(
+    key: K,
+    value: FormState[K]
+  ) => {
     setCreateForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const setEditField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+  const setEditField = <K extends keyof FormState>(
+    key: K,
+    value: FormState[K]
+  ) => {
     setEditForm((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -323,7 +330,7 @@ export default function AdminPage() {
         <style>{responsiveCss}</style>
         <div className="bf-wrap" style={styles.wrap}>
           <SiteHeader
-            variant="team"
+            variant="admin"
             language={language}
             onLanguageChange={setLanguage}
           />
@@ -343,7 +350,7 @@ export default function AdminPage() {
         <style>{responsiveCss}</style>
         <div className="bf-wrap" style={styles.wrap}>
           <SiteHeader
-            variant="team"
+            variant="admin"
             language={language}
             onLanguageChange={setLanguage}
           />
@@ -383,7 +390,7 @@ export default function AdminPage() {
 
       <div className="bf-wrap" style={styles.wrap}>
         <SiteHeader
-          variant="team"
+          variant="admin"
           language={language}
           onLanguageChange={setLanguage}
         />
@@ -523,43 +530,41 @@ export default function AdminPage() {
                   return (
                     <div key={user.id} style={styles.userCard}>
                       {!isEditing ? (
-                        <>
-                          <div style={styles.userCardTop}>
-                            <div>
-                              <div style={styles.userName}>{user.name}</div>
-                              <div style={styles.userMeta}>
-                                {user.role} · {user.email}
-                              </div>
-                              <div style={styles.userMeta}>
-                                NMLS: {user.nmls || "—"} · Phone: {user.phone || "—"}
-                              </div>
-                              <div style={styles.userMeta}>
-                                Assistant: {user.assistant_email || "—"}
-                              </div>
-                              <div style={styles.userMeta}>
-                                Active: {user.is_active ? "Yes" : "No"} · Created:{" "}
-                                {formatDate(user.created_at)}
-                              </div>
+                        <div style={styles.userCardTop}>
+                          <div>
+                            <div style={styles.userName}>{user.name}</div>
+                            <div style={styles.userMeta}>
+                              {user.role} · {user.email}
                             </div>
-
-                            <div style={styles.userCardActions}>
-                              <button
-                                type="button"
-                                style={styles.smallOutlineButton}
-                                onClick={() => beginEdit(user)}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.smallDangerButton}
-                                onClick={() => void deleteUser(user.id, user.name)}
-                              >
-                                Delete
-                              </button>
+                            <div style={styles.userMeta}>
+                              NMLS: {user.nmls || "—"} · Phone: {user.phone || "—"}
+                            </div>
+                            <div style={styles.userMeta}>
+                              Assistant: {user.assistant_email || "—"}
+                            </div>
+                            <div style={styles.userMeta}>
+                              Active: {user.is_active ? "Yes" : "No"} · Created:{" "}
+                              {formatDate(user.created_at)}
                             </div>
                           </div>
-                        </>
+
+                          <div style={styles.userCardActions}>
+                            <button
+                              type="button"
+                              style={styles.smallOutlineButton}
+                              onClick={() => beginEdit(user)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              style={styles.smallDangerButton}
+                              onClick={() => void deleteUser(user.id, user.name)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                         <>
                           <div className="bf-form-grid" style={styles.formGrid}>
