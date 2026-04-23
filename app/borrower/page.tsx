@@ -383,8 +383,8 @@ export default function BorrowerPage() {
           ) || null;
 
         if (!selectedOfficer && finley) {
-          setSelectedOfficer(finley);
-        }
+  setSelectedOfficer(finley);
+}
       } catch (error) {
         if (!isMounted) return;
         setLoanOfficersError(
@@ -424,21 +424,24 @@ export default function BorrowerPage() {
     selectedOfficer || matchedOfficerFromQuery || defaultLoanOfficer;
 
   const officerSuggestions = useMemo(() => {
-    const query = loanOfficerQuery.trim().toLowerCase();
-    if (!query || loanOfficerConfirmed) return [];
+  if (loanOfficerConfirmed) return [];
+  if (selectedOfficer) return [];
 
-    return loanOfficers
-      .filter((officer) => {
-        const display = getOfficerDisplay(officer).toLowerCase();
-        return (
-          officer.name.toLowerCase().includes(query) ||
-          officer.nmls.toLowerCase().includes(query) ||
-          display.includes(query) ||
-          officer.email.toLowerCase().includes(query)
-        );
-      })
-      .slice(0, 5);
-  }, [loanOfficerQuery, loanOfficerConfirmed, loanOfficers]);
+  const query = loanOfficerQuery.trim().toLowerCase();
+  if (!query) return [];
+
+  return loanOfficers
+    .filter((officer) => {
+      const display = getOfficerDisplay(officer).toLowerCase();
+      return (
+        officer.name.toLowerCase().includes(query) ||
+        officer.nmls.toLowerCase().includes(query) ||
+        display.includes(query) ||
+        officer.email.toLowerCase().includes(query)
+      );
+    })
+    .slice(0, 5);
+}, [loanOfficerQuery, loanOfficerConfirmed, selectedOfficer, loanOfficers]);
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(String(scenario.homePrice).replace(/,/g, "")) || 0;
@@ -608,7 +611,7 @@ Instructions:
     setRealtorStatus("");
     setRealtorLocked(false);
     setLoanOfficerQuery("");
-    setSelectedOfficer(defaultLoanOfficer || null);
+    setSelectedOfficer(null);
     setLoanOfficerConfirmed(false);
     setPreliminaryReviewRan(false);
     setScenarioConfirmed(false);
@@ -635,32 +638,33 @@ Instructions:
   };
 
   const confirmOfficerSelection = () => {
-    const matched =
-      resolveOfficerFromQuery(loanOfficerQuery, loanOfficers) ||
-      defaultLoanOfficer;
+  const matched =
+    selectedOfficer ||
+    resolveOfficerFromQuery(loanOfficerQuery, loanOfficers) ||
+    defaultLoanOfficer;
 
-    if (!matched) {
-      setErrorMessage("No loan officer is available to assign right now.");
-      return;
-    }
+  if (!matched) {
+    setErrorMessage("No loan officer is available to assign right now.");
+    return;
+  }
 
-    setSelectedOfficer(matched);
-    setLoanOfficerQuery(getOfficerDisplay(matched));
-    setLoanOfficerConfirmed(true);
-    setErrorMessage("");
-  };
+  setSelectedOfficer(matched);
+  setLoanOfficerQuery(getOfficerDisplay(matched));
+  setLoanOfficerConfirmed(true);
+  setErrorMessage("");
+};
 
   const useDefaultFinley = () => {
-    if (!defaultLoanOfficer) {
-      setErrorMessage("No default loan officer is available right now.");
-      return;
-    }
+  if (!defaultLoanOfficer) {
+    setErrorMessage("No default loan officer is available right now.");
+    return;
+  }
 
-    setSelectedOfficer(defaultLoanOfficer);
-    setLoanOfficerQuery(getOfficerDisplay(defaultLoanOfficer));
-    setLoanOfficerConfirmed(true);
-    setErrorMessage("");
-  };
+  setSelectedOfficer(defaultLoanOfficer);
+  setLoanOfficerQuery(getOfficerDisplay(defaultLoanOfficer));
+  setLoanOfficerConfirmed(true);
+  setErrorMessage("");
+};
 
   const runPreliminaryReview = async () => {
     if (!intakeComplete) {
@@ -1208,35 +1212,41 @@ Keep the response practical and professional.`,
 
               <div style={{ marginTop: 16, position: "relative" }}>
                 <input
-                  style={styles.input}
-                  value={loanOfficerQuery}
-                  onChange={(e) => {
-                    if (!loanOfficerConfirmed) {
-                      setLoanOfficerQuery(e.target.value);
-                      setSelectedOfficer(null);
-                    }
-                  }}
-                  placeholder={t.loanOfficerPlaceholder}
-                  disabled={loanOfficersLoading || loanOfficers.length === 0}
-                />
+  style={styles.input}
+  value={loanOfficerQuery}
+  onChange={(e) => {
+    if (!loanOfficerConfirmed) {
+      setLoanOfficerQuery(e.target.value);
+      setSelectedOfficer(null);
+      setErrorMessage("");
+    }
+  }}
+  placeholder={t.loanOfficerPlaceholder}
+  disabled={
+    loanOfficerConfirmed || loanOfficersLoading || loanOfficers.length === 0
+  }
+/>
 
-                {!loanOfficerConfirmed && officerSuggestions.length > 0 && (
-                  <div style={styles.suggestionBox}>
-                    {officerSuggestions.map((officer) => (
-                      <button
-                        key={officer.id}
-                        type="button"
-                        style={styles.suggestionItem}
-                        onClick={() => {
-                          setSelectedOfficer(officer);
-                          setLoanOfficerQuery(getOfficerDisplay(officer));
-                        }}
-                      >
-                        {getOfficerDisplay(officer)}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {!loanOfficerConfirmed &&
+  !selectedOfficer &&
+  loanOfficerQuery.trim() &&
+  officerSuggestions.length > 0 && (
+    <div style={styles.suggestionBox}>
+      {officerSuggestions.map((officer) => (
+        <button
+          key={officer.id}
+          type="button"
+          style={styles.suggestionItem}
+          onClick={() => {
+            setSelectedOfficer(officer);
+            setLoanOfficerQuery(getOfficerDisplay(officer));
+          }}
+        >
+          {getOfficerDisplay(officer)}
+        </button>
+      ))}
+    </div>
+  )}
               </div>
 
               <div style={styles.helperText}>{t.loanOfficerPlaceholder}</div>
