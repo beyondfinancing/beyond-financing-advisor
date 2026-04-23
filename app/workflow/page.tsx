@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AddressAutofill } from "@mapbox/search-js-react";
 
 type TeamRole =
   | "Loan Officer"
@@ -107,9 +106,6 @@ const PROCESSORS: ProcessorOption[] = [
   },
 ];
 
-const MAPBOX_ACCESS_TOKEN =
-  process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || "";
-
 function formatCurrency(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "$0";
   return new Intl.NumberFormat("en-US", {
@@ -126,6 +122,10 @@ function formatPhoneDisplay(value: string) {
   if (digits.length <= 3) return digits;
   if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
+}
+
+function normalizeCurrencyInput(value: string) {
+  return value.replace(/[^\d]/g, "");
 }
 
 function getStatusLabel(status: WorkflowStatus) {
@@ -249,8 +249,7 @@ export default function WorkflowPage() {
   const [createTargetClose, setCreateTargetClose] = useState("");
   const [createUrgency, setCreateUrgency] =
     useState<WorkflowUrgency>("Priority");
-  const [createOccupancy, setCreateOccupancy] =
-    useState("Primary Residence");
+  const [createOccupancy, setCreateOccupancy] = useState("Primary Residence");
   const [createBlocker, setCreateBlocker] = useState("None currently.");
   const [createRequestedProcessorNote, setCreateRequestedProcessorNote] =
     useState("");
@@ -269,8 +268,6 @@ export default function WorkflowPage() {
   const canManageProcessing =
     activeUser?.role === "Production Manager" ||
     activeUser?.name === "Amarilis Santos";
-
-  const hasMapboxToken = Boolean(MAPBOX_ACCESS_TOKEN);
 
   const handleSignOut = async () => {
     await fetch("/api/team-auth/logout", { method: "POST" });
@@ -344,11 +341,11 @@ export default function WorkflowPage() {
       }
     };
 
-    loadUser();
+    void loadUser();
   }, []);
 
   useEffect(() => {
-    loadFiles();
+    void loadFiles();
   }, [loadFiles]);
 
   const sortedFiles = useMemo(() => {
@@ -830,32 +827,18 @@ export default function WorkflowPage() {
                 />
 
                 <label style={styles.label}>Property address</label>
-                {hasMapboxToken ? (
-                  <AddressAutofill accessToken={MAPBOX_ACCESS_TOKEN}>
-                    <input
-                      value={createPropertyAddress}
-                      onChange={(e) => setCreatePropertyAddress(e.target.value)}
-                      style={styles.input}
-                      placeholder="Start typing address"
-                      autoComplete="street-address"
-                    />
-                  </AddressAutofill>
-                ) : (
-                  <input
-                    value={createPropertyAddress}
-                    onChange={(e) => setCreatePropertyAddress(e.target.value)}
-                    style={styles.input}
-                    placeholder="123 Main St, City, ST ZIP"
-                    autoComplete="street-address"
-                  />
-                )}
+                <input
+                  value={createPropertyAddress}
+                  onChange={(e) => setCreatePropertyAddress(e.target.value)}
+                  style={styles.input}
+                  placeholder="123 Main St, City, ST ZIP"
+                  autoComplete="street-address"
+                />
 
-                {!hasMapboxToken ? (
-                  <div style={styles.infoBox}>
-                    Address autocomplete is not active because
-                    NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN is not set.
-                  </div>
-                ) : null}
+                <div style={styles.infoBox}>
+                  Address entry is active with manual input. This version removes the
+                  hard Mapbox dependency so deployment remains stable.
+                </div>
 
                 <label style={styles.label}>Loan purpose</label>
                 <select
@@ -873,10 +856,18 @@ export default function WorkflowPage() {
                 <label style={styles.label}>Amount</label>
                 <input
                   value={createAmount}
-                  onChange={(e) => setCreateAmount(e.target.value)}
+                  onChange={(e) =>
+                    setCreateAmount(normalizeCurrencyInput(e.target.value))
+                  }
                   style={styles.input}
                   placeholder="612000"
+                  inputMode="numeric"
                 />
+                {createAmount ? (
+                  <div style={styles.inlineHelperText}>
+                    Display amount: {formatCurrency(Number(createAmount || 0))}
+                  </div>
+                ) : null}
 
                 <label style={styles.label}>Loan officer</label>
                 <input
@@ -886,7 +877,9 @@ export default function WorkflowPage() {
                   placeholder="Loan officer name"
                 />
 
-                <label style={styles.label}>Requested processor note to Production Manager</label>
+                <label style={styles.label}>
+                  Requested processor note to Production Manager
+                </label>
                 <textarea
                   value={createRequestedProcessorNote}
                   onChange={(e) => setCreateRequestedProcessorNote(e.target.value)}
@@ -984,6 +977,7 @@ export default function WorkflowPage() {
                     }
                     style={styles.input}
                     placeholder="617.555.1212"
+                    inputMode="numeric"
                   />
                 </div>
 
@@ -1017,12 +1011,17 @@ export default function WorkflowPage() {
                     }
                     style={styles.input}
                     placeholder="617.555.1212"
+                    inputMode="numeric"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  style={styles.commandButton}
+                  style={{
+                    ...styles.commandButton,
+                    opacity: isCreatingFile ? 0.75 : 1,
+                    cursor: isCreatingFile ? "not-allowed" : "pointer",
+                  }}
                   disabled={isCreatingFile}
                 >
                   {isCreatingFile ? "Creating File..." : "Add to Workflow"}
@@ -1257,7 +1256,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 16,
     padding: "14px 16px",
     fontWeight: 800,
-    cursor: "pointer",
     fontSize: 15,
   },
   heroBadge: {
@@ -1590,7 +1588,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "16px 20px",
     fontWeight: 900,
     fontSize: 16,
-    cursor: "pointer",
     boxShadow: "0 10px 20px rgba(38,51,102,0.16)",
   },
   infoBox: {
@@ -1602,6 +1599,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 14,
     lineHeight: 1.6,
     fontSize: 14,
+  },
+  inlineHelperText: {
+    marginTop: 8,
+    color: "#526581",
+    fontSize: 13,
+    lineHeight: 1.5,
   },
   attentionList: {
     display: "flex",
