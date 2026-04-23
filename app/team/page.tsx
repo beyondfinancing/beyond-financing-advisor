@@ -1,646 +1,174 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-
-type LanguageCode = "en" | "pt" | "es";
+import SiteHeader from "@/app/components/SiteHeader";
+import { SiteLanguage } from "@/app/components/site-header-translations";
 
 type TeamRole =
   | "Loan Officer"
   | "Loan Officer Assistant"
   | "Processor"
+  | "Production Manager"
+  | "Branch Manager"
   | "Real Estate Agent";
 
 type TeamUser = {
   id: string;
   name: string;
   email: string;
-  nmls: string;
+  nmls?: string;
   role: TeamRole;
   calendly?: string;
   assistantEmail?: string;
   phone?: string;
 };
 
-type PreferredLanguage = "English" | "Português" | "Español";
-type SummaryTrigger = "ai" | "apply" | "schedule" | "contact";
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
-
-type TeamLeadForm = {
-  fullName: string;
-  email: string;
-  phone: string;
-  realtorName: string;
-  realtorPhone: string;
-  preferredLanguage: PreferredLanguage;
-  notes: string;
-};
-
-type BorrowerSnapshot = {
-  creditScore: string;
-  monthlyIncome: string;
-  monthlyDebt: string;
-  homePrice: string;
-  downPayment: string;
-  occupancy: string;
-  propertyType: string;
-  transactionType: string;
-  citizenshipStatus: string;
-  incomeType: string;
-};
-
-type ProgramMatch = {
-  category: string;
-  label: string;
-  fit: "Strong" | "Possible" | "Caution";
-  reason: string;
-};
-
-type WorkflowRoleApi =
-  | "loan_officer"
-  | "processing"
-  | "assistant"
-  | "real_estate_agent";
-
-type WorkflowActivityItem = {
-  id: string;
-  loan_id: string;
-  file_id?: string;
-  from_role: string;
-  from_name?: string;
-  from_email?: string;
-  to_role: string;
-  to_name?: string;
-  to_email?: string;
-  note_type: string;
-  message: string;
-  status: string;
-  created_at: string;
-};
-
-const APP_URL = "https://www.beyondfinancing.com/apply-now";
-const CONTACT_URL = "https://www.beyondfinancing.com/contact-us";
-
-const COPY = {
+const COPY: Record<
+  SiteLanguage,
+  {
+    title: string;
+    subtitle: string;
+    protectedAccess: string;
+    protectedText: string;
+    loadingText: string;
+    loginTitle: string;
+    loginText: string;
+    goHome: string;
+    openBorrower: string;
+    openWorkflow: string;
+    signedInAs: string;
+    roleLabel: string;
+    commandPurpose: string;
+    purposeItems: string[];
+    moduleTitle: string;
+    moduleOneTitle: string;
+    moduleOneText: string;
+    moduleTwoTitle: string;
+    moduleTwoText: string;
+    moduleThreeTitle: string;
+    moduleThreeText: string;
+    quickActions: string;
+    signOut: string;
+    accessStatus: string;
+  }
+> = {
   en: {
     title: "Beyond Intelligence™ Team Mortgage Intelligence",
     subtitle:
-      "Professional borrower analysis, directional program thinking, internal summary generation, and decision support for licensed mortgage teams.",
-    heroBadge: "TEAM MORTGAGE INTELLIGENCE",
-    loginTitle: "Professional Login",
+      "Protected professional workspace for internal mortgage analysis, team coordination, and platform command.",
+    protectedAccess: "PROTECTED PROFESSIONAL ACCESS",
+    protectedText:
+      "This area is reserved for authenticated team users working inside Beyond Intelligence™.",
+    loadingText: "Loading protected workspace...",
+    loginTitle: "Professional Sign-In Required",
     loginText:
-      "Use your NMLS or company credential and password to access the protected mortgage intelligence environment.",
-    credentialLabel: "NMLS # or Company Credential",
-    passwordLabel: "Password",
-    signIn: "Enter Mortgage Intelligence",
-    signingIn: "Signing in...",
-    forgotPassword: "Forgot password?",
-    forgotPasswordText:
-      "Use your NMLS or email in the credential field, then click Reset Password Help to request a secure reset link.",
-    resetPasswordHelp: "Reset Password Help",
+      "Please sign in through your protected team access to continue into Team Mortgage Intelligence.",
+    goHome: "Back to Homepage",
+    openBorrower: "Open Borrower Experience",
+    openWorkflow: "Open Workflow Intelligence",
+    signedInAs: "Signed in as",
+    roleLabel: "Role",
+    commandPurpose: "COMMAND PURPOSE",
+    purposeItems: [
+      "Review borrower direction before full file movement.",
+      "Keep internal mortgage thinking structured and consistent.",
+      "Bridge borrower interaction and workflow execution.",
+      "Support cleaner loan officer and team decision-making.",
+    ],
+    moduleTitle: "Workspace modules",
+    moduleOneTitle: "Borrower Intelligence Bridge",
+    moduleOneText:
+      "Move into the borrower experience when you need to view or reference the client-facing intake path and Finley interaction layer.",
+    moduleTwoTitle: "Workflow Intelligence Bridge",
+    moduleTwoText:
+      "Move into workflow command when the file needs execution visibility, handoff, status control, or processing coordination.",
+    moduleThreeTitle: "Professional Thinking Layer",
+    moduleThreeText:
+      "Use this environment as the protected intelligence layer between borrower interaction and operational workflow.",
+    quickActions: "Quick actions",
     signOut: "Sign Out",
-    language: "Language",
-    welcome: "Welcome",
-    role: "Role",
-    summaryEngine: "Internal Summary Engine",
-    summaryEngineText:
-      "Generate internal lead briefings, structure the borrower conversation, and route professional summaries directly from Team Mortgage Intelligence.",
-    leadTitle: "Lead Details",
-    borrowerTitle: "Borrower Scenario Snapshot",
-    conversationTitle: "Finley Professional Review",
-    recommendationsTitle: "Directional Program Review",
-    actionsTitle: "Mortgage Advisor Actions",
-    fullName: "Borrower Full Name",
-    email: "Borrower Email",
-    phone: "Borrower Phone",
-    realtorName: "Realtor Name",
-    realtorPhone: "Realtor Phone",
-    preferredLanguage: "Preferred Language",
-    notes: "Professional Notes",
-    creditScore: "Estimated Credit Score",
-    monthlyIncome: "Gross Monthly Income",
-    monthlyDebt: "Monthly Debt",
-    homePrice: "Target Home Price",
-    downPayment: "Estimated Down Payment",
-    occupancy: "Occupancy",
-    propertyType: "Property Type",
-    transactionType: "Transaction Type",
-    citizenshipStatus: "Citizenship / Residency",
-    incomeType: "Income Type",
-    startReview: "Start Mortgage Review",
-    reviewing: "Reviewing...",
-    continueReview: "Continue Review",
-    sendMessage: "Send Message",
-    sending: "Sending...",
-    generateEmailSummary: "Generate Internal Summary Email",
-    sendingSummary: "Sending Summary...",
-    triggerApply: "Log Apply Intent + Email Summary",
-    triggerSchedule: "Log Schedule Intent + Email Summary",
-    triggerContact: "Log Contact Intent + Email Summary",
-    clearSession: "Reset Session",
-    noConversationYet:
-      "Complete the lead details and start the mortgage review to begin the internal Finley Beyond professional conversation.",
-    professionalPrompt:
-      "Type your follow-up question, underwriting thought, borrower update, missing-item note, or structural concern.",
-    loginError: "Invalid credential or password.",
-    missingLead:
-      "Please complete borrower full name, email, phone, preferred language, and start the review first.",
-    summarySuccess: "Summary email sent successfully.",
-    summaryError: "There was an error sending the summary email.",
-    resetLinkSent:
-      "If the credential matches an active user, a reset link has been sent.",
-    loggedInAs: "Logged in as",
-    routeTo: "Summary emails route to",
-    applyNow: "Open Application",
-    scheduleCall: "Open Scheduling",
-    contactPage: "Open Contact Page",
-    estimatedLoanAmount: "Estimated Loan Amount",
-    estimatedLtv: "Estimated LTV",
-    noRecommendations:
-      "Enter the borrower scenario to generate directional program guidance.",
-    footerNote:
-      "Team Mortgage Intelligence organizes professional analysis and borrower strategy. Final qualification and program eligibility remain subject to full licensed review and investor guidelines.",
-    thinkingCardTitle: "What this module is for",
-    thinking1Title: "Borrower Analysis",
-    thinking1Text:
-      "Review the borrower profile, liabilities, property intent, and structural strengths before moving deeper into execution.",
-    thinking2Title: "Program Direction",
-    thinking2Text:
-      "Frame likely paths such as conventional, FHA, alternative income, DSCR, or caution-based review without overpromising.",
-    thinking3Title: "Advisor Support",
-    thinking3Text:
-      "Use Finley to identify missing questions, documentation gaps, risk layers, and next-best professional actions.",
+    accessStatus: "Protected access confirmed.",
   },
   pt: {
     title: "Beyond Intelligence™ Team Mortgage Intelligence",
     subtitle:
-      "Análise profissional do cliente, pensamento direcional de programas, geração de resumos internos e suporte à decisão para equipes hipotecárias licenciadas.",
-    heroBadge: "TEAM MORTGAGE INTELLIGENCE",
-    loginTitle: "Login Profissional",
+      "Área profissional protegida para análise hipotecária interna, coordenação da equipe e comando da plataforma.",
+    protectedAccess: "ACESSO PROFISSIONAL PROTEGIDO",
+    protectedText:
+      "Esta área é reservada para usuários autenticados da equipe que trabalham dentro do Beyond Intelligence™.",
+    loadingText: "Carregando área protegida...",
+    loginTitle: "Login Profissional Necessário",
     loginText:
-      "Use seu NMLS ou credencial da empresa e senha para acessar o ambiente protegido de inteligência hipotecária.",
-    credentialLabel: "NMLS # ou Credencial da Empresa",
-    passwordLabel: "Senha",
-    signIn: "Entrar no Mortgage Intelligence",
-    signingIn: "Entrando...",
-    forgotPassword: "Esqueceu a senha?",
-    forgotPasswordText:
-      "Use seu NMLS ou email no campo de credencial e clique em Ajuda de Senha para solicitar um link seguro de redefinição.",
-    resetPasswordHelp: "Ajuda de Senha",
+      "Faça login por meio do acesso protegido da equipe para continuar no Team Mortgage Intelligence.",
+    goHome: "Voltar à Página Inicial",
+    openBorrower: "Abrir Experiência do Cliente",
+    openWorkflow: "Abrir Workflow Intelligence",
+    signedInAs: "Conectado como",
+    roleLabel: "Função",
+    commandPurpose: "PROPÓSITO DO COMANDO",
+    purposeItems: [
+      "Revisar a direção do cliente antes do movimento completo do arquivo.",
+      "Manter o raciocínio hipotecário interno estruturado e consistente.",
+      "Conectar a interação com o cliente à execução do workflow.",
+      "Apoiar decisões mais limpas do loan officer e da equipe.",
+    ],
+    moduleTitle: "Módulos da área",
+    moduleOneTitle: "Ponte com Borrower Intelligence",
+    moduleOneText:
+      "Entre na experiência do cliente quando precisar visualizar ou referenciar o intake e a camada de interação com Finley.",
+    moduleTwoTitle: "Ponte com Workflow Intelligence",
+    moduleTwoText:
+      "Entre no comando de workflow quando o arquivo precisar de visibilidade operacional, handoff, controle de status ou coordenação com processing.",
+    moduleThreeTitle: "Camada de Raciocínio Profissional",
+    moduleThreeText:
+      "Use este ambiente como a camada protegida de inteligência entre a interação com o cliente e o workflow operacional.",
+    quickActions: "Ações rápidas",
     signOut: "Sair",
-    language: "Idioma",
-    welcome: "Bem-vindo",
-    role: "Função",
-    summaryEngine: "Motor de Resumo Interno",
-    summaryEngineText:
-      "Gere briefings internos do lead, estruture a conversa do cliente e envie resumos profissionais diretamente do Team Mortgage Intelligence.",
-    leadTitle: "Dados do Lead",
-    borrowerTitle: "Resumo do Cenário do Cliente",
-    conversationTitle: "Análise Profissional com Finley",
-    recommendationsTitle: "Análise Direcional de Programas",
-    actionsTitle: "Ações do Mortgage Advisor",
-    fullName: "Nome Completo do Cliente",
-    email: "Email do Cliente",
-    phone: "Telefone do Cliente",
-    realtorName: "Nome do Corretor",
-    realtorPhone: "Telefone do Corretor",
-    preferredLanguage: "Idioma Preferido",
-    notes: "Notas Profissionais",
-    creditScore: "Pontuação de Crédito Estimada",
-    monthlyIncome: "Renda Bruta Mensal",
-    monthlyDebt: "Dívida Mensal",
-    homePrice: "Valor Alvo do Imóvel",
-    downPayment: "Entrada Estimada",
-    occupancy: "Ocupação",
-    propertyType: "Tipo de Imóvel",
-    transactionType: "Tipo de Transação",
-    citizenshipStatus: "Cidadania / Residência",
-    incomeType: "Tipo de Renda",
-    startReview: "Iniciar Revisão Hipotecária",
-    reviewing: "Analisando...",
-    continueReview: "Continuar Análise",
-    sendMessage: "Enviar Mensagem",
-    sending: "Enviando...",
-    generateEmailSummary: "Gerar Email Resumo Interno",
-    sendingSummary: "Enviando Resumo...",
-    triggerApply: "Registrar Interesse em Aplicar + Email Resumo",
-    triggerSchedule: "Registrar Interesse em Agendar + Email Resumo",
-    triggerContact: "Registrar Interesse em Contato + Email Resumo",
-    clearSession: "Reiniciar Sessão",
-    noConversationYet:
-      "Complete os dados do lead e inicie a revisão hipotecária para começar a conversa profissional interna com o Finley Beyond.",
-    professionalPrompt:
-      "Digite sua pergunta de acompanhamento, pensamento de underwriting, atualização do cliente, item pendente ou preocupação estrutural.",
-    loginError: "Credencial ou senha inválida.",
-    missingLead:
-      "Preencha nome completo, email, telefone, idioma preferido e inicie a análise primeiro.",
-    summarySuccess: "Email resumo enviado com sucesso.",
-    summaryError: "Ocorreu um erro ao enviar o email resumo.",
-    resetLinkSent:
-      "Se a credencial corresponder a um usuário ativo, um link de redefinição foi enviado.",
-    loggedInAs: "Logado como",
-    routeTo: "Os emails resumo serão enviados para",
-    applyNow: "Abrir Aplicação",
-    scheduleCall: "Abrir Agendamento",
-    contactPage: "Abrir Página de Contato",
-    estimatedLoanAmount: "Valor Estimado do Empréstimo",
-    estimatedLtv: "LTV Estimado",
-    noRecommendations:
-      "Informe o cenário do cliente para gerar orientação direcional de programas.",
-    footerNote:
-      "O Team Mortgage Intelligence organiza a análise profissional e a estratégia do cliente. A qualificação final e a elegibilidade de programa continuam sujeitas à revisão licenciada completa e às diretrizes do investidor.",
-    thinkingCardTitle: "Para que este módulo serve",
-    thinking1Title: "Análise do Cliente",
-    thinking1Text:
-      "Revise perfil do cliente, passivos, objetivo do imóvel e pontos fortes estruturais antes de entrar na execução.",
-    thinking2Title: "Direção de Programas",
-    thinking2Text:
-      "Estruture caminhos prováveis como convencional, FHA, renda alternativa, DSCR ou revisão cautelosa sem prometer resultado.",
-    thinking3Title: "Suporte ao Advisor",
-    thinking3Text:
-      "Use o Finley para identificar perguntas pendentes, lacunas documentais, camadas de risco e o próximo melhor passo profissional.",
+    accessStatus: "Acesso protegido confirmado.",
   },
   es: {
     title: "Beyond Intelligence™ Team Mortgage Intelligence",
     subtitle:
-      "Análisis profesional del cliente, pensamiento direccional de programas, generación de resúmenes internos y soporte de decisión para equipos hipotecarios licenciados.",
-    heroBadge: "TEAM MORTGAGE INTELLIGENCE",
-    loginTitle: "Ingreso Profesional",
+      "Área profesional protegida para análisis hipotecario interno, coordinación del equipo y comando de la plataforma.",
+    protectedAccess: "ACCESO PROFESIONAL PROTEGIDO",
+    protectedText:
+      "Esta área está reservada para usuarios autenticados del equipo que trabajan dentro de Beyond Intelligence™.",
+    loadingText: "Cargando área protegida...",
+    loginTitle: "Se Requiere Inicio de Sesión Profesional",
     loginText:
-      "Use su NMLS o credencial de la empresa y contraseña para acceder al entorno protegido de inteligencia hipotecaria.",
-    credentialLabel: "NMLS # o Credencial de la Empresa",
-    passwordLabel: "Contraseña",
-    signIn: "Entrar a Mortgage Intelligence",
-    signingIn: "Ingresando...",
-    forgotPassword: "¿Olvidó su contraseña?",
-    forgotPasswordText:
-      "Use su NMLS o correo en el campo de credencial y haga clic en Ayuda de Contraseña para solicitar un enlace seguro de restablecimiento.",
-    resetPasswordHelp: "Ayuda de Contraseña",
-    signOut: "Cerrar Sesión",
-    language: "Idioma",
-    welcome: "Bienvenido",
-    role: "Rol",
-    summaryEngine: "Motor de Resumen Interno",
-    summaryEngineText:
-      "Genere briefings internos del lead, estructure la conversación del cliente y envíe resúmenes profesionales directamente desde Team Mortgage Intelligence.",
-    leadTitle: "Datos del Lead",
-    borrowerTitle: "Resumen del Escenario del Cliente",
-    conversationTitle: "Revisión Profesional con Finley",
-    recommendationsTitle: "Revisión Direccional de Programas",
-    actionsTitle: "Acciones del Mortgage Advisor",
-    fullName: "Nombre Completo del Cliente",
-    email: "Correo del Cliente",
-    phone: "Teléfono del Cliente",
-    realtorName: "Nombre del Agente",
-    realtorPhone: "Teléfono del Agente",
-    preferredLanguage: "Idioma Preferido",
-    notes: "Notas Profesionales",
-    creditScore: "Puntaje de Crédito Estimado",
-    monthlyIncome: "Ingreso Bruto Mensual",
-    monthlyDebt: "Deuda Mensual",
-    homePrice: "Precio Objetivo de la Vivienda",
-    downPayment: "Pago Inicial Estimado",
-    occupancy: "Ocupación",
-    propertyType: "Tipo de Propiedad",
-    transactionType: "Tipo de Transacción",
-    citizenshipStatus: "Ciudadanía / Residencia",
-    incomeType: "Tipo de Ingreso",
-    startReview: "Iniciar Revisión Hipotecaria",
-    reviewing: "Revisando...",
-    continueReview: "Continuar Revisión",
-    sendMessage: "Enviar Mensaje",
-    sending: "Enviando...",
-    generateEmailSummary: "Generar Resumen Interno por Email",
-    sendingSummary: "Enviando Resumen...",
-    triggerApply: "Registrar Intención de Aplicar + Resumen",
-    triggerSchedule: "Registrar Intención de Agendar + Resumen",
-    triggerContact: "Registrar Intención de Contacto + Resumen",
-    clearSession: "Reiniciar Sesión",
-    noConversationYet:
-      "Complete los datos del lead e inicie la revisión hipotecaria para comenzar la conversación profesional interna con Finley Beyond.",
-    professionalPrompt:
-      "Escriba su pregunta de seguimiento, pensamiento de underwriting, actualización del cliente, nota pendiente o preocupación estructural.",
-    loginError: "Credencial o contraseña inválida.",
-    missingLead:
-      "Complete nombre, correo, teléfono, idioma preferido e inicie la revisión primero.",
-    summarySuccess: "Resumen enviado por correo con éxito.",
-    summaryError: "Hubo un error al enviar el resumen por correo.",
-    resetLinkSent:
-      "Si la credencial coincide con un usuario activo, se ha enviado un enlace de restablecimiento.",
-    loggedInAs: "Conectado como",
-    routeTo: "Los emails resumen se enviarán a",
-    applyNow: "Abrir Aplicación",
-    scheduleCall: "Abrir Agenda",
-    contactPage: "Abrir Página de Contacto",
-    estimatedLoanAmount: "Monto Estimado del Préstamo",
-    estimatedLtv: "LTV Estimado",
-    noRecommendations:
-      "Ingrese el escenario del cliente para generar orientación direccional de programas.",
-    footerNote:
-      "Team Mortgage Intelligence organiza el análisis profesional y la estrategia del cliente. La calificación final y la elegibilidad del programa siguen sujetas a revisión licenciada completa y a las guías del inversionista.",
-    thinkingCardTitle: "Para qué sirve este módulo",
-    thinking1Title: "Análisis del Cliente",
-    thinking1Text:
-      "Revise perfil del cliente, pasivos, objetivo de propiedad y fortalezas estructurales antes de entrar en ejecución.",
-    thinking2Title: "Dirección de Programas",
-    thinking2Text:
-      "Enmarque rutas probables como convencional, FHA, ingreso alternativo, DSCR o revisión con cautela sin prometer resultado.",
-    thinking3Title: "Soporte al Advisor",
-    thinking3Text:
-      "Use Finley para identificar preguntas pendientes, brechas documentales, capas de riesgo y la mejor próxima acción profesional.",
+      "Inicie sesión a través del acceso protegido del equipo para continuar en Team Mortgage Intelligence.",
+    goHome: "Volver al Inicio",
+    openBorrower: "Abrir Experiencia del Cliente",
+    openWorkflow: "Abrir Workflow Intelligence",
+    signedInAs: "Conectado como",
+    roleLabel: "Rol",
+    commandPurpose: "PROPÓSITO DEL COMANDO",
+    purposeItems: [
+      "Revisar la dirección del cliente antes del movimiento completo del archivo.",
+      "Mantener el pensamiento hipotecario interno estructurado y consistente.",
+      "Conectar la interacción con el cliente con la ejecución del workflow.",
+      "Apoyar decisiones más limpias del loan officer y del equipo.",
+    ],
+    moduleTitle: "Módulos del área",
+    moduleOneTitle: "Puente con Borrower Intelligence",
+    moduleOneText:
+      "Entre en la experiencia del cliente cuando necesite ver o referenciar el intake y la capa de interacción con Finley.",
+    moduleTwoTitle: "Puente con Workflow Intelligence",
+    moduleTwoText:
+      "Entre en el comando de workflow cuando el archivo necesite visibilidad operativa, handoff, control de estado o coordinación con processing.",
+    moduleThreeTitle: "Capa de Pensamiento Profesional",
+    moduleThreeText:
+      "Utilice este entorno como la capa protegida de inteligencia entre la interacción con el cliente y el workflow operativo.",
+    quickActions: "Acciones rápidas",
+    signOut: "Cerrar sesión",
+    accessStatus: "Acceso protegido confirmado.",
   },
-} as const;
-
-function formatCurrency(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "$0";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatPhoneNumber(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 10);
-
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 6) {
-    return `${digits.slice(0, 3)}.${digits.slice(3)}`;
-  }
-
-  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
-}
-
-function extractAiText(data: unknown): string {
-  if (typeof data === "string") return data;
-
-  if (typeof data === "object" && data !== null) {
-    const obj = data as {
-      choices?: Array<{ message?: { content?: string } }>;
-      reply?: string;
-      message?: string;
-      response?: string;
-      content?: string;
-      text?: string;
-    };
-
-    return (
-      obj.choices?.[0]?.message?.content ||
-      obj.reply ||
-      obj.message ||
-      obj.response ||
-      obj.content ||
-      obj.text ||
-      ""
-    );
-  }
-
-  return "";
-}
-
-function estimateDirectionalPrograms(snapshot: BorrowerSnapshot): ProgramMatch[] {
-  const credit = Number(snapshot.creditScore) || 0;
-  const income = Number(snapshot.monthlyIncome) || 0;
-  const debt = Number(snapshot.monthlyDebt) || 0;
-  const homePrice = Number(snapshot.homePrice) || 0;
-  const downPayment = Number(snapshot.downPayment) || 0;
-  const loanAmount = Math.max(homePrice - downPayment, 0);
-  const ltv = homePrice > 0 ? loanAmount / homePrice : 0;
-  const dtiProxy = income > 0 ? debt / income : 0;
-
-  const matches: ProgramMatch[] = [];
-
-  if (homePrice > 0 && income > 0) {
-    if (
-      credit >= 680 &&
-      ltv <= 0.97 &&
-      snapshot.incomeType === "full_doc" &&
-      snapshot.citizenshipStatus !== "foreign_national"
-    ) {
-      matches.push({
-        category: "Agency",
-        label: "Conventional Review",
-        fit: "Strong",
-        reason:
-          "Credit profile, leverage, and documentation profile suggest a strong preliminary fit for conventional-style analysis.",
-      });
-    }
-
-    if (
-      credit >= 620 &&
-      ltv <= 0.965 &&
-      ["full_doc", "express_doc"].includes(snapshot.incomeType)
-    ) {
-      matches.push({
-        category: "Agency",
-        label: "FHA Review",
-        fit: "Possible",
-        reason:
-          "Scenario may support FHA-style fallback analysis depending on AUS findings, liabilities, and full file review.",
-      });
-    }
-
-    if (
-      ["bank_statements", "1099", "p_and_l", "asset_utilization"].includes(
-        snapshot.incomeType
-      )
-    ) {
-      matches.push({
-        category: "Non-QM",
-        label: "Alternative Income Review",
-        fit: "Strong",
-        reason:
-          "Income structure appears aligned with self-employed or alternative documentation review.",
-      });
-    }
-
-    if (
-      snapshot.occupancy === "investment_property" &&
-      dtiProxy <= 0.55 &&
-      credit >= 660
-    ) {
-      matches.push({
-        category: "Investor",
-        label: "DSCR / Investor Review",
-        fit: "Possible",
-        reason:
-          "Investment-property intent suggests possible DSCR or investor-oriented review depending on property cash flow and reserve profile.",
-      });
-    }
-
-    if (
-      ["itin_borrower", "foreign_national", "daca", "non_permanent_resident"].includes(
-        snapshot.citizenshipStatus
-      )
-    ) {
-      matches.push({
-        category: "Specialty",
-        label: "Residency-Sensitive Review",
-        fit: "Possible",
-        reason:
-          "Citizenship or residency profile indicates the file may require targeted investor and overlay review beyond standard agency paths.",
-      });
-    }
-
-    if (credit > 0 && credit < 620) {
-      matches.push({
-        category: "Caution",
-        label: "Credit Improvement / Layered Review",
-        fit: "Caution",
-        reason:
-          "Current credit profile suggests the file may require additional structure, compensating factors, or timing strategy.",
-      });
-    }
-
-    if (ltv > 0.97) {
-      matches.push({
-        category: "Caution",
-        label: "High-Leverage Review",
-        fit: "Caution",
-        reason:
-          "Estimated leverage appears high and may require revised structure, additional funds, or narrower program options.",
-      });
-    }
-  }
-
-  return matches.slice(0, 6);
-}
-
-function buildTeamSystemPrompt(params: {
-  user: TeamUser;
-  lead: TeamLeadForm;
-  snapshot: BorrowerSnapshot;
-  language: LanguageCode;
-}) {
-  const { user, lead, snapshot, language } = params;
-
-  const estimatedHomePrice = Number(snapshot.homePrice) || 0;
-  const estimatedDownPayment = Number(snapshot.downPayment) || 0;
-  const estimatedLoanAmount = Math.max(estimatedHomePrice - estimatedDownPayment, 0);
-  const estimatedLtv =
-    estimatedHomePrice > 0
-      ? `${Math.round((estimatedLoanAmount / estimatedHomePrice) * 100)}%`
-      : "Not provided";
-
-  return `
-You are Finley Beyond Powered by Beyond Intelligence™ operating in an INTERNAL PROFESSIONAL TEAM MORTGAGE INTELLIGENCE WORKSPACE.
-
-Audience:
-- Licensed loan officers
-- Loan officer assistants
-- Processors
-- Real estate agents working with Beyond Financing
-
-Rules:
-- Respond as an internal mortgage decision-support assistant
-- You may discuss directional program thinking, likely next steps, missing documentation, and risk flags
-- Do not make definitive approval claims
-- Do not present anything as final underwriting approval
-- Keep guidance practical, concise, and action-oriented
-- If facts are missing, identify the gaps directly
-- Prefer structured reasoning useful to a mortgage professional
-- This page is the THINKING layer, not the execution pipeline
-- Respond in ${
-    language === "pt" ? "Portuguese" : language === "es" ? "Spanish" : "English"
-  }
-
-Current professional user:
-- Name: ${user.name}
-- Role: ${user.role}
-- Email: ${user.email}
-- NMLS/Credential: ${user.nmls}
-
-Lead details:
-- Borrower Name: ${lead.fullName || "Not provided"}
-- Borrower Email: ${lead.email || "Not provided"}
-- Borrower Phone: ${lead.phone || "Not provided"}
-- Realtor Name: ${lead.realtorName || "Not provided"}
-- Realtor Phone: ${lead.realtorPhone || "Not provided"}
-- Preferred Language: ${lead.preferredLanguage || "Not provided"}
-- Professional Notes: ${lead.notes || "Not provided"}
-
-Scenario snapshot:
-- Credit Score: ${snapshot.creditScore || "Not provided"}
-- Monthly Income: ${snapshot.monthlyIncome || "Not provided"}
-- Monthly Debt: ${snapshot.monthlyDebt || "Not provided"}
-- Home Price: ${snapshot.homePrice || "Not provided"}
-- Down Payment: ${snapshot.downPayment || "Not provided"}
-- Estimated Loan Amount: ${
-    estimatedLoanAmount > 0 ? String(Math.round(estimatedLoanAmount)) : "Not provided"
-  }
-- Estimated LTV: ${estimatedLtv}
-- Occupancy: ${snapshot.occupancy || "Not provided"}
-- Property Type: ${snapshot.propertyType || "Not provided"}
-- Transaction Type: ${snapshot.transactionType || "Not provided"}
-- Citizenship / Residency: ${snapshot.citizenshipStatus || "Not provided"}
-- Income Type: ${snapshot.incomeType || "Not provided"}
-`.trim();
-}
-
-function mapTeamRoleToWorkflowRole(role: TeamRole): WorkflowRoleApi {
-  if (role === "Loan Officer") return "loan_officer";
-  if (role === "Loan Officer Assistant") return "assistant";
-  if (role === "Processor") return "processing";
-  return "real_estate_agent";
-}
-
-function formatWorkflowTime(value: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
+};
 
 export default function TeamPage() {
-  const [language, setLanguage] = useState<LanguageCode>("en");
-  const [credential, setCredential] = useState("");
-  const [password, setPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [passwordHint, setPasswordHint] = useState("");
+  const [language, setLanguage] = useState<SiteLanguage>("en");
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
-  const [authCheckLoading, setAuthCheckLoading] = useState(true);
-
-  const [leadForm, setLeadForm] = useState<TeamLeadForm>({
-    fullName: "",
-    email: "",
-    phone: "",
-    realtorName: "",
-    realtorPhone: "",
-    preferredLanguage: "English",
-    notes: "",
-  });
-
-  const [snapshot, setSnapshot] = useState<BorrowerSnapshot>({
-    creditScore: "",
-    monthlyIncome: "",
-    monthlyDebt: "",
-    homePrice: "",
-    downPayment: "",
-    occupancy: "",
-    propertyType: "",
-    transactionType: "",
-    citizenshipStatus: "",
-    incomeType: "",
-  });
-
-  const [conversation, setConversation] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [reviewStarted, setReviewStarted] = useState(false);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [chatError, setChatError] = useState("");
-  const [summaryStatus, setSummaryStatus] = useState("");
-
-  const [workflowToName, setWorkflowToName] = useState("Processing Team");
-  const [workflowToEmail, setWorkflowToEmail] = useState("myloan@beyondfinancing.com");
-  const [workflowMessage, setWorkflowMessage] = useState("");
-  const [workflowSending, setWorkflowSending] = useState(false);
-  const [workflowStatus, setWorkflowStatus] = useState("");
-  const [workflowActivity, setWorkflowActivity] = useState<WorkflowActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const t = COPY[language];
 
@@ -651,7 +179,6 @@ export default function TeamPage() {
 
         if (response.ok) {
           const data = await response.json();
-
           if (data?.authenticated && data?.user) {
             setActiveUser(data.user);
           }
@@ -659,1220 +186,159 @@ export default function TeamPage() {
       } catch {
         // no-op
       } finally {
-        setAuthCheckLoading(false);
+        setLoading(false);
       }
     };
 
-    loadUser();
+    void loadUser();
   }, []);
-
-  const estimatedLoanAmount = useMemo(() => {
-    const homePrice = Number(snapshot.homePrice) || 0;
-    const downPayment = Number(snapshot.downPayment) || 0;
-    return Math.max(homePrice - downPayment, 0);
-  }, [snapshot.homePrice, snapshot.downPayment]);
-
-  const estimatedLtv = useMemo(() => {
-    const homePrice = Number(snapshot.homePrice) || 0;
-    if (homePrice <= 0) return 0;
-    return estimatedLoanAmount / homePrice;
-  }, [estimatedLoanAmount, snapshot.homePrice]);
-
-  const directionalPrograms = useMemo(
-    () => estimateDirectionalPrograms(snapshot),
-    [snapshot]
-  );
-
-  const assistantEmail =
-    activeUser?.assistantEmail || "myloan@beyondfinancing.com";
-
-  const scheduleUrl = activeUser?.calendly || "https://www.beyondfinancing.com";
-
-  const isLeadReady =
-    Boolean(leadForm.fullName.trim()) &&
-    Boolean(leadForm.email.trim()) &&
-    Boolean(leadForm.phone.trim()) &&
-    Boolean(leadForm.preferredLanguage);
-
-  const handleLogin = async () => {
-    setAuthLoading(true);
-    setAuthError("");
-    setPasswordHint("");
-
-    try {
-      const response = await fetch("/api/team-auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          credential,
-          password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setAuthError(data?.error || t.loginError);
-        return;
-      }
-
-      setActiveUser(data.user);
-      setCredential("");
-      setPassword("");
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleForgotPasswordHelp = async () => {
-    setAuthError("");
-    setPasswordHint("");
-
-    try {
-      await fetch("/api/team-auth/request-reset", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ credential }),
-      });
-
-      setPasswordHint(t.resetLinkSent);
-    } catch {
-      setPasswordHint(t.resetLinkSent);
-    }
-  };
 
   const handleSignOut = async () => {
     await fetch("/api/team-auth/logout", { method: "POST" });
-
     setActiveUser(null);
-    setCredential("");
-    setPassword("");
-    setConversation([]);
-    setReviewStarted(false);
-    setChatInput("");
-    setChatError("");
-    setSummaryStatus("");
-    setPasswordHint("");
-    setWorkflowStatus("");
-    setWorkflowMessage("");
-    setWorkflowActivity([]);
+    window.location.href = "/team";
   };
 
-  const setLeadField = (key: keyof TeamLeadForm, value: string) => {
-    setLeadForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const setSnapshotField = (key: keyof BorrowerSnapshot, value: string) => {
-    setSnapshot((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const startProfessionalReview = async () => {
-    if (!activeUser || !isLeadReady) {
-      setChatError(t.missingLead);
-      return;
-    }
-
-    setReviewLoading(true);
-    setChatError("");
-    setSummaryStatus("");
-    setConversation([]);
-
-    try {
-      const systemContext = buildTeamSystemPrompt({
-        user: activeUser,
-        lead: leadForm,
-        snapshot,
-        language,
-      });
-
-      const prompt = `
-${systemContext}
-
-Please begin the internal mortgage intelligence review.
-1. Summarize the borrower scenario briefly
-2. Identify 3 to 5 likely next underwriting or qualification questions
-3. Mention directional program thinking only if supported by the file
-4. Recommend the next best action for the professional user
-      `.trim();
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          stage: "team_initial_review",
-          messages: [
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(extractAiText(data) || "Professional review failed.");
-      }
-
-      const finalText =
-        extractAiText(data) ||
-        "No response was returned from Finley Beyond for the professional workspace.";
-
-      setConversation([{ role: "assistant", content: finalText }]);
-      setReviewStarted(true);
-    } catch (error) {
-      setChatError(
-        error instanceof Error ? error.message : "There was an error starting the review."
-      );
-      setReviewStarted(false);
-    } finally {
-      setReviewLoading(false);
-    }
-  };
-
-  const sendProfessionalMessage = async () => {
-    if (!activeUser || !reviewStarted || !chatInput.trim()) return;
-
-    const trimmed = chatInput.trim();
-    const nextConversation: ChatMessage[] = [
-      ...conversation,
-      { role: "user", content: trimmed },
-    ];
-
-    setConversation(nextConversation);
-    setChatInput("");
-    setReviewLoading(true);
-    setChatError("");
-
-    try {
-      const systemContext = buildTeamSystemPrompt({
-        user: activeUser,
-        lead: leadForm,
-        snapshot,
-        language,
-      });
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          stage: "team_follow_up",
-          messages: [
-            {
-              role: "user",
-              content: `${systemContext}
-
-Continue the internal mortgage intelligence review. Be practical, concise, and action-oriented.`,
-            },
-            ...nextConversation.map((message) => ({
-              role: message.role,
-              content: message.content,
-            })),
-          ],
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(extractAiText(data) || "Follow-up review failed.");
-      }
-
-      const finalText =
-        extractAiText(data) ||
-        "No additional response was returned from Finley Beyond.";
-
-      setConversation((prev) => [
-        ...prev,
-        { role: "assistant", content: finalText },
-      ]);
-    } catch (error) {
-      setConversation((prev) => prev.slice(0, -1));
-      setChatError(
-        error instanceof Error ? error.message : "There was an error continuing the review."
-      );
-    } finally {
-      setReviewLoading(false);
-    }
-  };
-
-  const sendSummaryEmail = async (trigger: SummaryTrigger) => {
-    if (!activeUser || !reviewStarted || !isLeadReady) {
-      setSummaryStatus(t.missingLead);
-      return;
-    }
-
-    setSummaryLoading(true);
-    setSummaryStatus("");
-
-    try {
-      const response = await fetch("/api/chat-summary", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          lead: {
-            fullName: leadForm.fullName,
-            email: leadForm.email,
-            phone: leadForm.phone,
-            realtorName: leadForm.realtorName,
-            realtorPhone: leadForm.realtorPhone,
-            preferredLanguage: leadForm.preferredLanguage,
-            loanOfficer: activeUser.id.includes("sandro")
-              ? "sandro"
-              : activeUser.id.includes("warren")
-              ? "warren"
-              : "finley",
-            assignedEmail: activeUser.email,
-          },
-          trigger,
-          messages: [
-            ...conversation,
-            {
-              role: "user",
-              content: `Professional notes: ${leadForm.notes || "None provided."}`,
-            },
-            {
-              role: "user",
-              content: `Scenario snapshot:
-Credit Score: ${snapshot.creditScore || "Not provided"}
-Monthly Income: ${snapshot.monthlyIncome || "Not provided"}
-Monthly Debt: ${snapshot.monthlyDebt || "Not provided"}
-Home Price: ${snapshot.homePrice || "Not provided"}
-Down Payment: ${snapshot.downPayment || "Not provided"}
-Occupancy: ${snapshot.occupancy || "Not provided"}
-Property Type: ${snapshot.propertyType || "Not provided"}
-Transaction Type: ${snapshot.transactionType || "Not provided"}
-Citizenship Status: ${snapshot.citizenshipStatus || "Not provided"}
-Income Type: ${snapshot.incomeType || "Not provided"}
-Estimated Loan Amount: ${
-  estimatedLoanAmount > 0 ? String(Math.round(estimatedLoanAmount)) : "Not provided"
-}
-Estimated LTV: ${
-  snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "Not provided"
-}`,
-            },
-          ],
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data?.error === "string" ? data.error : "Summary email failed."
-        );
-      }
-
-      setSummaryStatus(t.summarySuccess);
-    } catch (error) {
-      setSummaryStatus(
-        error instanceof Error ? error.message : t.summaryError
-      );
-    } finally {
-      setSummaryLoading(false);
-    }
-  };
-
-  const sendWorkflowNote = async () => {
-    if (!activeUser) {
-      setWorkflowStatus("No active user found.");
-      return;
-    }
-
-    if (!leadForm.fullName.trim()) {
-      setWorkflowStatus("Enter the borrower full name before sending a workflow note.");
-      return;
-    }
-
-    if (!workflowToEmail.trim() || !workflowMessage.trim()) {
-      setWorkflowStatus("Enter recipient email and workflow note.");
-      return;
-    }
-
-    setWorkflowSending(true);
-    setWorkflowStatus("");
-
-    try {
-      const response = await fetch("/api/workflow/note", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          loanId: leadForm.fullName.trim(),
-          fileId: leadForm.email.trim() || "TEAM-FILE",
-          fromRole: mapTeamRoleToWorkflowRole(activeUser.role),
-          fromName: activeUser.name,
-          fromEmail: activeUser.email,
-          toRole: "processing",
-          toName: workflowToName.trim() || "Processing Team",
-          toEmail: workflowToEmail.trim(),
-          noteType: "team_note",
-          message: workflowMessage.trim(),
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data?.error === "string" ? data.error : "Workflow note failed."
-        );
-      }
-
-      if (data?.activity) {
-        setWorkflowActivity((prev) => [data.activity, ...prev]);
-      }
-
-      setWorkflowStatus("Workflow note sent and logged successfully.");
-      setWorkflowMessage("");
-    } catch (error) {
-      setWorkflowStatus(
-        error instanceof Error ? error.message : "Unable to send workflow note."
-      );
-    } finally {
-      setWorkflowSending(false);
-    }
-  };
-
-  const resetSession = () => {
-    setLeadForm({
-      fullName: "",
-      email: "",
-      phone: "",
-      realtorName: "",
-      realtorPhone: "",
-      preferredLanguage: "English",
-      notes: "",
-    });
-    setSnapshot({
-      creditScore: "",
-      monthlyIncome: "",
-      monthlyDebt: "",
-      homePrice: "",
-      downPayment: "",
-      occupancy: "",
-      propertyType: "",
-      transactionType: "",
-      citizenshipStatus: "",
-      incomeType: "",
-    });
-    setConversation([]);
-    setChatInput("");
-    setReviewStarted(false);
-    setReviewLoading(false);
-    setSummaryLoading(false);
-    setChatError("");
-    setSummaryStatus("");
-    setWorkflowToName("Processing Team");
-    setWorkflowToEmail("myloan@beyondfinancing.com");
-    setWorkflowMessage("");
-    setWorkflowSending(false);
-    setWorkflowStatus("");
-    setWorkflowActivity([]);
-  };
-
-  if (authCheckLoading) {
-    return (
-      <main style={styles.page}>
-        <style>{responsiveCss}</style>
-
-        <div className="bf-team-wrap" style={styles.wrap}>
-          <div style={navStyles.topBar}>
-            <a href="/" style={navStyles.brand}>
-              Beyond Intelligence™
-            </a>
-            <div style={navStyles.topBarLinks}>
-              <a href="/" style={navStyles.topBarLink}>Home</a>
-              <a href="/borrower" style={navStyles.topBarLink}>Borrower Experience</a>
-              <a href="/team" style={navStyles.topBarLinkActive}>Mortgage Intelligence</a>
-              <a href="/workflow" style={navStyles.topBarLink}>Workflow Intelligence</a>
-            </div>
-          </div>
-
-          <div style={styles.hero}>
-            <div style={styles.eyebrow}>{t.heroBadge}</div>
-            <h1 style={styles.heroTitle}>{t.title}</h1>
-            <p style={styles.heroText}>{t.signingIn}</p>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!activeUser) {
-    return (
-      <main style={styles.page}>
-        <style>{responsiveCss}</style>
-
-        <div className="bf-team-wrap" style={styles.wrap}>
-          <div style={navStyles.topBar}>
-            <a href="/" style={navStyles.brand}>
-              Beyond Intelligence™
-            </a>
-            <div style={navStyles.topBarLinks}>
-              <a href="/" style={navStyles.topBarLink}>Home</a>
-              <a href="/borrower" style={navStyles.topBarLink}>Borrower Experience</a>
-              <a href="/team" style={navStyles.topBarLinkActive}>Mortgage Intelligence</a>
-              <a href="/workflow" style={navStyles.topBarLink}>Workflow Intelligence</a>
-            </div>
-          </div>
-
-          <div style={styles.hero}>
-            <div style={styles.eyebrow}>{t.heroBadge}</div>
-            <h1 style={styles.heroTitle}>{t.title}</h1>
-            <p style={styles.heroText}>{t.subtitle}</p>
-          </div>
-
-          <div style={styles.loginCard}>
-            <div style={styles.languageRow}>
-              <div>
-                <h2 style={styles.sectionTitle}>{t.loginTitle}</h2>
-                <p style={styles.sectionText}>{t.loginText}</p>
-              </div>
-
-              <div style={styles.languageBox}>
-                <label style={styles.label}>{t.language}</label>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-                  style={styles.select}
-                >
-                  <option value="en">English</option>
-                  <option value="pt">Português</option>
-                  <option value="es">Español</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={styles.formGridSingle}>
-              <div>
-                <label style={styles.label}>{t.credentialLabel}</label>
-                <input
-                  value={credential}
-                  onChange={(e) => setCredential(e.target.value)}
-                  placeholder={t.credentialLabel}
-                  style={styles.input}
-                />
-              </div>
-
-              <div>
-                <label style={styles.label}>{t.passwordLabel}</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t.passwordLabel}
-                  style={styles.input}
-                />
-              </div>
-            </div>
-
-            {authError ? <div style={styles.errorBox}>{authError}</div> : null}
-            {passwordHint ? <div style={styles.infoBox}>{passwordHint}</div> : null}
-
-            <div style={styles.buttonRow}>
-              <button
-                type="button"
-                onClick={handleLogin}
-                disabled={authLoading}
-                style={{
-                  ...styles.primaryButton,
-                  opacity: authLoading ? 0.7 : 1,
-                  cursor: authLoading ? "not-allowed" : "pointer",
-                }}
-              >
-                {authLoading ? t.signingIn : t.signIn}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleForgotPasswordHelp}
-                style={styles.secondaryButton}
-              >
-                {t.resetPasswordHelp}
-              </button>
-            </div>
-
-            <div style={styles.mutedHelpTitle}>{t.forgotPassword}</div>
-            <div style={styles.mutedHelpText}>{t.forgotPasswordText}</div>
-
-            <div style={styles.loginHintBox}>
-              <div style={styles.loginHintTitle}>Internal Access Notice</div>
-              <div style={styles.loginHintText}>
-                Internal access is restricted to authorized users. Secure authentication
-                and reset workflows should replace this temporary testing method.
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  const initials = useMemo(() => {
+    if (!activeUser?.name) return "BI";
+    return activeUser.name
+      .split(" ")
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("");
+  }, [activeUser]);
 
   return (
     <main style={styles.page}>
       <style>{responsiveCss}</style>
 
-      <div className="bf-team-wrap" style={styles.wrap}>
-        <div style={navStyles.topBar}>
-          <a href="/" style={navStyles.brand}>
-            Beyond Intelligence™
-          </a>
-          <div style={navStyles.topBarLinks}>
-            <a href="/" style={navStyles.topBarLink}>Home</a>
-            <a href="/borrower" style={navStyles.topBarLink}>Borrower Experience</a>
-            <a href="/team" style={navStyles.topBarLinkActive}>Mortgage Intelligence</a>
-            <a href="/workflow" style={navStyles.topBarLink}>Workflow Intelligence</a>
-          </div>
-        </div>
+      <div className="bf-wrap" style={styles.wrap}>
+        <SiteHeader
+          variant="team"
+          language={language}
+          onLanguageChange={setLanguage}
+        />
 
-        <div style={styles.hero}>
-          <div style={styles.topBar}>
-            <div>
-              <div style={styles.eyebrow}>{t.heroBadge}</div>
+        {loading ? (
+          <section style={styles.hero}>
+            <div style={styles.heroBadge}>{t.protectedAccess}</div>
+            <h1 style={styles.heroTitle}>{t.title}</h1>
+            <p style={styles.heroText}>{t.loadingText}</p>
+          </section>
+        ) : !activeUser ? (
+          <>
+            <section style={styles.hero}>
+              <div style={styles.heroBadge}>{t.protectedAccess}</div>
               <h1 style={styles.heroTitle}>{t.title}</h1>
               <p style={styles.heroText}>{t.subtitle}</p>
-            </div>
+            </section>
 
-            <div style={styles.topBarActions}>
-              <div style={styles.userBadge}>
-                <div style={styles.userBadgeTitle}>
-                  {t.loggedInAs}: {activeUser.name}
-                </div>
-                <div style={styles.userBadgeSubtext}>
-                  {t.role}: {activeUser.role} · {activeUser.email}
-                </div>
-              </div>
+            <div style={styles.loginCard}>
+              <h2 style={styles.sectionTitle}>{t.loginTitle}</h2>
+              <p style={styles.sectionText}>{t.loginText}</p>
 
-              <button type="button" onClick={handleSignOut} style={styles.signOutButton}>
-                {t.signOut}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="bf-main-grid" style={styles.mainGrid}>
-          <section style={styles.leftColumn}>
-            <div style={styles.card}>
-              <div style={styles.languageRow}>
-                <div>
-                  <h2 style={styles.sectionTitle}>{t.summaryEngine}</h2>
-                  <p style={styles.sectionText}>{t.summaryEngineText}</p>
-                </div>
-
-                <div style={styles.languageBox}>
-                  <label style={styles.label}>{t.language}</label>
-                  <select
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-                    style={styles.select}
-                  >
-                    <option value="en">English</option>
-                    <option value="pt">Português</option>
-                    <option value="es">Español</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={styles.routeBox}>
-                <div style={styles.routeTitle}>{t.routeTo}</div>
-                <div style={styles.routeText}>
-                  {activeUser.email}
-                  {assistantEmail ? ` and ${assistantEmail}` : ""}
-                </div>
+              <div style={styles.quickActionRow}>
+                <a href="/" style={styles.primaryLinkButton}>
+                  {t.goHome}
+                </a>
+                <a href="/borrower" style={styles.secondaryLinkButton}>
+                  {t.openBorrower}
+                </a>
+                <a href="/workflow" style={styles.secondaryLinkButton}>
+                  {t.openWorkflow}
+                </a>
               </div>
             </div>
-
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{t.leadTitle}</h2>
-
-              <div className="bf-form-grid" style={styles.formGridTwo}>
+          </>
+        ) : (
+          <>
+            <section style={styles.hero}>
+              <div className="bf-team-hero-grid" style={styles.heroGrid}>
                 <div>
-                  <label style={styles.label}>{t.fullName}</label>
-                  <input
-                    style={styles.input}
-                    value={leadForm.fullName}
-                    onChange={(e) => setLeadField("fullName", e.target.value)}
-                    placeholder={t.fullName}
-                  />
+                  <div style={styles.heroBadge}>{t.protectedAccess}</div>
+                  <h1 style={styles.heroTitle}>{t.title}</h1>
+                  <p style={styles.heroText}>{t.subtitle}</p>
                 </div>
 
-                <div>
-                  <label style={styles.label}>{t.email}</label>
-                  <input
-                    style={styles.input}
-                    value={leadForm.email}
-                    onChange={(e) => setLeadField("email", e.target.value)}
-                    placeholder={t.email}
-                    type="email"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.phone}</label>
-                  <input
-                    style={styles.input}
-                    value={leadForm.phone}
-                    onChange={(e) =>
-                      setLeadField("phone", formatPhoneNumber(e.target.value))
-                    }
-                    placeholder={t.phone}
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.realtorName}</label>
-                  <input
-                    style={styles.input}
-                    value={leadForm.realtorName}
-                    onChange={(e) => setLeadField("realtorName", e.target.value)}
-                    placeholder={t.realtorName}
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.realtorPhone}</label>
-                  <input
-                    style={styles.input}
-                    value={leadForm.realtorPhone}
-                    onChange={(e) =>
-                      setLeadField("realtorPhone", formatPhoneNumber(e.target.value))
-                    }
-                    placeholder={t.realtorPhone}
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.preferredLanguage}</label>
-                  <select
-                    style={styles.selectFull}
-                    value={leadForm.preferredLanguage}
-                    onChange={(e) =>
-                      setLeadField(
-                        "preferredLanguage",
-                        e.target.value as PreferredLanguage
-                      )
-                    }
-                  >
-                    <option value="English">English</option>
-                    <option value="Português">Português</option>
-                    <option value="Español">Español</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ marginTop: 18 }}>
-                <label style={styles.label}>{t.notes}</label>
-                <textarea
-                  style={styles.textarea}
-                  rows={4}
-                  value={leadForm.notes}
-                  onChange={(e) => setLeadField("notes", e.target.value)}
-                  placeholder={t.notes}
-                />
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{t.borrowerTitle}</h2>
-
-              <div className="bf-form-grid" style={styles.formGridTwo}>
-                <div>
-                  <label style={styles.label}>{t.creditScore}</label>
-                  <input
-                    style={styles.input}
-                    value={snapshot.creditScore}
-                    onChange={(e) => setSnapshotField("creditScore", e.target.value)}
-                    placeholder={t.creditScore}
-                    type="number"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.monthlyIncome}</label>
-                  <input
-                    style={styles.input}
-                    value={snapshot.monthlyIncome}
-                    onChange={(e) =>
-                      setSnapshotField("monthlyIncome", e.target.value)
-                    }
-                    placeholder={t.monthlyIncome}
-                    type="number"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.monthlyDebt}</label>
-                  <input
-                    style={styles.input}
-                    value={snapshot.monthlyDebt}
-                    onChange={(e) =>
-                      setSnapshotField("monthlyDebt", e.target.value)
-                    }
-                    placeholder={t.monthlyDebt}
-                    type="number"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.homePrice}</label>
-                  <input
-                    style={styles.input}
-                    value={snapshot.homePrice}
-                    onChange={(e) => setSnapshotField("homePrice", e.target.value)}
-                    placeholder={t.homePrice}
-                    type="number"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.downPayment}</label>
-                  <input
-                    style={styles.input}
-                    value={snapshot.downPayment}
-                    onChange={(e) =>
-                      setSnapshotField("downPayment", e.target.value)
-                    }
-                    placeholder={t.downPayment}
-                    type="number"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.occupancy}</label>
-                  <select
-                    style={styles.selectFull}
-                    value={snapshot.occupancy}
-                    onChange={(e) => setSnapshotField("occupancy", e.target.value)}
-                  >
-                    <option value="">Select</option>
-                    <option value="primary_residence">Primary Residence</option>
-                    <option value="second_home">Second Home</option>
-                    <option value="investment_property">Investment Property</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.propertyType}</label>
-                  <select
-                    style={styles.selectFull}
-                    value={snapshot.propertyType}
-                    onChange={(e) => setSnapshotField("propertyType", e.target.value)}
-                  >
-                    <option value="">Select</option>
-                    <option value="single_family">Single Family</option>
-                    <option value="condo">Condo</option>
-                    <option value="two_to_four_unit">2-4 Unit</option>
-                    <option value="manufactured">Manufactured</option>
-                    <option value="mixed_use">Mixed Use</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.transactionType}</label>
-                  <select
-                    style={styles.selectFull}
-                    value={snapshot.transactionType}
-                    onChange={(e) =>
-                      setSnapshotField("transactionType", e.target.value)
-                    }
-                  >
-                    <option value="">Select</option>
-                    <option value="purchase">Purchase</option>
-                    <option value="rate_term_refinance">Rate/Term Refinance</option>
-                    <option value="cash_out_refinance">Cash-Out Refinance</option>
-                    <option value="second_lien">Second Lien</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.citizenshipStatus}</label>
-                  <select
-                    style={styles.selectFull}
-                    value={snapshot.citizenshipStatus}
-                    onChange={(e) =>
-                      setSnapshotField("citizenshipStatus", e.target.value)
-                    }
-                  >
-                    <option value="">Select</option>
-                    <option value="citizen">Citizen</option>
-                    <option value="permanent_resident">Permanent Resident</option>
-                    <option value="non_permanent_resident">
-                      Non-Permanent Resident
-                    </option>
-                    <option value="itin_borrower">ITIN Borrower</option>
-                    <option value="daca">DACA</option>
-                    <option value="foreign_national">Foreign National</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>{t.incomeType}</label>
-                  <select
-                    style={styles.selectFull}
-                    value={snapshot.incomeType}
-                    onChange={(e) => setSnapshotField("incomeType", e.target.value)}
-                  >
-                    <option value="">Select</option>
-                    <option value="full_doc">Full Doc / W2</option>
-                    <option value="express_doc">Express Doc</option>
-                    <option value="bank_statements">Bank Statements</option>
-                    <option value="1099">1099</option>
-                    <option value="p_and_l">P&L Only</option>
-                    <option value="asset_utilization">Asset Utilization</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={styles.metricsGrid}>
-                <MetricCard
-                  title={t.estimatedLoanAmount}
-                  value={formatCurrency(estimatedLoanAmount)}
-                />
-                <MetricCard
-                  title={t.estimatedLtv}
-                  value={snapshot.homePrice ? `${Math.round(estimatedLtv * 100)}%` : "0%"}
-                />
-              </div>
-
-              <div style={styles.buttonRow}>
-                <button
-                  type="button"
-                  onClick={startProfessionalReview}
-                  disabled={reviewLoading}
-                  style={{
-                    ...styles.primaryButton,
-                    opacity: reviewLoading ? 0.7 : 1,
-                    cursor: reviewLoading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {reviewLoading ? t.reviewing : t.startReview}
-                </button>
-
-                <button type="button" onClick={resetSession} style={styles.secondaryButton}>
-                  {t.clearSession}
-                </button>
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{t.conversationTitle}</h2>
-
-              {!reviewStarted ? (
-                <div style={styles.placeholderBox}>{t.noConversationYet}</div>
-              ) : (
-                <>
-                  <div style={styles.chatScroll}>
-                    {conversation.map((message, index) => (
-                      <div
-                        key={`${message.role}-${index}`}
-                        style={{
-                          ...styles.chatBubble,
-                          backgroundColor:
-                            message.role === "user" ? "#263366" : "#F8FBFF",
-                          color: message.role === "user" ? "#ffffff" : "#1F2937",
-                          border:
-                            message.role === "user"
-                              ? "1px solid #263366"
-                              : "1px solid #DBEAFE",
-                          alignSelf:
-                            message.role === "user" ? "flex-end" : "stretch",
-                        }}
-                      >
-                        {message.content}
-                      </div>
-                    ))}
-
-                    {reviewLoading ? (
-                      <div
-                        style={{
-                          ...styles.chatBubble,
-                          backgroundColor: "#F8FBFF",
-                          color: "#1F2937",
-                          border: "1px solid #DBEAFE",
-                        }}
-                      >
-                        Finley Beyond is reviewing...
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {chatError ? <div style={styles.errorBox}>{chatError}</div> : null}
-
-                  <div style={styles.chatComposer}>
-                    <label style={styles.label}>{t.continueReview}</label>
-                    <textarea
-                      style={styles.textarea}
-                      rows={4}
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder={t.professionalPrompt}
-                      disabled={reviewLoading}
-                    />
-                    <button
-                      type="button"
-                      onClick={sendProfessionalMessage}
-                      disabled={reviewLoading || !chatInput.trim()}
-                      style={{
-                        ...styles.secondaryBlueButton,
-                        opacity: reviewLoading || !chatInput.trim() ? 0.7 : 1,
-                        cursor:
-                          reviewLoading || !chatInput.trim()
-                            ? "not-allowed"
-                            : "pointer",
-                      }}
-                    >
-                      {reviewLoading ? t.sending : t.sendMessage}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
-
-          <aside style={styles.rightColumn}>
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{t.recommendationsTitle}</h2>
-
-              {directionalPrograms.length === 0 ? (
-                <div style={styles.placeholderBox}>{t.noRecommendations}</div>
-              ) : (
-                <div style={styles.recommendationList}>
-                  {directionalPrograms.map((item, index) => (
-                    <div key={`${item.label}-${index}`} style={styles.recommendationCard}>
-                      <div style={styles.recommendationTopRow}>
-                        <div>
-                          <div style={styles.recommendationCategory}>{item.category}</div>
-                          <div style={styles.recommendationLabel}>{item.label}</div>
+                <div style={styles.heroRightColumn}>
+                  <div style={styles.userBadge}>
+                    <div style={styles.userIdentityRow}>
+                      <div style={styles.userInitials}>{initials}</div>
+                      <div>
+                        <div style={styles.userBadgeTitle}>
+                          {t.signedInAs}: {activeUser.name}
                         </div>
-                        <span
-                          style={{
-                            ...styles.fitBadge,
-                            backgroundColor:
-                              item.fit === "Strong"
-                                ? "#DCFCE7"
-                                : item.fit === "Possible"
-                                ? "#DBEAFE"
-                                : "#FEF3C7",
-                            color:
-                              item.fit === "Strong"
-                                ? "#166534"
-                                : item.fit === "Possible"
-                                ? "#1D4ED8"
-                                : "#92400E",
-                          }}
-                        >
-                          {item.fit}
-                        </span>
+                        <div style={styles.userBadgeSubtext}>
+                          {t.roleLabel}: {activeUser.role} · {activeUser.email}
+                        </div>
                       </div>
-                      <div style={styles.recommendationReason}>{item.reason}</div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{t.actionsTitle}</h2>
-
-              <div style={styles.actionButtonColumn}>
-                <button
-                  type="button"
-                  onClick={() => sendSummaryEmail("ai")}
-                  disabled={summaryLoading}
-                  style={styles.primaryButton}
-                >
-                  {summaryLoading ? t.sendingSummary : t.generateEmailSummary}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => sendSummaryEmail("apply")}
-                  disabled={summaryLoading}
-                  style={styles.secondaryBlueButton}
-                >
-                  {t.triggerApply}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => sendSummaryEmail("schedule")}
-                  disabled={summaryLoading}
-                  style={styles.secondaryBlueButton}
-                >
-                  {t.triggerSchedule}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => sendSummaryEmail("contact")}
-                  disabled={summaryLoading}
-                  style={styles.secondaryBlueButton}
-                >
-                  {t.triggerContact}
-                </button>
-
-                <a href={APP_URL} target="_blank" rel="noreferrer" style={styles.linkActionPrimary}>
-                  {t.applyNow}
-                </a>
-
-                <a
-                  href={scheduleUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={styles.linkActionSecondary}
-                >
-                  {t.scheduleCall}
-                </a>
-
-                <a
-                  href={CONTACT_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={styles.linkActionOutline}
-                >
-                  {t.contactPage}
-                </a>
-
-                {summaryStatus ? <div style={styles.infoBox}>{summaryStatus}</div> : null}
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Workflow Accountability</h2>
-
-              <div style={styles.formGridSingle}>
-                <div>
-                  <label style={styles.label}>Send To</label>
-                  <input
-                    style={styles.input}
-                    value={workflowToName}
-                    onChange={(e) => setWorkflowToName(e.target.value)}
-                    placeholder="Processing Team"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>Recipient Email</label>
-                  <input
-                    style={styles.input}
-                    value={workflowToEmail}
-                    onChange={(e) => setWorkflowToEmail(e.target.value)}
-                    placeholder="myloan@beyondfinancing.com"
-                    type="email"
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>Workflow Note</label>
-                  <textarea
-                    style={styles.textarea}
-                    rows={4}
-                    value={workflowMessage}
-                    onChange={(e) => setWorkflowMessage(e.target.value)}
-                    placeholder="Enter the note, update request, condition reminder, file status question, or processing instruction."
-                  />
-                </div>
-              </div>
-
-              <div style={styles.buttonRow}>
-                <button
-                  type="button"
-                  onClick={sendWorkflowNote}
-                  disabled={workflowSending || !workflowMessage.trim()}
-                  style={{
-                    ...styles.primaryButton,
-                    opacity: workflowSending || !workflowMessage.trim() ? 0.7 : 1,
-                    cursor:
-                      workflowSending || !workflowMessage.trim()
-                        ? "not-allowed"
-                        : "pointer",
-                  }}
-                >
-                  {workflowSending ? "Sending Workflow Note..." : "Send Workflow Note"}
-                </button>
-              </div>
-
-              {workflowStatus ? <div style={styles.infoBox}>{workflowStatus}</div> : null}
-
-              <div style={{ marginTop: 18 }}>
-                <div style={styles.routeTitle}>Session Activity</div>
-
-                {workflowActivity.length === 0 ? (
-                  <div style={styles.placeholderBox}>
-                    No workflow notes have been sent in this session yet.
+                    <div style={styles.statusPill}>{t.accessStatus}</div>
                   </div>
-                ) : (
-                  <div style={styles.workflowList}>
-                    {workflowActivity.map((item) => (
-                      <div key={item.id} style={styles.workflowCard}>
-                        <div style={styles.workflowTopRow}>
-                          <div style={styles.workflowTitle}>
-                            {item.from_name || item.from_email} → {item.to_name || item.to_email}
-                          </div>
-                          <div style={styles.workflowStatusBadge}>{item.status}</div>
-                        </div>
-                        <div style={styles.workflowMeta}>
-                          Loan: {item.loan_id} · {formatWorkflowTime(item.created_at)}
-                        </div>
-                        <div style={styles.workflowMessage}>{item.message}</div>
-                      </div>
-                    ))}
+
+                  <div style={styles.heroPanel}>
+                    <div style={styles.heroPanelTitle}>{t.commandPurpose}</div>
+                    <div style={styles.heroPanelList}>
+                      {t.purposeItems.map((item) => (
+                        <div key={item}>• {item}</div>
+                      ))}
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
 
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{t.thinkingCardTitle}</h2>
-
-              <div style={styles.moduleList}>
-                <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>{t.thinking1Title}</div>
-                  <div style={styles.moduleText}>{t.thinking1Text}</div>
-                </div>
-
-                <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>{t.thinking2Title}</div>
-                  <div style={styles.moduleText}>{t.thinking2Text}</div>
-                </div>
-
-                <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>{t.thinking3Title}</div>
-                  <div style={styles.moduleText}>{t.thinking3Text}</div>
+                  <button type="button" onClick={handleSignOut} style={styles.signOutButton}>
+                    {t.signOut}
+                  </button>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <div style={styles.card}>
-              <div style={styles.footerNote}>{t.footerNote}</div>
-              <div style={styles.brandTag}>MultiLender Intelligence™</div>
-            </div>
-          </aside>
-        </div>
+            <section style={styles.card}>
+              <div style={styles.sectionEyebrow}>{t.moduleTitle}</div>
+
+              <div className="bf-module-grid" style={styles.moduleGrid}>
+                <div style={styles.moduleCard}>
+                  <div style={styles.moduleTitle}>{t.moduleOneTitle}</div>
+                  <div style={styles.moduleText}>{t.moduleOneText}</div>
+                  <a href="/borrower" style={styles.moduleAction}>
+                    {t.openBorrower}
+                  </a>
+                </div>
+
+                <div style={styles.moduleCard}>
+                  <div style={styles.moduleTitle}>{t.moduleTwoTitle}</div>
+                  <div style={styles.moduleText}>{t.moduleTwoText}</div>
+                  <a href="/workflow" style={styles.moduleActionAlt}>
+                    {t.openWorkflow}
+                  </a>
+                </div>
+
+                <div style={styles.moduleCard}>
+                  <div style={styles.moduleTitle}>{t.moduleThreeTitle}</div>
+                  <div style={styles.moduleText}>{t.moduleThreeText}</div>
+                  <div style={styles.moduleStaticTag}>Beyond Intelligence™</div>
+                </div>
+              </div>
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.sectionEyebrow}>{t.quickActions}</div>
+              <div style={styles.quickActionRow}>
+                <a href="/" style={styles.secondaryLinkButton}>
+                  {t.goHome}
+                </a>
+                <a href="/borrower" style={styles.primaryLinkButton}>
+                  {t.openBorrower}
+                </a>
+                <a href="/workflow" style={styles.secondaryLinkButton}>
+                  {t.openWorkflow}
+                </a>
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </main>
-  );
-}
-
-function MetricCard({ title, value }: { title: string; value: string }) {
-  return (
-    <div style={styles.metricCard}>
-      <div style={styles.metricTitle}>{title}</div>
-      <div style={styles.metricValue}>{value}</div>
-    </div>
   );
 }
 
@@ -1887,17 +353,14 @@ const responsiveCss = `
   }
 
   @media (max-width: 1080px) {
-    .bf-main-grid {
+    .bf-team-hero-grid,
+    .bf-module-grid {
       grid-template-columns: 1fr !important;
     }
   }
 
   @media (max-width: 760px) {
-    .bf-form-grid {
-      grid-template-columns: 1fr !important;
-    }
-
-    .bf-team-wrap {
+    .bf-wrap {
       padding: 18px 12px 32px !important;
     }
   }
@@ -1906,566 +369,257 @@ const responsiveCss = `
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
-    backgroundColor: "#F3F6FB",
+    background:
+      "radial-gradient(circle at top left, #f8fbff 0%, #f3f6fb 45%, #eef2f7 100%)",
     color: "#1F2937",
     fontFamily: "Inter, Arial, Helvetica, sans-serif",
   },
   wrap: {
     maxWidth: 1400,
     margin: "0 auto",
-    padding: "24px 18px 40px",
+    padding: "24px 18px 48px",
   },
   hero: {
     background: "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
-    borderRadius: 22,
-    padding: 26,
+    borderRadius: 30,
+    padding: 28,
     color: "#ffffff",
-    boxShadow: "0 12px 32px rgba(38,51,102,0.16)",
-    marginBottom: 22,
+    boxShadow: "0 18px 40px rgba(38,51,102,0.18)",
+    marginBottom: 20,
   },
-  eyebrow: {
-    fontSize: 12,
-    letterSpacing: 1.2,
+  heroGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.1fr 0.9fr",
+    gap: 22,
+    alignItems: "start",
+  },
+  heroRightColumn: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+  },
+  heroBadge: {
+    display: "inline-block",
+    fontSize: 13,
+    letterSpacing: 0.8,
     textTransform: "uppercase",
-    opacity: 0.92,
-    marginBottom: 8,
-    fontWeight: 700,
+    fontWeight: 900,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    padding: "10px 14px",
+    marginBottom: 18,
   },
   heroTitle: {
     margin: 0,
-    fontSize: 34,
-    lineHeight: 1.15,
-    fontWeight: 800,
+    fontWeight: 900,
+    fontSize: 52,
+    lineHeight: 0.98,
   },
   heroText: {
-    marginTop: 10,
+    marginTop: 18,
     marginBottom: 0,
-    maxWidth: 860,
-    lineHeight: 1.65,
-    color: "rgba(255,255,255,0.92)",
     fontSize: 16,
-  },
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 18,
-    alignItems: "flex-start",
-    flexWrap: "wrap",
-  },
-  topBarActions: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    minWidth: 300,
+    lineHeight: 1.75,
+    color: "rgba(255,255,255,0.95)",
+    maxWidth: 840,
   },
   userBadge: {
     backgroundColor: "rgba(255,255,255,0.12)",
     border: "1px solid rgba(255,255,255,0.22)",
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 24,
+    padding: 18,
+  },
+  userIdentityRow: {
+    display: "flex",
+    gap: 14,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  userInitials: {
+    width: 52,
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: 18,
   },
   userBadgeTitle: {
-    fontWeight: 700,
+    fontWeight: 900,
     fontSize: 15,
     marginBottom: 4,
+    color: "#ffffff",
   },
   userBadgeSubtext: {
     fontSize: 13,
     lineHeight: 1.5,
-    color: "rgba(255,255,255,0.9)",
+    color: "rgba(255,255,255,0.92)",
+  },
+  statusPill: {
+    display: "inline-block",
+    padding: "8px 12px",
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    fontWeight: 800,
+    fontSize: 12,
+    color: "#ffffff",
+  },
+  heroPanel: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 24,
+    padding: 18,
+  },
+  heroPanelTitle: {
+    fontSize: 14,
+    fontWeight: 900,
+    marginBottom: 14,
+    letterSpacing: 0.5,
+  },
+  heroPanelList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    lineHeight: 1.6,
+    color: "rgba(255,255,255,0.95)",
   },
   signOutButton: {
     border: "1px solid rgba(255,255,255,0.35)",
     backgroundColor: "rgba(255,255,255,0.1)",
     color: "#ffffff",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontWeight: 700,
+    borderRadius: 16,
+    padding: "14px 16px",
+    fontWeight: 900,
     cursor: "pointer",
+    fontSize: 15,
   },
   loginCard: {
     backgroundColor: "#ffffff",
-    borderRadius: 22,
+    borderRadius: 28,
     padding: 24,
-    boxShadow: "0 10px 26px rgba(15,23,42,0.06)",
-    maxWidth: 780,
-    margin: "0 auto",
-  },
-  mainGrid: {
-    display: "grid",
-    gridTemplateColumns: "1.15fr 0.85fr",
-    gap: 22,
-    alignItems: "start",
-  },
-  leftColumn: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 22,
-  },
-  rightColumn: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 22,
+    boxShadow: "0 12px 28px rgba(15,23,42,0.06)",
+    border: "1px solid #E5ECF5",
   },
   card: {
     backgroundColor: "#ffffff",
-    borderRadius: 22,
-    padding: 22,
-    boxShadow: "0 10px 26px rgba(15,23,42,0.06)",
+    borderRadius: 28,
+    padding: 24,
+    boxShadow: "0 12px 28px rgba(15,23,42,0.06)",
+    border: "1px solid #E5ECF5",
+    marginBottom: 18,
+  },
+  sectionEyebrow: {
+    fontSize: 13,
+    fontWeight: 900,
+    color: "#0284C7",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 14,
   },
   sectionTitle: {
     margin: 0,
-    marginBottom: 10,
-    color: "#263366",
-    fontSize: 24,
-    fontWeight: 800,
+    fontSize: 30,
+    lineHeight: 1.08,
+    color: "#2D3B78",
+    fontWeight: 900,
   },
   sectionText: {
-    margin: 0,
-    color: "#475569",
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  languageRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 16,
-    flexWrap: "wrap",
-    marginBottom: 8,
-  },
-  languageBox: {
-    minWidth: 180,
-  },
-  label: {
-    display: "block",
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#334155",
-    marginBottom: 8,
-  },
-  input: {
-    width: "100%",
-    borderRadius: 14,
-    border: "1px solid #CBD5E1",
-    padding: "12px 14px",
+    marginTop: 12,
+    marginBottom: 0,
+    color: "#526581",
     fontSize: 15,
-    outline: "none",
-    color: "#111827",
-    backgroundColor: "#ffffff",
+    lineHeight: 1.75,
+    maxWidth: 920,
   },
-  textarea: {
-    width: "100%",
-    borderRadius: 14,
-    border: "1px solid #CBD5E1",
-    padding: "12px 14px",
-    fontSize: 14,
-    outline: "none",
-    color: "#111827",
-    backgroundColor: "#ffffff",
-    resize: "vertical",
-  },
-  select: {
-    width: "100%",
-    minWidth: 160,
-    borderRadius: 14,
-    border: "1px solid #CBD5E1",
-    padding: "12px 14px",
-    fontSize: 14,
-    outline: "none",
-    color: "#111827",
-    backgroundColor: "#ffffff",
-  },
-  selectFull: {
-    width: "100%",
-    borderRadius: 14,
-    border: "1px solid #CBD5E1",
-    padding: "12px 14px",
-    fontSize: 14,
-    outline: "none",
-    color: "#111827",
-    backgroundColor: "#ffffff",
-  },
-  formGridSingle: {
+  moduleGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr",
+    gridTemplateColumns: "repeat(3, 1fr)",
     gap: 16,
-    marginTop: 10,
-  },
-  formGridTwo: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 16,
-  },
-  buttonRow: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-    marginTop: 18,
-  },
-  primaryButton: {
-    border: "none",
-    borderRadius: 14,
-    backgroundColor: "#263366",
-    color: "#ffffff",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-    boxShadow: "0 10px 20px rgba(38,51,102,0.15)",
-    cursor: "pointer",
-  },
-  secondaryButton: {
-    border: "1px solid #263366",
-    borderRadius: 14,
-    backgroundColor: "#ffffff",
-    color: "#263366",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-    cursor: "pointer",
-  },
-  secondaryBlueButton: {
-    border: "none",
-    borderRadius: 14,
-    backgroundColor: "#0096C7",
-    color: "#ffffff",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-    cursor: "pointer",
-  },
-  infoBox: {
-    marginTop: 14,
-    backgroundColor: "#F8FBFF",
-    border: "1px solid #DBEAFE",
-    color: "#1E3A8A",
-    borderRadius: 14,
-    padding: 14,
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  errorBox: {
-    marginTop: 14,
-    backgroundColor: "#FEF2F2",
-    border: "1px solid #FECACA",
-    color: "#991B1B",
-    borderRadius: 14,
-    padding: 14,
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  mutedHelpTitle: {
-    marginTop: 16,
-    fontWeight: 800,
-    color: "#263366",
-    fontSize: 14,
-  },
-  mutedHelpText: {
-    marginTop: 6,
-    color: "#64748B",
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  loginHintBox: {
-    marginTop: 18,
-    borderRadius: 16,
-    padding: 16,
-    backgroundColor: "#F8FAFC",
-    border: "1px solid #E2E8F0",
-  },
-  loginHintTitle: {
-    fontWeight: 800,
-    color: "#263366",
-    marginBottom: 6,
-    fontSize: 14,
-  },
-  loginHintText: {
-    color: "#475569",
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  routeBox: {
-    marginTop: 8,
-    borderRadius: 16,
-    backgroundColor: "#F8FBFF",
-    border: "1px solid #DBEAFE",
-    padding: 16,
-  },
-  routeTitle: {
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: "#64748B",
-    marginBottom: 6,
-    fontWeight: 700,
-  },
-  routeText: {
-    fontSize: 16,
-    color: "#111827",
-    fontWeight: 700,
-    lineHeight: 1.5,
-  },
-  metricsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14,
-    marginTop: 18,
-  },
-  metricCard: {
-    borderRadius: 16,
-    backgroundColor: "#F8FBFF",
-    border: "1px solid #DBEAFE",
-    padding: 16,
-  },
-  metricTitle: {
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: "#64748B",
-    marginBottom: 8,
-    fontWeight: 700,
-  },
-  metricValue: {
-    fontSize: 26,
-    fontWeight: 800,
-    color: "#111827",
-  },
-  placeholderBox: {
-    borderRadius: 16,
-    border: "1px dashed #CBD5E1",
-    backgroundColor: "#F8FAFC",
-    color: "#475569",
-    padding: 16,
-    lineHeight: 1.7,
-    fontSize: 14,
-  },
-  chatScroll: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    maxHeight: 500,
-    overflowY: "auto",
-    paddingRight: 4,
-    marginBottom: 16,
-  },
-  chatBubble: {
-    borderRadius: 16,
-    padding: 15,
-    whiteSpace: "pre-wrap",
-    fontSize: 14,
-    lineHeight: 1.7,
-  },
-  chatComposer: {
-    borderTop: "1px solid #E2E8F0",
-    paddingTop: 16,
-  },
-  recommendationList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 14,
-  },
-  workflowList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-  },
-  workflowCard: {
-    borderRadius: 16,
-    backgroundColor: "#F8FAFC",
-    border: "1px solid #E2E8F0",
-    padding: 14,
-  },
-  workflowTopRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  workflowTitle: {
-    fontSize: 14,
-    fontWeight: 800,
-    color: "#111827",
-  },
-  workflowStatusBadge: {
-    borderRadius: 999,
-    padding: "6px 10px",
-    fontSize: 12,
-    fontWeight: 800,
-    backgroundColor: "#DCFCE7",
-    color: "#166534",
-    textTransform: "capitalize",
-  },
-  workflowMeta: {
-    marginTop: 6,
-    fontSize: 12,
-    color: "#64748B",
-    lineHeight: 1.5,
-  },
-  workflowMessage: {
-    marginTop: 10,
-    fontSize: 14,
-    color: "#475569",
-    lineHeight: 1.7,
-    whiteSpace: "pre-wrap",
-  },
-  recommendationCard: {
-    borderRadius: 16,
-    backgroundColor: "#ffffff",
-    border: "1px solid #E2E8F0",
-    padding: 16,
-  },
-  recommendationTopRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    alignItems: "flex-start",
-  },
-  recommendationCategory: {
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: "#64748B",
-    marginBottom: 4,
-    fontWeight: 700,
-  },
-  recommendationLabel: {
-    fontSize: 17,
-    fontWeight: 800,
-    color: "#111827",
-  },
-  recommendationReason: {
-    marginTop: 10,
-    fontSize: 14,
-    lineHeight: 1.65,
-    color: "#475569",
-  },
-  fitBadge: {
-    borderRadius: 999,
-    padding: "7px 10px",
-    fontSize: 12,
-    fontWeight: 800,
-    whiteSpace: "nowrap",
-  },
-  actionButtonColumn: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-  },
-  linkActionPrimary: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 14,
-    backgroundColor: "#263366",
-    color: "#ffffff",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-  },
-  linkActionSecondary: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 14,
-    backgroundColor: "#0096C7",
-    color: "#ffffff",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-  },
-  linkActionOutline: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 14,
-    backgroundColor: "#ffffff",
-    border: "1px solid #263366",
-    color: "#263366",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-  },
-  moduleList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 14,
   },
   moduleCard: {
-    borderRadius: 16,
-    backgroundColor: "#F8FAFC",
-    border: "1px solid #E2E8F0",
-    padding: 16,
+    borderRadius: 24,
+    border: "1px solid #D9E4F1",
+    backgroundColor: "#F9FBFE",
+    padding: 20,
+    display: "flex",
+    flexDirection: "column",
   },
   moduleTitle: {
-    color: "#263366",
-    fontSize: 20,
-    fontWeight: 800,
-    marginBottom: 8,
+    fontSize: 24,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 10,
+    lineHeight: 1.1,
   },
   moduleText: {
-    color: "#475569",
-    lineHeight: 1.7,
-    fontSize: 14,
-  },
-  footerNote: {
-    color: "#475569",
-    lineHeight: 1.7,
-    fontSize: 14,
-  },
-  brandTag: {
-    marginTop: 14,
-    display: "inline-block",
-    backgroundColor: "#EFF6FF",
-    color: "#1D4ED8",
-    border: "1px solid #BFDBFE",
-    borderRadius: 999,
-    padding: "8px 12px",
-    fontWeight: 800,
-    fontSize: 12,
-    letterSpacing: 0.4,
-  },
-};
-
-const navStyles: Record<string, React.CSSProperties> = {
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 18,
-    padding: "4px 2px",
-    flexWrap: "wrap",
-  },
-  brand: {
-    textDecoration: "none",
-    color: "#263366",
+    color: "#526581",
     fontSize: 15,
-    fontWeight: 800,
-    letterSpacing: 0.2,
+    lineHeight: 1.7,
+    marginBottom: 18,
   },
-  topBarLinks: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-  topBarLink: {
+  moduleAction: {
+    marginTop: "auto",
     textDecoration: "none",
-    color: "#263366",
-    background: "#F7F9FD",
-    border: "1px solid #C9D5EA",
-    borderRadius: 999,
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 700,
-    lineHeight: 1,
-  },
-  topBarLinkActive: {
-    textDecoration: "none",
+    textAlign: "center",
+    borderRadius: 16,
+    backgroundColor: "#263366",
     color: "#ffffff",
-    background: "#263366",
+    padding: "14px 18px",
+    fontWeight: 900,
+    fontSize: 14,
+  },
+  moduleActionAlt: {
+    marginTop: "auto",
+    textDecoration: "none",
+    textAlign: "center",
+    borderRadius: 16,
+    backgroundColor: "#0096C7",
+    color: "#ffffff",
+    padding: "14px 18px",
+    fontWeight: 900,
+    fontSize: 14,
+  },
+  moduleStaticTag: {
+    marginTop: "auto",
+    display: "inline-block",
+    textAlign: "center",
+    borderRadius: 16,
+    backgroundColor: "#EFF6FF",
+    border: "1px solid #BFDBFE",
+    color: "#1D4ED8",
+    padding: "14px 18px",
+    fontWeight: 900,
+    fontSize: 14,
+  },
+  quickActionRow: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginTop: 18,
+  },
+  primaryLinkButton: {
+    textDecoration: "none",
+    textAlign: "center",
+    borderRadius: 16,
+    backgroundColor: "#263366",
+    color: "#ffffff",
+    padding: "14px 18px",
+    fontWeight: 900,
+    fontSize: 14,
+  },
+  secondaryLinkButton: {
+    textDecoration: "none",
+    textAlign: "center",
+    borderRadius: 16,
     border: "1px solid #263366",
-    borderRadius: 999,
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 700,
-    lineHeight: 1,
+    backgroundColor: "#ffffff",
+    color: "#263366",
+    padding: "14px 18px",
+    fontWeight: 900,
+    fontSize: 14,
   },
 };
