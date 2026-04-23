@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AddressAutofill } from "@mapbox/search-js-react";
 
 type TeamRole =
   | "Loan Officer"
@@ -106,6 +107,9 @@ const PROCESSORS: ProcessorOption[] = [
   },
 ];
 
+const MAPBOX_ACCESS_TOKEN =
+  process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || "";
+
 function formatCurrency(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "$0";
   return new Intl.NumberFormat("en-US", {
@@ -113,17 +117,6 @@ function formatCurrency(value: number) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function formatTargetClose(value: string) {
-  if (!value) return "No date set";
-  const isoMatch = /^\d{4}-\d{2}-\d{2}$/.test(value);
-  if (!isoMatch) return value;
-
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return new Intl.DateTimeFormat("en-US").format(date);
 }
 
 function formatPhoneDisplay(value: string) {
@@ -276,6 +269,8 @@ export default function WorkflowPage() {
   const canManageProcessing =
     activeUser?.role === "Production Manager" ||
     activeUser?.name === "Amarilis Santos";
+
+  const hasMapboxToken = Boolean(MAPBOX_ACCESS_TOKEN);
 
   const handleSignOut = async () => {
     await fetch("/api/team-auth/logout", { method: "POST" });
@@ -508,7 +503,9 @@ export default function WorkflowPage() {
       setCreateBuyerAgentName("");
       setCreateBuyerAgentEmail("");
       setCreateBuyerAgentPhone("");
-      setCreateStatusMessage("Workflow file created successfully and notifications were triggered where agent contact data was provided.");
+      setCreateStatusMessage(
+        "Workflow file created successfully and notifications were triggered where agent contact data was provided."
+      );
 
       await loadFiles();
     } catch (err) {
@@ -810,193 +807,227 @@ export default function WorkflowPage() {
               <div style={styles.sectionEyebrow}>ADD LOAN APP</div>
               <h2 style={styles.sectionTitle}>Create workflow file</h2>
 
-              <label style={styles.label}>Loan number</label>
-              <input
-                value={createLoanNumber}
-                onChange={(e) => setCreateLoanNumber(e.target.value)}
-                style={styles.input}
-                placeholder="Example: 2026-00124 or ARIVE loan number"
-              />
-
-              <label style={styles.label}>Borrower full name</label>
-              <input
-                value={createBorrowerName}
-                onChange={(e) => setCreateBorrowerName(e.target.value)}
-                style={styles.input}
-                placeholder="Borrower full name"
-              />
-
-              <label style={styles.label}>Property address</label>
-              <input
-                value={createPropertyAddress}
-                onChange={(e) => setCreatePropertyAddress(e.target.value)}
-                style={styles.input}
-                placeholder="123 Main St, City, ST ZIP"
-              />
-
-              <label style={styles.label}>Loan purpose</label>
-              <select
-                value={createPurpose}
-                onChange={(e) => setCreatePurpose(e.target.value)}
-                style={styles.input}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void createWorkflowFile();
+                }}
               >
-                <option value="Purchase">Purchase</option>
-                <option value="Rate/Term Refinance">Rate/Term Refinance</option>
-                <option value="Cash-Out Refinance">Cash-Out Refinance</option>
-                <option value="HELOC">HELOC</option>
-                <option value="DSCR">DSCR</option>
-              </select>
+                <label style={styles.label}>Loan number</label>
+                <input
+                  value={createLoanNumber}
+                  onChange={(e) => setCreateLoanNumber(e.target.value)}
+                  style={styles.input}
+                  placeholder="Example: 2026-00124 or ARIVE loan number"
+                />
 
-              <label style={styles.label}>Amount</label>
-              <input
-                value={createAmount}
-                onChange={(e) => setCreateAmount(e.target.value)}
-                style={styles.input}
-                placeholder="612000"
-              />
+                <label style={styles.label}>Borrower full name</label>
+                <input
+                  value={createBorrowerName}
+                  onChange={(e) => setCreateBorrowerName(e.target.value)}
+                  style={styles.input}
+                  placeholder="Borrower full name"
+                />
 
-              <label style={styles.label}>Loan officer</label>
-              <input
-                value={createLoanOfficer}
-                onChange={(e) => setCreateLoanOfficer(e.target.value)}
-                style={styles.input}
-                placeholder="Loan officer name"
-              />
+                <label style={styles.label}>Property address</label>
+                {hasMapboxToken ? (
+                  <AddressAutofill accessToken={MAPBOX_ACCESS_TOKEN}>
+                    <input
+                      value={createPropertyAddress}
+                      onChange={(e) => setCreatePropertyAddress(e.target.value)}
+                      style={styles.input}
+                      placeholder="Start typing address"
+                      autoComplete="street-address"
+                    />
+                  </AddressAutofill>
+                ) : (
+                  <input
+                    value={createPropertyAddress}
+                    onChange={(e) => setCreatePropertyAddress(e.target.value)}
+                    style={styles.input}
+                    placeholder="123 Main St, City, ST ZIP"
+                    autoComplete="street-address"
+                  />
+                )}
 
-              <label style={styles.label}>Requested processor note to Production Manager</label>
-              <textarea
-                value={createRequestedProcessorNote}
-                onChange={(e) => setCreateRequestedProcessorNote(e.target.value)}
-                rows={3}
-                style={styles.textarea}
-                placeholder="Example: If possible, I would like Bia Marques on this file because of borrower language needs."
-              />
+                {!hasMapboxToken ? (
+                  <div style={styles.infoBox}>
+                    Address autocomplete is not active because
+                    NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN is not set.
+                  </div>
+                ) : null}
 
-              <label style={styles.label}>Assign processor</label>
-              <select
-                value={createProcessor}
-                onChange={(e) => setCreateProcessor(e.target.value)}
-                style={styles.input}
-                disabled={!canManageProcessing}
-              >
-                <option value="Unassigned">Unassigned</option>
-                {PROCESSORS.map((processor) => (
-                  <option key={processor.id} value={processor.name}>
-                    {processor.name}
-                  </option>
-                ))}
-              </select>
+                <label style={styles.label}>Loan purpose</label>
+                <select
+                  value={createPurpose}
+                  onChange={(e) => setCreatePurpose(e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="Purchase">Purchase</option>
+                  <option value="Rate/Term Refinance">Rate/Term Refinance</option>
+                  <option value="Cash-Out Refinance">Cash-Out Refinance</option>
+                  <option value="HELOC">HELOC</option>
+                  <option value="DSCR">DSCR</option>
+                </select>
 
-              {!canManageProcessing ? (
-                <div style={styles.infoBox}>
-                  Processor assignment is controlled by the Production Manager.
-                  Loan Officers may leave a requested processor note above.
+                <label style={styles.label}>Amount</label>
+                <input
+                  value={createAmount}
+                  onChange={(e) => setCreateAmount(e.target.value)}
+                  style={styles.input}
+                  placeholder="612000"
+                />
+
+                <label style={styles.label}>Loan officer</label>
+                <input
+                  value={createLoanOfficer}
+                  onChange={(e) => setCreateLoanOfficer(e.target.value)}
+                  style={styles.input}
+                  placeholder="Loan officer name"
+                />
+
+                <label style={styles.label}>Requested processor note to Production Manager</label>
+                <textarea
+                  value={createRequestedProcessorNote}
+                  onChange={(e) => setCreateRequestedProcessorNote(e.target.value)}
+                  rows={3}
+                  style={styles.textarea}
+                  placeholder="Example: If possible, I would like Bia Marques on this file because of borrower language needs."
+                />
+
+                <label style={styles.label}>Assign processor</label>
+                <select
+                  value={createProcessor}
+                  onChange={(e) => setCreateProcessor(e.target.value)}
+                  style={styles.input}
+                  disabled={!canManageProcessing}
+                >
+                  <option value="Unassigned">Unassigned</option>
+                  {PROCESSORS.map((processor) => (
+                    <option key={processor.id} value={processor.name}>
+                      {processor.name}
+                    </option>
+                  ))}
+                </select>
+
+                {!canManageProcessing ? (
+                  <div style={styles.infoBox}>
+                    Processor assignment is controlled by the Production Manager.
+                    Loan Officers may leave a requested processor note above.
+                  </div>
+                ) : null}
+
+                <label style={styles.label}>Target close date</label>
+                <input
+                  type="date"
+                  value={createTargetClose}
+                  onChange={(e) => setCreateTargetClose(e.target.value)}
+                  style={styles.input}
+                />
+
+                <label style={styles.label}>Urgency</label>
+                <select
+                  value={createUrgency}
+                  onChange={(e) =>
+                    setCreateUrgency(e.target.value as WorkflowUrgency)
+                  }
+                  style={styles.input}
+                >
+                  <option value="Standard">Standard</option>
+                  <option value="Priority">Priority</option>
+                  <option value="Rush">Rush</option>
+                </select>
+
+                <label style={styles.label}>Occupancy</label>
+                <input
+                  value={createOccupancy}
+                  onChange={(e) => setCreateOccupancy(e.target.value)}
+                  style={styles.input}
+                  placeholder="Primary Residence"
+                />
+
+                <label style={styles.label}>Current blocker</label>
+                <textarea
+                  value={createBlocker}
+                  onChange={(e) => setCreateBlocker(e.target.value)}
+                  rows={3}
+                  style={styles.textarea}
+                />
+
+                <div style={styles.agentSectionCard}>
+                  <div style={styles.agentSectionTitle}>Listing Agent</div>
+
+                  <label style={styles.label}>Listing agent name</label>
+                  <input
+                    value={createListingAgentName}
+                    onChange={(e) => setCreateListingAgentName(e.target.value)}
+                    style={styles.input}
+                    placeholder="Listing agent name"
+                  />
+
+                  <label style={styles.label}>Listing agent email</label>
+                  <input
+                    value={createListingAgentEmail}
+                    onChange={(e) => setCreateListingAgentEmail(e.target.value)}
+                    style={styles.input}
+                    placeholder="listing.agent@email.com"
+                    type="email"
+                  />
+
+                  <label style={styles.label}>Listing agent phone</label>
+                  <input
+                    value={createListingAgentPhone}
+                    onChange={(e) =>
+                      setCreateListingAgentPhone(
+                        formatPhoneDisplay(e.target.value)
+                      )
+                    }
+                    style={styles.input}
+                    placeholder="617.555.1212"
+                  />
                 </div>
-              ) : null}
 
-              <label style={styles.label}>Target close date</label>
-              <input
-                type="date"
-                value={createTargetClose}
-                onChange={(e) => setCreateTargetClose(e.target.value)}
-                style={styles.input}
-              />
+                <div style={styles.agentSectionCard}>
+                  <div style={styles.agentSectionTitle}>Buyer Agent</div>
 
-              <label style={styles.label}>Urgency</label>
-              <select
-                value={createUrgency}
-                onChange={(e) =>
-                  setCreateUrgency(e.target.value as WorkflowUrgency)
-                }
-                style={styles.input}
-              >
-                <option value="Standard">Standard</option>
-                <option value="Priority">Priority</option>
-                <option value="Rush">Rush</option>
-              </select>
+                  <label style={styles.label}>Buyer agent name</label>
+                  <input
+                    value={createBuyerAgentName}
+                    onChange={(e) => setCreateBuyerAgentName(e.target.value)}
+                    style={styles.input}
+                    placeholder="Buyer agent name"
+                  />
 
-              <label style={styles.label}>Occupancy</label>
-              <input
-                value={createOccupancy}
-                onChange={(e) => setCreateOccupancy(e.target.value)}
-                style={styles.input}
-                placeholder="Primary Residence"
-              />
+                  <label style={styles.label}>Buyer agent email</label>
+                  <input
+                    value={createBuyerAgentEmail}
+                    onChange={(e) => setCreateBuyerAgentEmail(e.target.value)}
+                    style={styles.input}
+                    placeholder="buyer.agent@email.com"
+                    type="email"
+                  />
 
-              <label style={styles.label}>Current blocker</label>
-              <textarea
-                value={createBlocker}
-                onChange={(e) => setCreateBlocker(e.target.value)}
-                rows={3}
-                style={styles.textarea}
-              />
+                  <label style={styles.label}>Buyer agent phone</label>
+                  <input
+                    value={createBuyerAgentPhone}
+                    onChange={(e) =>
+                      setCreateBuyerAgentPhone(
+                        formatPhoneDisplay(e.target.value)
+                      )
+                    }
+                    style={styles.input}
+                    placeholder="617.555.1212"
+                  />
+                </div>
 
-              <div style={styles.agentSectionCard}>
-                <div style={styles.agentSectionTitle}>Listing Agent</div>
-
-                <label style={styles.label}>Listing agent name</label>
-                <input
-                  value={createListingAgentName}
-                  onChange={(e) => setCreateListingAgentName(e.target.value)}
-                  style={styles.input}
-                  placeholder="Listing agent name"
-                />
-
-                <label style={styles.label}>Listing agent email</label>
-                <input
-                  value={createListingAgentEmail}
-                  onChange={(e) => setCreateListingAgentEmail(e.target.value)}
-                  style={styles.input}
-                  placeholder="listing.agent@email.com"
-                  type="email"
-                />
-
-                <label style={styles.label}>Listing agent phone</label>
-                <input
-                  value={createListingAgentPhone}
-                  onChange={(e) => setCreateListingAgentPhone(formatPhoneDisplay(e.target.value))}
-                  style={styles.input}
-                  placeholder="617.555.1212"
-                />
-              </div>
-
-              <div style={styles.agentSectionCard}>
-                <div style={styles.agentSectionTitle}>Buyer Agent</div>
-
-                <label style={styles.label}>Buyer agent name</label>
-                <input
-                  value={createBuyerAgentName}
-                  onChange={(e) => setCreateBuyerAgentName(e.target.value)}
-                  style={styles.input}
-                  placeholder="Buyer agent name"
-                />
-
-                <label style={styles.label}>Buyer agent email</label>
-                <input
-                  value={createBuyerAgentEmail}
-                  onChange={(e) => setCreateBuyerAgentEmail(e.target.value)}
-                  style={styles.input}
-                  placeholder="buyer.agent@email.com"
-                  type="email"
-                />
-
-                <label style={styles.label}>Buyer agent phone</label>
-                <input
-                  value={createBuyerAgentPhone}
-                  onChange={(e) => setCreateBuyerAgentPhone(formatPhoneDisplay(e.target.value))}
-                  style={styles.input}
-                  placeholder="617.555.1212"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={createWorkflowFile}
-                style={styles.commandButton}
-                disabled={isCreatingFile}
-              >
-                {isCreatingFile ? "Creating File..." : "Add to Workflow"}
-              </button>
+                <button
+                  type="submit"
+                  style={styles.commandButton}
+                  disabled={isCreatingFile}
+                >
+                  {isCreatingFile ? "Creating File..." : "Add to Workflow"}
+                </button>
+              </form>
 
               {createStatusMessage ? (
                 <div style={styles.infoBox}>{createStatusMessage}</div>
