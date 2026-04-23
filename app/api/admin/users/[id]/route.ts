@@ -34,19 +34,23 @@ async function ensureAdminAccess() {
   }
 }
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+export async function PATCH(req: Request, context: RouteContext) {
   const isAdmin = await ensureAdminAccess();
 
   if (!isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const id = normalizeString(params.id);
+  const { id } = await context.params;
+  const normalizedId = normalizeString(id);
 
-  if (!id) {
+  if (!normalizedId) {
     return NextResponse.json({ error: "Missing user id." }, { status: 400 });
   }
 
@@ -61,13 +65,18 @@ export async function PATCH(
   const updatePayload: Record<string, unknown> = {};
 
   if ("name" in body) updatePayload.name = normalizeString(body.name);
-  if ("email" in body)
+  if ("email" in body) {
     updatePayload.email = normalizeString(body.email).toLowerCase();
+  }
   if ("nmls" in body) updatePayload.nmls = normalizeString(body.nmls);
   if ("role" in body) updatePayload.role = normalizeString(body.role);
-  if ("calendly" in body) updatePayload.calendly = normalizeString(body.calendly);
+  if ("calendly" in body) {
+    updatePayload.calendly = normalizeString(body.calendly);
+  }
   if ("assistantEmail" in body) {
-    updatePayload.assistant_email = normalizeString(body.assistantEmail).toLowerCase();
+    updatePayload.assistant_email = normalizeString(
+      body.assistantEmail
+    ).toLowerCase();
   }
   if ("phone" in body) updatePayload.phone = normalizeString(body.phone);
   if ("isActive" in body) updatePayload.is_active = Boolean(body.isActive);
@@ -75,7 +84,7 @@ export async function PATCH(
   const { data, error } = await supabaseAdmin
     .from("team_users")
     .update(updatePayload)
-    .eq("id", id)
+    .eq("id", normalizedId)
     .select("*")
     .single();
 
@@ -86,26 +95,24 @@ export async function PATCH(
   return NextResponse.json({ success: true, user: data });
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_req: Request, context: RouteContext) {
   const isAdmin = await ensureAdminAccess();
 
   if (!isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const id = normalizeString(params.id);
+  const { id } = await context.params;
+  const normalizedId = normalizeString(id);
 
-  if (!id) {
+  if (!normalizedId) {
     return NextResponse.json({ error: "Missing user id." }, { status: 400 });
   }
 
   const { error } = await supabaseAdmin
     .from("team_users")
     .delete()
-    .eq("id", id);
+    .eq("id", normalizedId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
