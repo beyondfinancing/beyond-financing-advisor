@@ -5,6 +5,7 @@ import React from "react";
 import {
   HeaderVariant,
   SITE_HEADER_COPY,
+  SiteHeaderCopy,
   SiteLanguage,
 } from "./site-header-translations";
 
@@ -19,10 +20,7 @@ type NavItem = {
   label: string;
 };
 
-function getNavItems(
-  variant: HeaderVariant,
-  copy: (typeof SITE_HEADER_COPY)["en"]
-): NavItem[] {
+function getNavItems(variant: HeaderVariant, copy: SiteHeaderCopy): NavItem[] {
   switch (variant) {
     case "borrower":
       return [
