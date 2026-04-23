@@ -25,25 +25,42 @@ function getNavItems(
 ): NavItem[] {
   switch (variant) {
     case "borrower":
-      return [{ href: "/", label: copy.home }];
+      return [
+        { href: "/", label: copy.home },
+        { href: "/admin", label: copy.admin },
+      ];
+
     case "team":
       return [
         { href: "/", label: copy.home },
         { href: "/borrower", label: copy.borrower },
         { href: "/workflow", label: copy.workflow },
+        { href: "/admin", label: copy.admin },
       ];
+
     case "workflow":
       return [
         { href: "/", label: copy.home },
         { href: "/borrower", label: copy.borrower },
         { href: "/team", label: copy.team },
+        { href: "/admin", label: copy.admin },
       ];
+
+    case "admin":
+      return [
+        { href: "/", label: copy.home },
+        { href: "/borrower", label: copy.borrower },
+        { href: "/team", label: copy.team },
+        { href: "/workflow", label: copy.workflow },
+      ];
+
     case "home":
     default:
       return [
         { href: "/borrower", label: copy.borrower },
         { href: "/team", label: copy.team },
         { href: "/workflow", label: copy.workflow },
+        { href: "/admin", label: copy.admin },
       ];
   }
 }
@@ -65,12 +82,16 @@ export default function SiteHeader({
       <div
         style={{
           ...styles.rightGroup,
-          minWidth: variant === "borrower" ? 290 : 520,
+          minWidth: variant === "borrower" ? 430 : 620,
         }}
       >
         <div style={styles.navLinks}>
           {navItems.map((item) => (
-            <Link key={`${variant}-${item.href}`} href={item.href} style={styles.navLink}>
+            <Link
+              key={`${variant}-${item.href}`}
+              href={item.href}
+              style={styles.navLink}
+            >
               {item.label}
             </Link>
           ))}
