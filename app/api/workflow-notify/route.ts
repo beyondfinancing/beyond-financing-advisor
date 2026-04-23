@@ -310,20 +310,28 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const recipients: NotificationRecipient[] = [
-      {
-        role: "listing_agent",
-        name: String(file.listing_agent_name || "").trim(),
-        email: String(file.listing_agent_email || "").trim(),
-        phone: normalizePhone(String(file.listing_agent_phone || "")),
-      },
-      {
-        role: "buyer_agent",
-        name: String(file.buyer_agent_name || "").trim(),
-        email: String(file.buyer_agent_email || "").trim(),
-        phone: normalizePhone(String(file.buyer_agent_phone || "")),
-      },
-    ].filter((item) => item.email || item.phone);
+    const rawRecipients: NotificationRecipient[] = [
+  {
+    role: "listing_agent",
+    name: String(file.listing_agent_name || "").trim(),
+    email: String(file.listing_agent_email || "").trim(),
+    phone: normalizePhone(String(file.listing_agent_phone || "")),
+  },
+  {
+    role: "buyer_agent",
+    name: String(file.buyer_agent_name || "").trim(),
+    email: String(file.buyer_agent_email || "").trim(),
+    phone: normalizePhone(String(file.buyer_agent_phone || "")),
+  },
+];
+
+const recipients: NotificationRecipient[] = rawRecipients.filter(
+  (item): item is NotificationRecipient => Boolean(item.email || item.phone)
+);
+
+const recipients = rawRecipients.filter(
+  (item) => Boolean(item.email || item.phone)
+);
 
     if (recipients.length === 0) {
       if (status === "closed") {
