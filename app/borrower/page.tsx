@@ -241,8 +241,8 @@ function mapUserToOfficer(user: RawUserRecord): LoanOfficerRecord | null {
     nmls: String(user.nmls || "").trim(),
     email,
     assistantEmail: String(user.assistantemail || "").trim(),
-    mobile: String(user.mobile || "").trim(),
     assistantMobile: String(user.assistantmobile || "").trim(),
+    mobile: String(user.mobile || "").trim(),
     applyUrl: String(user.apply_url || "").trim() || APPLY_NOW_URL,
     scheduleUrl: String(user.schedule_url || "").trim() || DEFAULT_SCHEDULE_URL,
     companyName: String(user.company_name || "").trim(),
@@ -887,7 +887,7 @@ Keep the response practical and professional.`,
     return response.json().catch(() => null);
   };
 
-  const handleAction = async (
+  const triggerSummaryAndRedirect = async (
     trigger: SummaryTrigger,
     action: "apply" | "schedule" | "email" | "call"
   ) => {
@@ -1493,7 +1493,7 @@ Keep the response practical and professional.`,
                 <div style={styles.actionStack}>
                   <button
                     type="button"
-                    onClick={() => handleAction("apply", "apply")}
+                    onClick={() => triggerSummaryAndRedirect("apply", "apply")}
                     disabled={actionLoading || !conversationReady}
                     style={{
                       ...styles.actionPrimary,
@@ -1509,7 +1509,9 @@ Keep the response practical and professional.`,
 
                   <button
                     type="button"
-                    onClick={() => handleAction("schedule", "schedule")}
+                    onClick={() =>
+                      triggerSummaryAndRedirect("schedule", "schedule")
+                    }
                     disabled={actionLoading || !conversationReady}
                     style={{
                       ...styles.actionPrimary,
@@ -1525,7 +1527,7 @@ Keep the response practical and professional.`,
 
                   <button
                     type="button"
-                    onClick={() => handleAction("contact", "email")}
+                    onClick={() => triggerSummaryAndRedirect("contact", "email")}
                     disabled={actionLoading || !conversationReady}
                     style={{
                       ...styles.actionOutline,
@@ -1541,7 +1543,7 @@ Keep the response practical and professional.`,
 
                   <button
                     type="button"
-                    onClick={() => handleAction("contact", "call")}
+                    onClick={() => triggerSummaryAndRedirect("contact", "call")}
                     disabled={actionLoading || !conversationReady}
                     style={{
                       ...styles.actionOutline,
