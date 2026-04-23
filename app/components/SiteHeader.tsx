@@ -68,32 +68,32 @@ export default function SiteHeader({
           minWidth: variant === "borrower" ? 290 : 520,
         }}
       >
-        <div style={styles.languageWrap}>
-          <label htmlFor="site-language" style={styles.screenReaderOnly}>
-            {copy.language}
-          </label>
-
-          <div style={styles.selectPill}>
-            <select
-              id="site-language"
-              value={language}
-              onChange={(e) => onLanguageChange(e.target.value as SiteLanguage)}
-              style={styles.select}
-              aria-label={copy.language}
-            >
-              <option value="en">{copy.english}</option>
-              <option value="pt">{copy.portuguese}</option>
-              <option value="es">{copy.spanish}</option>
-            </select>
-          </div>
-        </div>
-
         <div style={styles.navLinks}>
           {navItems.map((item) => (
             <Link key={`${variant}-${item.href}`} href={item.href} style={styles.navLink}>
               {item.label}
             </Link>
           ))}
+
+          <div style={styles.languageWrap}>
+            <label htmlFor="site-language" style={styles.screenReaderOnly}>
+              {copy.language}
+            </label>
+
+            <div style={styles.selectPill}>
+              <select
+                id="site-language"
+                value={language}
+                onChange={(e) => onLanguageChange(e.target.value as SiteLanguage)}
+                style={styles.select}
+                aria-label={copy.language}
+              >
+                <option value="en">{copy.english}</option>
+                <option value="pt">{copy.portuguese}</option>
+                <option value="es">{copy.spanish}</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
     </nav>
@@ -134,6 +134,22 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
     justifyContent: "flex-end",
   },
+  navLinks: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    alignItems: "center",
+  },
+  navLink: {
+    ...pillBase,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
+    padding: "0 14px",
+    whiteSpace: "nowrap",
+  },
   languageWrap: {
     display: "flex",
     alignItems: "center",
@@ -162,21 +178,6 @@ const styles: Record<string, React.CSSProperties> = {
     height: 42,
     cursor: "pointer",
     paddingRight: 18,
-  },
-  navLinks: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
-  },
-  navLink: {
-    ...pillBase,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    textDecoration: "none",
-    padding: "0 14px",
-    whiteSpace: "nowrap",
   },
   screenReaderOnly: {
     position: "absolute",
