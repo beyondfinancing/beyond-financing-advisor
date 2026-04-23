@@ -37,6 +37,25 @@ function normalizeUrgency(value: unknown): WorkflowUrgency {
     : "Priority";
 }
 
+async function triggerNotification(origin: string, workflowFileId: string, eventType: "created" | "status_change") {
+  try {
+    const response = await fetch(`${origin}/api/workflow-notify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workflowFileId,
+        eventType,
+      }),
+    });
+
+    return response.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
 export async function GET() {
   try {
     const { data, error } = await supabaseAdmin
@@ -70,7 +89,6 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-
     const action = String(body?.action ?? "");
 
     if (action !== "create_file") {
@@ -93,6 +111,14 @@ export async function POST(request: NextRequest) {
     ).trim();
     const author = String(body?.author ?? "Team User").trim();
     const role = String(body?.role ?? "Professional").trim();
+
+    const propertyAddress = String(body?.propertyAddress ?? "").trim();
+    const listingAgentName = String(body?.listingAgentName ?? "").trim();
+    const listingAgentEmail = String(body?.listingAgentEmail ?? "").trim();
+    const listingAgentPhone = String(body?.listingAgentPhone ?? "").trim();
+    const buyerAgentName = String(body?.buyerAgentName ?? "").trim();
+    const buyerAgentEmail = String(body?.buyerAgentEmail ?? "").trim();
+    const buyerAgentPhone = String(body?.buyerAgentPhone ?? "").trim();
 
     const status = normalizeStatus(body?.status ?? "new_scenario");
     const urgency = normalizeUrgency(body?.urgency ?? "Priority");
@@ -120,6 +146,13 @@ export async function POST(request: NextRequest) {
     if (!loanOfficer) {
       return NextResponse.json(
         { success: false, error: "Loan officer is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!propertyAddress) {
+      return NextResponse.json(
+        { success: false, error: "Property address is required." },
         { status: 400 }
       );
     }
@@ -176,6 +209,15 @@ export async function POST(request: NextRequest) {
       target_close: targetClose,
       occupancy,
       blocker,
+      property_address: propertyAddress,
+      listing_agent_name: listingAgentName || null,
+      listing_agent_email: listingAgentEmail || null,
+      listing_agent_phone: listingAgentPhone || null,
+      buyer_agent_name: buyerAgentName || null,
+      buyer_agent_email: buyerAgentEmail || null,
+      buyer_agent_phone: buyerAgentPhone || null,
+      notification_active: true,
+      final_notification_sent: false,
       next_internal_action:
         processor && processor !== "Unassigned"
           ? "Processor to review file and issue initial checklist."
@@ -201,7 +243,7 @@ export async function POST(request: NextRequest) {
       workflow_file_id: insertedFile.id,
       author,
       role,
-      text: `${borrowerName} added to Workflow Intelligence.`,
+      text: `${borrowerName} added to Workflow Intelligence for ${propertyAddress}.`,
     });
 
     if (feedError) {
@@ -214,9 +256,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const notifyResult = await triggerNotification(
+      request.nextUrl.origin,
+      insertedFile.id,
+      "created"
+    );
+
     return NextResponse.json({
       success: true,
       file: insertedFile,
+      notifyResult,
     });
   } catch (error) {
     return NextResponse.json(
