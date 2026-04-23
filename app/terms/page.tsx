@@ -5,8 +5,11 @@ export default function TermsPage() {
         <h1 style={styles.title}>Terms and Conditions</h1>
 
         <p style={styles.text}>
-          These Terms govern your use of Beyond Intelligence™, an AI-powered
-          mortgage advisory system operated by Beyond Financing, Inc.
+          These Terms govern your use of Beyond Intelligence™, an AI-powered mortgage intelligence and educational platform operated by Beyond Intelligence, LLC.
+Beyond Intelligence™ provides general information and scenario-based insights to help you better understand mortgage options. It does not provide mortgage advice or lending decisions. All guidance is subject to review and confirmation by a licensed Mortgage Loan Originator.
+Use of this system does not create a client, advisory, or fiduciary relationship.
+AI-powered mortgage intelligence supervised by licensed professionals
+
         </p>
 
         <h2 style={styles.heading}>Service Description</h2>
