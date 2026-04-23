@@ -74,7 +74,10 @@ function normalizePhone(value: string) {
   return `+${digits}`;
 }
 
-function getStatusDisplay(status: WorkflowStatus, eventType: NotificationEventType) {
+function getStatusDisplay(
+  status: WorkflowStatus,
+  eventType: NotificationEventType
+) {
   if (eventType === "created") {
     return "Loan Registered";
   }
@@ -311,27 +314,23 @@ export async function POST(request: NextRequest) {
     }
 
     const rawRecipients: NotificationRecipient[] = [
-  {
-    role: "listing_agent",
-    name: String(file.listing_agent_name || "").trim(),
-    email: String(file.listing_agent_email || "").trim(),
-    phone: normalizePhone(String(file.listing_agent_phone || "")),
-  },
-  {
-    role: "buyer_agent",
-    name: String(file.buyer_agent_name || "").trim(),
-    email: String(file.buyer_agent_email || "").trim(),
-    phone: normalizePhone(String(file.buyer_agent_phone || "")),
-  },
-];
+      {
+        role: "listing_agent",
+        name: String(file.listing_agent_name || "").trim(),
+        email: String(file.listing_agent_email || "").trim(),
+        phone: normalizePhone(String(file.listing_agent_phone || "")),
+      },
+      {
+        role: "buyer_agent",
+        name: String(file.buyer_agent_name || "").trim(),
+        email: String(file.buyer_agent_email || "").trim(),
+        phone: normalizePhone(String(file.buyer_agent_phone || "")),
+      },
+    ];
 
-const recipients: NotificationRecipient[] = rawRecipients.filter(
-  (item) => Boolean(item.email || item.phone)
-);
-
-const recipients = rawRecipients.filter(
-  (item) => Boolean(item.email || item.phone)
-);
+    const recipients: NotificationRecipient[] = rawRecipients.filter(
+      (item) => Boolean(item.email || item.phone)
+    );
 
     if (recipients.length === 0) {
       if (status === "closed") {
