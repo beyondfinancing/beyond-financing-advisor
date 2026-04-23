@@ -88,6 +88,30 @@ function formatDate(value?: string) {
   }).format(date);
 }
 
+function getLicenseLabel(role?: string) {
+  return role === "Real Estate Agent" ? "MLS" : "NMLS";
+}
+
+function getLicensePlaceholder(role: TeamRole) {
+  return role === "Real Estate Agent" ? "MLS Number" : "NMLS Number";
+}
+
+function isFinley(user?: Pick<TeamUser, "name" | "email"> | null) {
+  const name = String(user?.name || "").trim().toLowerCase();
+  const email = String(user?.email || "").trim().toLowerCase();
+
+  return (
+    name === "finley beyond" ||
+    email === "finley@beyondintelligence.io" ||
+    email === "finley@beyondfinancing.com"
+  );
+}
+
+function getAssistantDisplay(user: TeamUser) {
+  if (isFinley(user)) return "Assistant: Not applicable";
+  return `Assistant: ${user.assistant_email || "—"}`;
+}
+
 export default function AdminPage() {
   const [language, setLanguage] = useState<SiteLanguage>("en");
   const [authLoading, setAuthLoading] = useState(true);
@@ -174,10 +198,13 @@ export default function AdminPage() {
     if (!query) return users;
 
     return users.filter((user) => {
+      const licenseLabel = getLicenseLabel(user.role);
+
       const haystack = [
         user.name,
         user.email,
         user.nmls,
+        licenseLabel,
         user.role,
         user.phone,
         user.assistant_email,
@@ -193,25 +220,73 @@ export default function AdminPage() {
     key: K,
     value: FormState[K]
   ) => {
-    setCreateForm((prev) => ({ ...prev, [key]: value }));
+    setCreateForm((prev) => {
+      const next = { ...prev, [key]: value };
+
+      if (key === "role" && value === "Real Estate Agent") {
+        next.assistantEmail = "";
+        next.calendly = "";
+      }
+
+      if (key === "name" || key === "email") {
+        const proposed = {
+          name: key === "name" ? String(value) : prev.name,
+          email: key === "email" ? String(value) : prev.email,
+        };
+
+        if (isFinley(proposed)) {
+          next.email = "finley@beyondintelligence.io";
+          next.assistantEmail = "";
+          next.phone = next.phone || "857.615.0836";
+          next.role = "Loan Officer Assistant";
+          next.nmls = next.nmls || "2394496FB";
+        }
+      }
+
+      return next;
+    });
   };
 
   const setEditField = <K extends keyof FormState>(
     key: K,
     value: FormState[K]
   ) => {
-    setEditForm((prev) => ({ ...prev, [key]: value }));
+    setEditForm((prev) => {
+      const next = { ...prev, [key]: value };
+
+      if (key === "role" && value === "Real Estate Agent") {
+        next.assistantEmail = "";
+        next.calendly = "";
+      }
+
+      if (key === "name" || key === "email") {
+        const proposed = {
+          name: key === "name" ? String(value) : prev.name,
+          email: key === "email" ? String(value) : prev.email,
+        };
+
+        if (isFinley(proposed)) {
+          next.email = "finley@beyondintelligence.io";
+          next.assistantEmail = "";
+          next.phone = next.phone || "857.615.0836";
+          next.role = "Loan Officer Assistant";
+          next.nmls = next.nmls || "2394496FB";
+        }
+      }
+
+      return next;
+    });
   };
 
   const beginEdit = (user: TeamUser) => {
     setEditingId(user.id);
     setEditForm({
       name: user.name || "",
-      email: user.email || "",
+      email: isFinley(user) ? "finley@beyondintelligence.io" : user.email || "",
       nmls: user.nmls || "",
       role: user.role,
       calendly: user.calendly || "",
-      assistantEmail: user.assistant_email || "",
+      assistantEmail: isFinley(user) ? "" : user.assistant_email || "",
       phone: user.phone || "",
       isActive: Boolean(user.is_active ?? true),
     });
@@ -230,12 +305,20 @@ export default function AdminPage() {
       setStatusMessage("");
       setErrorMessage("");
 
+      const payload: FormState = {
+        ...createForm,
+        email: isFinley(createForm)
+          ? "finley@beyondintelligence.io"
+          : createForm.email,
+        assistantEmail: isFinley(createForm) ? "" : createForm.assistantEmail,
+      };
+
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(createForm),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -264,12 +347,20 @@ export default function AdminPage() {
       setStatusMessage("");
       setErrorMessage("");
 
+      const payload: FormState = {
+        ...editForm,
+        email: isFinley(editForm)
+          ? "finley@beyondintelligence.io"
+          : editForm.email,
+        assistantEmail: isFinley(editForm) ? "" : editForm.assistantEmail,
+      };
+
       const response = await fetch(`/api/admin/users/${editingId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -442,7 +533,7 @@ export default function AdminPage() {
               />
               <input
                 style={styles.input}
-                placeholder="NMLS"
+                placeholder={getLicensePlaceholder(createForm.role)}
                 value={createForm.nmls}
                 onChange={(e) => setCreateField("nmls", e.target.value)}
               />
@@ -461,16 +552,30 @@ export default function AdminPage() {
               </select>
               <input
                 style={styles.input}
-                placeholder="Calendly URL"
+                placeholder={
+                  createForm.role === "Real Estate Agent"
+                    ? "Website / Profile URL"
+                    : "Calendly URL"
+                }
                 value={createForm.calendly}
                 onChange={(e) => setCreateField("calendly", e.target.value)}
+                disabled={createForm.role === "Real Estate Agent"}
               />
               <input
                 style={styles.input}
-                placeholder="Assistant Email"
+                placeholder={
+                  isFinley(createForm)
+                    ? "Assistant Not Applicable"
+                    : createForm.role === "Real Estate Agent"
+                    ? "Assistant Not Required"
+                    : "Assistant Email"
+                }
                 value={createForm.assistantEmail}
                 onChange={(e) =>
                   setCreateField("assistantEmail", e.target.value)
+                }
+                disabled={
+                  isFinley(createForm) || createForm.role === "Real Estate Agent"
                 }
               />
               <input
@@ -514,7 +619,7 @@ export default function AdminPage() {
               <h2 style={styles.sectionTitle}>Manage users</h2>
               <input
                 style={styles.searchInput}
-                placeholder="Search by name, email, role, NMLS, or phone"
+                placeholder="Search by name, email, role, NMLS, MLS, or phone"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -528,6 +633,7 @@ export default function AdminPage() {
               <div style={styles.userList}>
                 {filteredUsers.map((user) => {
                   const isEditing = editingId === user.id;
+                  const licenseLabel = getLicenseLabel(user.role);
 
                   return (
                     <div key={user.id} style={styles.userCard}>
@@ -539,10 +645,11 @@ export default function AdminPage() {
                               {user.role} · {user.email}
                             </div>
                             <div style={styles.userMeta}>
-                              NMLS: {user.nmls || "—"} · Phone: {user.phone || "—"}
+                              {licenseLabel}: {user.nmls || "—"} · Phone:{" "}
+                              {user.phone || "—"}
                             </div>
                             <div style={styles.userMeta}>
-                              Assistant: {user.assistant_email || "—"}
+                              {getAssistantDisplay(user)}
                             </div>
                             <div style={styles.userMeta}>
                               Active: {user.is_active ? "Yes" : "No"} · Created:{" "}
@@ -584,7 +691,7 @@ export default function AdminPage() {
                             />
                             <input
                               style={styles.input}
-                              placeholder="NMLS"
+                              placeholder={getLicensePlaceholder(editForm.role)}
                               value={editForm.nmls}
                               onChange={(e) => setEditField("nmls", e.target.value)}
                             />
@@ -603,18 +710,33 @@ export default function AdminPage() {
                             </select>
                             <input
                               style={styles.input}
-                              placeholder="Calendly URL"
+                              placeholder={
+                                editForm.role === "Real Estate Agent"
+                                  ? "Website / Profile URL"
+                                  : "Calendly URL"
+                              }
                               value={editForm.calendly}
                               onChange={(e) =>
                                 setEditField("calendly", e.target.value)
                               }
+                              disabled={editForm.role === "Real Estate Agent"}
                             />
                             <input
                               style={styles.input}
-                              placeholder="Assistant Email"
+                              placeholder={
+                                isFinley(editForm)
+                                  ? "Assistant Not Applicable"
+                                  : editForm.role === "Real Estate Agent"
+                                  ? "Assistant Not Required"
+                                  : "Assistant Email"
+                              }
                               value={editForm.assistantEmail}
                               onChange={(e) =>
                                 setEditField("assistantEmail", e.target.value)
+                              }
+                              disabled={
+                                isFinley(editForm) ||
+                                editForm.role === "Real Estate Agent"
                               }
                             />
                             <input
