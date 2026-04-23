@@ -1,83 +1,107 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { signInAdminSession } from "@/lib/admin-auth";
 
-function redirectWithMessage(type: "success" | "error", message: string) {
-  const encoded = encodeURIComponent(message);
-  return NextResponse.redirect(
-    new URL(`/admin/users?${type}=${encoded}`, process.env.NEXT_PUBLIC_APP_URL || "https://beyondintelligence.io")
-  );
+type TeamRole =
+  | "Loan Officer"
+  | "Loan Officer Assistant"
+  | "Processor"
+  | "Production Manager"
+  | "Branch Manager"
+  | "Real Estate Agent";
+
+type CreateUserPayload = {
+  name?: string;
+  email?: string;
+  nmls?: string;
+  role?: TeamRole;
+  calendly?: string;
+  assistantEmail?: string;
+  phone?: string;
+  isActive?: boolean;
+};
+
+function normalizeString(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+async function ensureAdminAccess() {
+  try {
+    await signInAdminSession();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function GET() {
+  const isAdmin = await ensureAdminAccess();
+
+  if (!isAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("team_users")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, users: data ?? [] });
 }
 
 export async function POST(req: Request) {
-  try {
-    const formData = await req.formData();
+  const isAdmin = await ensureAdminAccess();
 
-    const action = String(formData.get("action") || "").trim();
-    const id = String(formData.get("id") || "").trim();
-    const name = String(formData.get("name") || "").trim();
-    const email = String(formData.get("email") || "").trim();
-    const nmls = String(formData.get("nmls") || "").trim();
-    const role = String(formData.get("role") || "").trim();
-
-    if (action === "create") {
-      if (!name || !email || !nmls || !role) {
-        return redirectWithMessage("error", "All user fields are required.");
-      }
-
-      const { error } = await supabaseAdmin.from("users").insert({
-        name,
-        email,
-        nmls,
-        role,
-      });
-
-      if (error) {
-        return redirectWithMessage("error", `User create failed: ${error.message}`);
-      }
-
-      return redirectWithMessage("success", "User created successfully.");
-    }
-
-    if (action === "update") {
-      if (!id || !name || !email || !nmls || !role) {
-        return redirectWithMessage("error", "All update fields are required.");
-      }
-
-      const { error } = await supabaseAdmin
-        .from("users")
-        .update({
-          name,
-          email,
-          nmls,
-          role,
-        })
-        .eq("id", id);
-
-      if (error) {
-        return redirectWithMessage("error", `User update failed: ${error.message}`);
-      }
-
-      return redirectWithMessage("success", "User updated successfully.");
-    }
-
-    if (action === "delete") {
-      if (!id) {
-        return redirectWithMessage("error", "User id is required for delete.");
-      }
-
-      const { error } = await supabaseAdmin.from("users").delete().eq("id", id);
-
-      if (error) {
-        return redirectWithMessage("error", `User delete failed: ${error.message}`);
-      }
-
-      return redirectWithMessage("success", "User deleted successfully.");
-    }
-
-    return redirectWithMessage("error", "Invalid user action.");
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unexpected server error.";
-    return redirectWithMessage("error", message);
+  if (!isAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  let body: CreateUserPayload;
+
+  try {
+    body = (await req.json()) as CreateUserPayload;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const name = normalizeString(body.name);
+  const email = normalizeString(body.email).toLowerCase();
+  const nmls = normalizeString(body.nmls);
+  const role = normalizeString(body.role) as TeamRole;
+  const calendly = normalizeString(body.calendly);
+  const assistantEmail = normalizeString(body.assistantEmail).toLowerCase();
+  const phone = normalizeString(body.phone);
+  const isActive = Boolean(body.isActive ?? true);
+
+  if (!name || !email || !role) {
+    return NextResponse.json(
+      { error: "Name, email, and role are required." },
+      { status: 400 }
+    );
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("team_users")
+    .insert({
+      name,
+      email,
+      nmls,
+      role,
+      calendly,
+      assistant_email: assistantEmail,
+      phone,
+      is_active: isActive,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, user: data });
 }
