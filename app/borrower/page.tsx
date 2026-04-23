@@ -1,5 +1,6 @@
 "use client";
 
+import Footer from "@/app/components/Footer";
 import React, { useEffect, useMemo, useState } from "react";
 
 type LanguageCode = "en" | "pt" | "es";
@@ -365,7 +366,12 @@ export default function BorrowerPage() {
           );
         }
 
-        const rows = Array.isArray(data) ? data : Array.isArray(data?.users) ? data.users : [];
+        const rows = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.users)
+          ? data.users
+          : [];
+
         const mapped = rows
           .filter((row: RawUserRecord) => isSelectableLoanOfficer(row))
           .map((row: RawUserRecord) => mapUserToOfficer(row))
@@ -376,15 +382,6 @@ export default function BorrowerPage() {
         if (!isMounted) return;
 
         setLoanOfficers(mapped);
-
-        const finley =
-          mapped.find((officer) =>
-            officer.name.toLowerCase().includes("finley beyond")
-          ) || null;
-
-        if (!selectedOfficer && finley) {
-  setSelectedOfficer(finley);
-}
       } catch (error) {
         if (!isMounted) return;
         setLoanOfficersError(
@@ -424,24 +421,24 @@ export default function BorrowerPage() {
     selectedOfficer || matchedOfficerFromQuery || defaultLoanOfficer;
 
   const officerSuggestions = useMemo(() => {
-  if (loanOfficerConfirmed) return [];
-  if (selectedOfficer) return [];
+    if (loanOfficerConfirmed) return [];
+    if (selectedOfficer) return [];
 
-  const query = loanOfficerQuery.trim().toLowerCase();
-  if (!query) return [];
+    const query = loanOfficerQuery.trim().toLowerCase();
+    if (!query) return [];
 
-  return loanOfficers
-    .filter((officer) => {
-      const display = getOfficerDisplay(officer).toLowerCase();
-      return (
-        officer.name.toLowerCase().includes(query) ||
-        officer.nmls.toLowerCase().includes(query) ||
-        display.includes(query) ||
-        officer.email.toLowerCase().includes(query)
-      );
-    })
-    .slice(0, 5);
-}, [loanOfficerQuery, loanOfficerConfirmed, selectedOfficer, loanOfficers]);
+    return loanOfficers
+      .filter((officer) => {
+        const display = getOfficerDisplay(officer).toLowerCase();
+        return (
+          officer.name.toLowerCase().includes(query) ||
+          officer.nmls.toLowerCase().includes(query) ||
+          display.includes(query) ||
+          officer.email.toLowerCase().includes(query)
+        );
+      })
+      .slice(0, 5);
+  }, [loanOfficerQuery, loanOfficerConfirmed, selectedOfficer, loanOfficers]);
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(String(scenario.homePrice).replace(/,/g, "")) || 0;
@@ -459,17 +456,17 @@ export default function BorrowerPage() {
   const intakeComplete =
     accepted &&
     !!transactionType &&
-    intakeForm.fullName.trim() &&
-    intakeForm.email.trim() &&
+    !!intakeForm.fullName.trim() &&
+    !!intakeForm.email.trim() &&
     normalizeDigitsOnly(intakeForm.phone).length >= 10 &&
-    intakeForm.credit.trim() &&
-    intakeForm.income.trim() &&
-    intakeForm.debt.trim() &&
-    intakeForm.currentState.trim() &&
-    intakeForm.targetState.trim() &&
+    !!intakeForm.credit.trim() &&
+    !!intakeForm.income.trim() &&
+    !!intakeForm.debt.trim() &&
+    !!intakeForm.currentState.trim() &&
+    !!intakeForm.targetState.trim() &&
     !!realtorStatus &&
     (realtorStatus !== "yes" ||
-      (intakeForm.realtorName.trim() &&
+      (!!intakeForm.realtorName.trim() &&
         normalizeDigitsOnly(intakeForm.realtorPhone).length >= 10)) &&
     loanOfficerConfirmed &&
     !!activeOfficer;
@@ -638,33 +635,33 @@ Instructions:
   };
 
   const confirmOfficerSelection = () => {
-  const matched =
-    selectedOfficer ||
-    resolveOfficerFromQuery(loanOfficerQuery, loanOfficers) ||
-    defaultLoanOfficer;
+    const matched =
+      selectedOfficer ||
+      resolveOfficerFromQuery(loanOfficerQuery, loanOfficers) ||
+      defaultLoanOfficer;
 
-  if (!matched) {
-    setErrorMessage("No loan officer is available to assign right now.");
-    return;
-  }
+    if (!matched) {
+      setErrorMessage("No loan officer is available to assign right now.");
+      return;
+    }
 
-  setSelectedOfficer(matched);
-  setLoanOfficerQuery(getOfficerDisplay(matched));
-  setLoanOfficerConfirmed(true);
-  setErrorMessage("");
-};
+    setSelectedOfficer(matched);
+    setLoanOfficerQuery(getOfficerDisplay(matched));
+    setLoanOfficerConfirmed(true);
+    setErrorMessage("");
+  };
 
   const useDefaultFinley = () => {
-  if (!defaultLoanOfficer) {
-    setErrorMessage("No default loan officer is available right now.");
-    return;
-  }
+    if (!defaultLoanOfficer) {
+      setErrorMessage("No default loan officer is available right now.");
+      return;
+    }
 
-  setSelectedOfficer(defaultLoanOfficer);
-  setLoanOfficerQuery(getOfficerDisplay(defaultLoanOfficer));
-  setLoanOfficerConfirmed(true);
-  setErrorMessage("");
-};
+    setSelectedOfficer(defaultLoanOfficer);
+    setLoanOfficerQuery(getOfficerDisplay(defaultLoanOfficer));
+    setLoanOfficerConfirmed(true);
+    setErrorMessage("");
+  };
 
   const runPreliminaryReview = async () => {
     if (!intakeComplete) {
@@ -966,571 +963,610 @@ Keep the response practical and professional.`,
   });
 
   return (
-    <main style={styles.page}>
-      <div style={styles.wrap}>
-        <div style={navStyles.topBar}>
-          <a href="/" style={navStyles.brand}>
-            Beyond Intelligence™
-          </a>
-          <div style={navStyles.topBarLinks}>
-            <a href="/" style={navStyles.topBarLink}>
-              Home
+    <>
+      <main style={styles.page}>
+        <div style={styles.wrap}>
+          <div style={navStyles.topBar}>
+            <a href="/" style={navStyles.brand}>
+              Beyond Intelligence™
             </a>
-            <a href="/borrower" style={navStyles.topBarLink}>
-              Start as Borrower
-            </a>
-            <a href="/team" style={navStyles.topBarLink}>
-              Team Workspace
-            </a>
+            <div style={navStyles.topBarLinks}>
+              <a href="/" style={navStyles.topBarLink}>
+                Home
+              </a>
+              <a href="/borrower" style={navStyles.topBarLink}>
+                Start as Borrower
+              </a>
+              <a href="/team" style={navStyles.topBarLink}>
+                Team Workspace
+              </a>
+            </div>
           </div>
-        </div>
 
-        <div style={styles.hero}>
-          <h1 style={styles.heroTitle}>{t.heroTitle}</h1>
-          <p style={styles.heroText}>{t.heroText}</p>
-        </div>
+          <div style={styles.hero}>
+            <h1 style={styles.heroTitle}>{t.heroTitle}</h1>
+            <p style={styles.heroText}>{t.heroText}</p>
+          </div>
 
-        <div style={styles.grid}>
-          <section style={styles.leftColumn}>
-            <div style={styles.topInfoGrid}>
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>{t.disclaimerTitle}</h2>
-                <p style={styles.copyBlock}>{t.disclaimerText}</p>
+          <div style={styles.grid}>
+            <section style={styles.leftColumn}>
+              <div style={styles.topInfoGrid}>
+                <div style={styles.card}>
+                  <h2 style={styles.cardTitle}>{t.disclaimerTitle}</h2>
+                  <p style={styles.copyBlock}>{t.disclaimerText}</p>
 
-                <label style={styles.checkboxRow}>
-                  <input
-                    type="checkbox"
-                    checked={accepted}
-                    onChange={(e) => setAccepted(e.target.checked)}
-                  />
-                  <span>{t.acceptText}</span>
-                </label>
-              </div>
+                  <label style={styles.checkboxRow}>
+                    <input
+                      type="checkbox"
+                      checked={accepted}
+                      onChange={(e) => setAccepted(e.target.checked)}
+                    />
+                    <span>{t.acceptText}</span>
+                  </label>
+                </div>
 
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>{t.scenarioDirectionTitle}</h2>
-                <p style={styles.copyBlock}>{t.scenarioDirectionText}</p>
-                <p style={{ ...styles.copyBlock, marginTop: 20 }}>
-                  {preliminaryReviewRan ? t.scenarioDirectionReady : ""}
-                </p>
-                {loanOfficersLoading && (
-                  <p style={{ ...styles.copyBlock, marginTop: 12 }}>
-                    {t.loadingLoanOfficers}
+                <div style={styles.card}>
+                  <h2 style={styles.cardTitle}>{t.scenarioDirectionTitle}</h2>
+                  <p style={styles.copyBlock}>{t.scenarioDirectionText}</p>
+                  <p style={{ ...styles.copyBlock, marginTop: 20 }}>
+                    {preliminaryReviewRan ? t.scenarioDirectionReady : ""}
                   </p>
-                )}
-                {!loanOfficersLoading && loanOfficersError && (
-                  <p style={{ ...styles.copyBlock, marginTop: 12, color: "#991B1B" }}>
-                    {loanOfficersError}
-                  </p>
-                )}
-                {!loanOfficersLoading &&
-                  !loanOfficersError &&
-                  loanOfficers.length === 0 && (
-                    <p style={{ ...styles.copyBlock, marginTop: 12, color: "#991B1B" }}>
-                      {t.noLoanOfficers}
+                  {loanOfficersLoading && (
+                    <p style={{ ...styles.copyBlock, marginTop: 12 }}>
+                      {t.loadingLoanOfficers}
                     </p>
                   )}
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <div style={styles.segmentRow}>
-                <button
-                  type="button"
-                  style={selectionButtonStyle(
-                    transactionType === "purchase",
-                    transactionLocked
+                  {!loanOfficersLoading && loanOfficersError && (
+                    <p
+                      style={{
+                        ...styles.copyBlock,
+                        marginTop: 12,
+                        color: "#991B1B",
+                      }}
+                    >
+                      {loanOfficersError}
+                    </p>
                   )}
-                  onClick={() => {
-                    if (!transactionLocked) setTransactionType("purchase");
-                  }}
-                >
-                  {t.purchase}
-                </button>
-                <button
-                  type="button"
-                  style={selectionButtonStyle(
-                    transactionType === "refinance",
-                    transactionLocked
-                  )}
-                  onClick={() => {
-                    if (!transactionLocked) setTransactionType("refinance");
-                  }}
-                >
-                  {t.refinance}
-                </button>
-                <button
-                  type="button"
-                  style={selectionButtonStyle(
-                    transactionType === "investment",
-                    transactionLocked
-                  )}
-                  onClick={() => {
-                    if (!transactionLocked) setTransactionType("investment");
-                  }}
-                >
-                  {t.investment}
-                </button>
-              </div>
-
-              <div style={styles.formGrid}>
-                <input
-                  style={styles.input}
-                  value={intakeForm.fullName}
-                  onChange={(e) => setIntakeField("fullName", e.target.value)}
-                  placeholder={t.borrowerName}
-                />
-                <input
-                  style={styles.input}
-                  value={intakeForm.email}
-                  onChange={(e) => setIntakeField("email", e.target.value)}
-                  placeholder={t.email}
-                  type="email"
-                />
-                <input
-                  style={styles.input}
-                  value={intakeForm.phone}
-                  onChange={(e) =>
-                    setIntakeField("phone", formatPhoneDisplay(e.target.value))
-                  }
-                  placeholder={t.phone}
-                />
-                <input
-                  style={styles.input}
-                  value={intakeForm.credit}
-                  onChange={(e) => setIntakeField("credit", e.target.value)}
-                  placeholder={t.credit}
-                />
-                <input
-                  style={styles.input}
-                  value={intakeForm.income}
-                  onChange={(e) =>
-                    setIntakeField("income", formatNumberInput(e.target.value))
-                  }
-                  placeholder={t.income}
-                />
-                <input
-                  style={styles.input}
-                  value={intakeForm.debt}
-                  onChange={(e) =>
-                    setIntakeField("debt", formatNumberInput(e.target.value))
-                  }
-                  placeholder={t.debt}
-                />
-                <input
-                  style={styles.input}
-                  value={intakeForm.currentState}
-                  onChange={(e) =>
-                    setIntakeField("currentState", e.target.value.toUpperCase())
-                  }
-                  placeholder={t.currentState}
-                  maxLength={2}
-                />
-                <input
-                  style={styles.input}
-                  value={intakeForm.targetState}
-                  onChange={(e) =>
-                    setIntakeField("targetState", e.target.value.toUpperCase())
-                  }
-                  placeholder={t.targetState}
-                  maxLength={2}
-                />
-              </div>
-
-              <div style={styles.sectionLabel}>{t.workingWithRealtor}</div>
-
-              <div style={styles.segmentRowSmall}>
-                <button
-                  type="button"
-                  style={selectionButtonStyle(
-                    realtorStatus === "yes",
-                    realtorLocked
-                  )}
-                  onClick={() => {
-                    if (!realtorLocked) setRealtorStatus("yes");
-                  }}
-                >
-                  {t.yes}
-                </button>
-                <button
-                  type="button"
-                  style={selectionButtonStyle(
-                    realtorStatus === "no",
-                    realtorLocked
-                  )}
-                  onClick={() => {
-                    if (!realtorLocked) {
-                      setRealtorStatus("no");
-                      setIntakeField("realtorName", "");
-                      setIntakeField("realtorPhone", "");
-                    }
-                  }}
-                >
-                  {t.no}
-                </button>
-                <button
-                  type="button"
-                  style={selectionButtonStyle(
-                    realtorStatus === "not_sure",
-                    realtorLocked
-                  )}
-                  onClick={() => {
-                    if (!realtorLocked) {
-                      setRealtorStatus("not_sure");
-                      setIntakeField("realtorName", "");
-                      setIntakeField("realtorPhone", "");
-                    }
-                  }}
-                >
-                  {t.notSure}
-                </button>
-              </div>
-
-              {realtorStatus === "yes" && (
-                <div style={{ ...styles.formGrid, marginTop: 12 }}>
-                  <input
-                    style={styles.input}
-                    value={intakeForm.realtorName}
-                    onChange={(e) =>
-                      setIntakeField("realtorName", e.target.value)
-                    }
-                    placeholder={t.realtorName}
-                  />
-                  <input
-                    style={styles.input}
-                    value={intakeForm.realtorPhone}
-                    onChange={(e) =>
-                      setIntakeField(
-                        "realtorPhone",
-                        formatPhoneDisplay(e.target.value)
-                      )
-                    }
-                    placeholder={t.realtorPhone}
-                  />
-                </div>
-              )}
-
-              <div style={{ marginTop: 16, position: "relative" }}>
-                <input
-  style={styles.input}
-  value={loanOfficerQuery}
-  onChange={(e) => {
-    if (!loanOfficerConfirmed) {
-      setLoanOfficerQuery(e.target.value);
-      setSelectedOfficer(null);
-      setErrorMessage("");
-    }
-  }}
-  placeholder={t.loanOfficerPlaceholder}
-  disabled={
-    loanOfficerConfirmed || loanOfficersLoading || loanOfficers.length === 0
-  }
-/>
-
-                {!loanOfficerConfirmed &&
-  !selectedOfficer &&
-  loanOfficerQuery.trim() &&
-  officerSuggestions.length > 0 && (
-    <div style={styles.suggestionBox}>
-      {officerSuggestions.map((officer) => (
-        <button
-          key={officer.id}
-          type="button"
-          style={styles.suggestionItem}
-          onClick={() => {
-            setSelectedOfficer(officer);
-            setLoanOfficerQuery(getOfficerDisplay(officer));
-          }}
-        >
-          {getOfficerDisplay(officer)}
-        </button>
-      ))}
-    </div>
-  )}
-              </div>
-
-              <div style={styles.helperText}>{t.loanOfficerPlaceholder}</div>
-
-              <div style={styles.buttonRow}>
-                <button
-                  type="button"
-                  onClick={confirmOfficerSelection}
-                  disabled={loanOfficerConfirmed || loanOfficersLoading}
-                  style={{
-                    ...styles.primaryButton,
-                    backgroundColor: loanOfficerConfirmed
-                      ? "#8BB7CC"
-                      : "#62B3D6",
-                    cursor:
-                      loanOfficerConfirmed || loanOfficersLoading
-                        ? "default"
-                        : "pointer",
-                    opacity: loanOfficerConfirmed || loanOfficersLoading ? 0.9 : 1,
-                  }}
-                >
-                  {loanOfficerConfirmed
-                    ? t.confirmedLoanOfficer
-                    : t.confirmLoanOfficer}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={useDefaultFinley}
-                  disabled={loanOfficerConfirmed || !defaultLoanOfficer}
-                  style={{
-                    ...styles.outlineButton,
-                    opacity:
-                      loanOfficerConfirmed || !defaultLoanOfficer ? 0.7 : 1,
-                    cursor:
-                      loanOfficerConfirmed || !defaultLoanOfficer
-                        ? "default"
-                        : "pointer",
-                  }}
-                >
-                  {t.unknownLoanOfficer}
-                </button>
-              </div>
-
-              <div style={styles.routingBox}>
-                <div style={styles.routingEyebrow}>{t.assignedRouting}</div>
-                <div style={styles.routingTitle}>
-                  {activeOfficer
-                    ? getOfficerDisplay(activeOfficer)
-                    : "No loan officer assigned"}
-                </div>
-                <div style={styles.routingText}>
-                  {activeOfficer
-                    ? `${t.routingPrefix} ${activeOfficer.email}${
-                        activeOfficer.assistantEmail
-                          ? ` and ${activeOfficer.assistantEmail}.`
-                          : "."
-                      }`
-                    : "Routing will become available after loan officers are loaded."}
+                  {!loanOfficersLoading &&
+                    !loanOfficersError &&
+                    loanOfficers.length === 0 && (
+                      <p
+                        style={{
+                          ...styles.copyBlock,
+                          marginTop: 12,
+                          color: "#991B1B",
+                        }}
+                      >
+                        {t.noLoanOfficers}
+                      </p>
+                    )}
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={runPreliminaryReview}
-                disabled={loading || !activeOfficer}
-                style={{
-                  ...styles.primaryButton,
-                  marginTop: 16,
-                  backgroundColor: "#1493C7",
-                  opacity: !activeOfficer ? 0.7 : 1,
-                  cursor: !activeOfficer ? "not-allowed" : "pointer",
-                }}
-              >
-                {loading ? t.loading : t.runPreliminaryReview}
-              </button>
-            </div>
-
-            <div style={styles.card}>
-              <h2 style={styles.cardTitle}>{t.propertyScenario}</h2>
-
-              <div style={styles.formGrid}>
-                <input
-                  style={styles.input}
-                  value={scenario.homePrice}
-                  onChange={(e) =>
-                    setScenarioField(
-                      "homePrice",
-                      formatNumberInput(e.target.value)
-                    )
-                  }
-                  placeholder={t.homePrice}
-                  disabled={scenarioConfirmed}
-                />
-                <input
-                  style={styles.input}
-                  value={scenario.downPayment}
-                  onChange={(e) =>
-                    setScenarioField(
-                      "downPayment",
-                      formatNumberInput(e.target.value)
-                    )
-                  }
-                  placeholder={t.downPayment}
-                  disabled={scenarioConfirmed}
-                />
-              </div>
-
-              <select
-                style={{
-                  ...styles.input,
-                  marginTop: 14,
-                  opacity: scenarioConfirmed ? 0.9 : 1,
-                }}
-                value={scenario.occupancy}
-                onChange={(e) =>
-                  setScenarioField("occupancy", e.target.value as OccupancyType)
-                }
-                disabled={scenarioConfirmed}
-              >
-                <option value="">{t.occupancy}</option>
-                <option value="primary_residence">{t.primaryResidence}</option>
-                <option value="second_home">{t.secondHome}</option>
-                <option value="investment_property">
-                  {t.investmentProperty}
-                </option>
-              </select>
-
-              <div style={styles.loanBox}>
-                <div style={styles.loanEyebrow}>{t.estimatedLoanAmount}</div>
-                <div style={styles.loanAmount}>
-                  {formatCurrency(estimatedLoanAmount)}
-                </div>
-                <div style={styles.loanLtv}>
-                  {t.estimatedLtv}: {estimatedLtv || 0}%
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={continueScenario}
-                disabled={chatLoading || scenarioConfirmed || !activeOfficer}
-                style={{
-                  ...styles.secondaryButton,
-                  backgroundColor: "#8A95B8",
-                  opacity: scenarioConfirmed || !activeOfficer ? 0.9 : 1,
-                  cursor: scenarioConfirmed || !activeOfficer ? "default" : "pointer",
-                }}
-              >
-                {scenarioConfirmed ? t.scenarioConfirmed : t.continueScenario}
-              </button>
-            </div>
-          </section>
-
-          <section style={styles.rightColumn}>
-            <div style={styles.card}>
-              <h2 style={styles.cardTitle}>{t.conversationTitle}</h2>
-
-              {!conversationReady && (
-                <div style={styles.placeholderBox}>
-                  {t.conversationPlaceholder}
-                </div>
-              )}
-
-              <div style={styles.chatArea}>
-                {conversation.map((message, index) => (
-                  <div
-                    key={`${message.role}-${index}`}
-                    style={{
-                      ...styles.chatBubble,
-                      backgroundColor:
-                        message.role === "assistant" ? "#F4F7FC" : "#263366",
-                      color:
-                        message.role === "assistant" ? "#334A7D" : "#ffffff",
+              <div style={styles.card}>
+                <div style={styles.segmentRow}>
+                  <button
+                    type="button"
+                    style={selectionButtonStyle(
+                      transactionType === "purchase",
+                      transactionLocked
+                    )}
+                    onClick={() => {
+                      if (!transactionLocked) setTransactionType("purchase");
                     }}
                   >
-                    {message.content}
+                    {t.purchase}
+                  </button>
+                  <button
+                    type="button"
+                    style={selectionButtonStyle(
+                      transactionType === "refinance",
+                      transactionLocked
+                    )}
+                    onClick={() => {
+                      if (!transactionLocked) setTransactionType("refinance");
+                    }}
+                  >
+                    {t.refinance}
+                  </button>
+                  <button
+                    type="button"
+                    style={selectionButtonStyle(
+                      transactionType === "investment",
+                      transactionLocked
+                    )}
+                    onClick={() => {
+                      if (!transactionLocked) setTransactionType("investment");
+                    }}
+                  >
+                    {t.investment}
+                  </button>
+                </div>
+
+                <div style={styles.formGrid}>
+                  <input
+                    style={styles.input}
+                    value={intakeForm.fullName}
+                    onChange={(e) =>
+                      setIntakeField("fullName", e.target.value)
+                    }
+                    placeholder={t.borrowerName}
+                  />
+                  <input
+                    style={styles.input}
+                    value={intakeForm.email}
+                    onChange={(e) => setIntakeField("email", e.target.value)}
+                    placeholder={t.email}
+                    type="email"
+                  />
+                  <input
+                    style={styles.input}
+                    value={intakeForm.phone}
+                    onChange={(e) =>
+                      setIntakeField("phone", formatPhoneDisplay(e.target.value))
+                    }
+                    placeholder={t.phone}
+                  />
+                  <input
+                    style={styles.input}
+                    value={intakeForm.credit}
+                    onChange={(e) => setIntakeField("credit", e.target.value)}
+                    placeholder={t.credit}
+                  />
+                  <input
+                    style={styles.input}
+                    value={intakeForm.income}
+                    onChange={(e) =>
+                      setIntakeField("income", formatNumberInput(e.target.value))
+                    }
+                    placeholder={t.income}
+                  />
+                  <input
+                    style={styles.input}
+                    value={intakeForm.debt}
+                    onChange={(e) =>
+                      setIntakeField("debt", formatNumberInput(e.target.value))
+                    }
+                    placeholder={t.debt}
+                  />
+                  <input
+                    style={styles.input}
+                    value={intakeForm.currentState}
+                    onChange={(e) =>
+                      setIntakeField(
+                        "currentState",
+                        e.target.value.toUpperCase()
+                      )
+                    }
+                    placeholder={t.currentState}
+                    maxLength={2}
+                  />
+                  <input
+                    style={styles.input}
+                    value={intakeForm.targetState}
+                    onChange={(e) =>
+                      setIntakeField(
+                        "targetState",
+                        e.target.value.toUpperCase()
+                      )
+                    }
+                    placeholder={t.targetState}
+                    maxLength={2}
+                  />
+                </div>
+
+                <div style={styles.sectionLabel}>{t.workingWithRealtor}</div>
+
+                <div style={styles.segmentRowSmall}>
+                  <button
+                    type="button"
+                    style={selectionButtonStyle(
+                      realtorStatus === "yes",
+                      realtorLocked
+                    )}
+                    onClick={() => {
+                      if (!realtorLocked) setRealtorStatus("yes");
+                    }}
+                  >
+                    {t.yes}
+                  </button>
+                  <button
+                    type="button"
+                    style={selectionButtonStyle(
+                      realtorStatus === "no",
+                      realtorLocked
+                    )}
+                    onClick={() => {
+                      if (!realtorLocked) {
+                        setRealtorStatus("no");
+                        setIntakeField("realtorName", "");
+                        setIntakeField("realtorPhone", "");
+                      }
+                    }}
+                  >
+                    {t.no}
+                  </button>
+                  <button
+                    type="button"
+                    style={selectionButtonStyle(
+                      realtorStatus === "not_sure",
+                      realtorLocked
+                    )}
+                    onClick={() => {
+                      if (!realtorLocked) {
+                        setRealtorStatus("not_sure");
+                        setIntakeField("realtorName", "");
+                        setIntakeField("realtorPhone", "");
+                      }
+                    }}
+                  >
+                    {t.notSure}
+                  </button>
+                </div>
+
+                {realtorStatus === "yes" && (
+                  <div style={{ ...styles.formGrid, marginTop: 12 }}>
+                    <input
+                      style={styles.input}
+                      value={intakeForm.realtorName}
+                      onChange={(e) =>
+                        setIntakeField("realtorName", e.target.value)
+                      }
+                      placeholder={t.realtorName}
+                    />
+                    <input
+                      style={styles.input}
+                      value={intakeForm.realtorPhone}
+                      onChange={(e) =>
+                        setIntakeField(
+                          "realtorPhone",
+                          formatPhoneDisplay(e.target.value)
+                        )
+                      }
+                      placeholder={t.realtorPhone}
+                    />
                   </div>
-                ))}
+                )}
+
+                <div style={{ marginTop: 16, position: "relative" }}>
+                  <input
+                    style={styles.input}
+                    value={loanOfficerQuery}
+                    onChange={(e) => {
+                      if (!loanOfficerConfirmed) {
+                        setLoanOfficerQuery(e.target.value);
+                        setSelectedOfficer(null);
+                        setErrorMessage("");
+                      }
+                    }}
+                    placeholder={t.loanOfficerPlaceholder}
+                    disabled={
+                      loanOfficerConfirmed ||
+                      loanOfficersLoading ||
+                      loanOfficers.length === 0
+                    }
+                  />
+
+                  {!loanOfficerConfirmed &&
+                    !selectedOfficer &&
+                    loanOfficerQuery.trim() &&
+                    officerSuggestions.length > 0 && (
+                      <div style={styles.suggestionBox}>
+                        {officerSuggestions.map((officer) => (
+                          <button
+                            key={officer.id}
+                            type="button"
+                            style={styles.suggestionItem}
+                            onClick={() => {
+                              setSelectedOfficer(officer);
+                              setLoanOfficerQuery(getOfficerDisplay(officer));
+                            }}
+                          >
+                            {getOfficerDisplay(officer)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                </div>
+
+                <div style={styles.helperText}>{t.loanOfficerPlaceholder}</div>
+
+                <div style={styles.buttonRow}>
+                  <button
+                    type="button"
+                    onClick={confirmOfficerSelection}
+                    disabled={loanOfficerConfirmed || loanOfficersLoading}
+                    style={{
+                      ...styles.primaryButton,
+                      backgroundColor: loanOfficerConfirmed
+                        ? "#8BB7CC"
+                        : "#62B3D6",
+                      cursor:
+                        loanOfficerConfirmed || loanOfficersLoading
+                          ? "default"
+                          : "pointer",
+                      opacity:
+                        loanOfficerConfirmed || loanOfficersLoading ? 0.9 : 1,
+                    }}
+                  >
+                    {loanOfficerConfirmed
+                      ? t.confirmedLoanOfficer
+                      : t.confirmLoanOfficer}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={useDefaultFinley}
+                    disabled={loanOfficerConfirmed || !defaultLoanOfficer}
+                    style={{
+                      ...styles.outlineButton,
+                      opacity:
+                        loanOfficerConfirmed || !defaultLoanOfficer ? 0.7 : 1,
+                      cursor:
+                        loanOfficerConfirmed || !defaultLoanOfficer
+                          ? "default"
+                          : "pointer",
+                    }}
+                  >
+                    {t.unknownLoanOfficer}
+                  </button>
+                </div>
+
+                <div style={styles.routingBox}>
+                  <div style={styles.routingEyebrow}>{t.assignedRouting}</div>
+                  <div style={styles.routingTitle}>
+                    {activeOfficer
+                      ? getOfficerDisplay(activeOfficer)
+                      : "No loan officer assigned"}
+                  </div>
+                  <div style={styles.routingText}>
+                    {activeOfficer
+                      ? `${t.routingPrefix} ${activeOfficer.email}${
+                          activeOfficer.assistantEmail
+                            ? ` and ${activeOfficer.assistantEmail}.`
+                            : "."
+                        }`
+                      : "Routing will become available after loan officers are loaded."}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={runPreliminaryReview}
+                  disabled={loading || !activeOfficer}
+                  style={{
+                    ...styles.primaryButton,
+                    marginTop: 16,
+                    backgroundColor: "#1493C7",
+                    opacity: !activeOfficer ? 0.7 : 1,
+                    cursor: !activeOfficer ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {loading ? t.loading : t.runPreliminaryReview}
+                </button>
               </div>
 
-              <textarea
-                style={styles.textarea}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder={t.chatPlaceholder}
-                disabled={!conversationReady || chatLoading}
-              />
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>{t.propertyScenario}</h2>
 
-              <button
-                type="button"
-                onClick={sendChatMessage}
-                disabled={!conversationReady || chatLoading || !chatInput.trim()}
-                style={{
-                  ...styles.sendButton,
-                  backgroundColor:
-                    !conversationReady || chatLoading || !chatInput.trim()
-                      ? "#B7C0D6"
-                      : "#8A95B8",
-                  cursor:
-                    !conversationReady || chatLoading || !chatInput.trim()
-                      ? "not-allowed"
-                      : "pointer",
-                }}
-              >
-                {chatLoading ? t.loading : t.sendMessage}
-              </button>
-            </div>
+                <div style={styles.formGrid}>
+                  <input
+                    style={styles.input}
+                    value={scenario.homePrice}
+                    onChange={(e) =>
+                      setScenarioField(
+                        "homePrice",
+                        formatNumberInput(e.target.value)
+                      )
+                    }
+                    placeholder={t.homePrice}
+                    disabled={scenarioConfirmed}
+                  />
+                  <input
+                    style={styles.input}
+                    value={scenario.downPayment}
+                    onChange={(e) =>
+                      setScenarioField(
+                        "downPayment",
+                        formatNumberInput(e.target.value)
+                      )
+                    }
+                    placeholder={t.downPayment}
+                    disabled={scenarioConfirmed}
+                  />
+                </div>
 
-            <div style={styles.card}>
-              <h2 style={styles.cardTitle}>{t.nextActions}</h2>
-
-              <div style={styles.actionStack}>
-                <button
-                  type="button"
-                  onClick={() => handleAction("apply", "apply")}
-                  disabled={actionLoading || !conversationReady}
+                <select
                   style={{
-                    ...styles.actionPrimary,
-                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
-                    cursor:
-                      actionLoading || !conversationReady
-                        ? "not-allowed"
-                        : "pointer",
+                    ...styles.input,
+                    marginTop: 14,
+                    opacity: scenarioConfirmed ? 0.9 : 1,
                   }}
+                  value={scenario.occupancy}
+                  onChange={(e) =>
+                    setScenarioField(
+                      "occupancy",
+                      e.target.value as OccupancyType
+                    )
+                  }
+                  disabled={scenarioConfirmed}
                 >
-                  {t.applyNow}
-                </button>
+                  <option value="">{t.occupancy}</option>
+                  <option value="primary_residence">{t.primaryResidence}</option>
+                  <option value="second_home">{t.secondHome}</option>
+                  <option value="investment_property">
+                    {t.investmentProperty}
+                  </option>
+                </select>
 
-                <button
-                  type="button"
-                  onClick={() => handleAction("schedule", "schedule")}
-                  disabled={actionLoading || !conversationReady}
-                  style={{
-                    ...styles.actionPrimary,
-                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
-                    cursor:
-                      actionLoading || !conversationReady
-                        ? "not-allowed"
-                        : "pointer",
-                  }}
-                >
-                  {t.schedule}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleAction("contact", "email")}
-                  disabled={actionLoading || !conversationReady}
-                  style={{
-                    ...styles.actionOutline,
-                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
-                    cursor:
-                      actionLoading || !conversationReady
-                        ? "not-allowed"
-                        : "pointer",
-                  }}
-                >
-                  {t.emailOfficer}
-                </button>
+                <div style={styles.loanBox}>
+                  <div style={styles.loanEyebrow}>{t.estimatedLoanAmount}</div>
+                  <div style={styles.loanAmount}>
+                    {formatCurrency(estimatedLoanAmount)}
+                  </div>
+                  <div style={styles.loanLtv}>
+                    {t.estimatedLtv}: {estimatedLtv || 0}%
+                  </div>
+                </div>
 
                 <button
                   type="button"
-                  onClick={() => handleAction("contact", "call")}
-                  disabled={actionLoading || !conversationReady}
+                  onClick={continueScenario}
+                  disabled={chatLoading || scenarioConfirmed || !activeOfficer}
                   style={{
-                    ...styles.actionOutline,
-                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                    ...styles.secondaryButton,
+                    backgroundColor: "#8A95B8",
+                    opacity: scenarioConfirmed || !activeOfficer ? 0.9 : 1,
                     cursor:
-                      actionLoading || !conversationReady
-                        ? "not-allowed"
+                      scenarioConfirmed || !activeOfficer
+                        ? "default"
                         : "pointer",
                   }}
                 >
-                  {t.callOfficer}
+                  {scenarioConfirmed
+                    ? t.scenarioConfirmed
+                    : t.continueScenario}
                 </button>
               </div>
-            </div>
+            </section>
 
-            {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
-          </section>
+            <section style={styles.rightColumn}>
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>{t.conversationTitle}</h2>
+
+                {!conversationReady && (
+                  <div style={styles.placeholderBox}>
+                    {t.conversationPlaceholder}
+                  </div>
+                )}
+
+                <div style={styles.chatArea}>
+                  {conversation.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}`}
+                      style={{
+                        ...styles.chatBubble,
+                        backgroundColor:
+                          message.role === "assistant" ? "#F4F7FC" : "#263366",
+                        color:
+                          message.role === "assistant" ? "#334A7D" : "#ffffff",
+                      }}
+                    >
+                      {message.content}
+                    </div>
+                  ))}
+                </div>
+
+                <textarea
+                  style={styles.textarea}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder={t.chatPlaceholder}
+                  disabled={!conversationReady || chatLoading}
+                />
+
+                <button
+                  type="button"
+                  onClick={sendChatMessage}
+                  disabled={
+                    !conversationReady || chatLoading || !chatInput.trim()
+                  }
+                  style={{
+                    ...styles.sendButton,
+                    backgroundColor:
+                      !conversationReady || chatLoading || !chatInput.trim()
+                        ? "#B7C0D6"
+                        : "#8A95B8",
+                    cursor:
+                      !conversationReady || chatLoading || !chatInput.trim()
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {chatLoading ? t.loading : t.sendMessage}
+                </button>
+              </div>
+
+              <div style={styles.card}>
+                <h2 style={styles.cardTitle}>{t.nextActions}</h2>
+
+                <div style={styles.actionStack}>
+                  <button
+                    type="button"
+                    onClick={() => handleAction("apply", "apply")}
+                    disabled={actionLoading || !conversationReady}
+                    style={{
+                      ...styles.actionPrimary,
+                      opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                      cursor:
+                        actionLoading || !conversationReady
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {t.applyNow}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAction("schedule", "schedule")}
+                    disabled={actionLoading || !conversationReady}
+                    style={{
+                      ...styles.actionPrimary,
+                      opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                      cursor:
+                        actionLoading || !conversationReady
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {t.schedule}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAction("contact", "email")}
+                    disabled={actionLoading || !conversationReady}
+                    style={{
+                      ...styles.actionOutline,
+                      opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                      cursor:
+                        actionLoading || !conversationReady
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {t.emailOfficer}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAction("contact", "call")}
+                    disabled={actionLoading || !conversationReady}
+                    style={{
+                      ...styles.actionOutline,
+                      opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                      cursor:
+                        actionLoading || !conversationReady
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {t.callOfficer}
+                  </button>
+                </div>
+              </div>
+
+              {errorMessage && (
+                <div style={styles.errorBox}>{errorMessage}</div>
+              )}
+            </section>
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+
+      <Footer />
+    </>
   );
 }
 
