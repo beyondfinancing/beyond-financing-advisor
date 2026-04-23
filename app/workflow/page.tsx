@@ -59,6 +59,9 @@ type WorkflowFile = {
   nextInternalAction: string;
   nextBorrowerAction: string;
   latestUpdate: string;
+  propertyAddress: string;
+  listingAgentName: string;
+  buyerAgentName: string;
 };
 
 type WorkflowApiFile = {
@@ -80,6 +83,9 @@ type WorkflowApiFile = {
   next_internal_action: string;
   next_borrower_action: string;
   latest_update: string;
+  property_address?: string | null;
+  listing_agent_name?: string | null;
+  buyer_agent_name?: string | null;
 };
 
 const PROCESSORS: ProcessorOption[] = [
@@ -120,6 +126,15 @@ function formatTargetClose(value: string) {
   return new Intl.DateTimeFormat("en-US").format(date);
 }
 
+function formatPhoneDisplay(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+
+  if (!digits) return "";
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
+}
+
 function getStatusLabel(status: WorkflowStatus) {
   switch (status) {
     case "new_scenario":
@@ -137,7 +152,7 @@ function getStatusLabel(status: WorkflowStatus) {
     case "clear_to_close":
       return "Clear to Close";
     case "closed":
-      return "Closed";
+      return "Closed / Funded";
     default:
       return status;
   }
@@ -246,6 +261,15 @@ export default function WorkflowPage() {
   const [createBlocker, setCreateBlocker] = useState("None currently.");
   const [createRequestedProcessorNote, setCreateRequestedProcessorNote] =
     useState("");
+
+  const [createPropertyAddress, setCreatePropertyAddress] = useState("");
+  const [createListingAgentName, setCreateListingAgentName] = useState("");
+  const [createListingAgentEmail, setCreateListingAgentEmail] = useState("");
+  const [createListingAgentPhone, setCreateListingAgentPhone] = useState("");
+  const [createBuyerAgentName, setCreateBuyerAgentName] = useState("");
+  const [createBuyerAgentEmail, setCreateBuyerAgentEmail] = useState("");
+  const [createBuyerAgentPhone, setCreateBuyerAgentPhone] = useState("");
+
   const [createStatusMessage, setCreateStatusMessage] = useState("");
   const [isCreatingFile, setIsCreatingFile] = useState(false);
 
@@ -290,6 +314,9 @@ export default function WorkflowPage() {
             nextInternalAction: String(f.next_internal_action ?? ""),
             nextBorrowerAction: String(f.next_borrower_action ?? ""),
             latestUpdate: String(f.latest_update ?? ""),
+            propertyAddress: String(f.property_address ?? ""),
+            listingAgentName: String(f.listing_agent_name ?? ""),
+            buyerAgentName: String(f.buyer_agent_name ?? ""),
           }))
         : [];
 
@@ -345,6 +372,9 @@ export default function WorkflowPage() {
         file.processor,
         file.productionManager,
         file.purpose,
+        file.propertyAddress,
+        file.listingAgentName,
+        file.buyerAgentName,
         getStatusLabel(file.status),
         file.latestUpdate,
       ]
@@ -409,10 +439,11 @@ export default function WorkflowPage() {
     const borrowerName = createBorrowerName.trim();
     const loanOfficer = createLoanOfficer.trim() || activeUser?.name || "";
     const loanNumber = createLoanNumber.trim();
+    const propertyAddress = createPropertyAddress.trim();
 
-    if (!borrowerName || !loanOfficer || !loanNumber) {
+    if (!borrowerName || !loanOfficer || !loanNumber || !propertyAddress) {
       setCreateStatusMessage(
-        "Loan number, borrower name, and loan officer are required."
+        "Loan number, borrower name, property address, and loan officer are required."
       );
       return;
     }
@@ -439,6 +470,13 @@ export default function WorkflowPage() {
           occupancy: createOccupancy,
           blocker: createBlocker,
           requestedProcessorNote: createRequestedProcessorNote,
+          propertyAddress,
+          listingAgentName: createListingAgentName,
+          listingAgentEmail: createListingAgentEmail,
+          listingAgentPhone: createListingAgentPhone,
+          buyerAgentName: createBuyerAgentName,
+          buyerAgentEmail: createBuyerAgentEmail,
+          buyerAgentPhone: createBuyerAgentPhone,
           author: activeUser?.name || "Team User",
           role: activeUser?.role || "Professional",
         }),
@@ -463,7 +501,14 @@ export default function WorkflowPage() {
       setCreateOccupancy("Primary Residence");
       setCreateBlocker("None currently.");
       setCreateRequestedProcessorNote("");
-      setCreateStatusMessage("Workflow file created successfully.");
+      setCreatePropertyAddress("");
+      setCreateListingAgentName("");
+      setCreateListingAgentEmail("");
+      setCreateListingAgentPhone("");
+      setCreateBuyerAgentName("");
+      setCreateBuyerAgentEmail("");
+      setCreateBuyerAgentPhone("");
+      setCreateStatusMessage("Workflow file created successfully and notifications were triggered where agent contact data was provided.");
 
       await loadFiles();
     } catch (err) {
@@ -574,7 +619,7 @@ export default function WorkflowPage() {
                 <div style={styles.heroPurposeList}>
                   <div>• Open each file as a true operational record.</div>
                   <div>• Keep production assignment under Production Manager control.</div>
-                  <div>• Sort the queue by urgency and execution priority.</div>
+                  <div>• Keep agents informed that the file is progressing.</div>
                   <div>• Keep updates, visibility, and accountability in one place.</div>
                 </div>
 
@@ -634,7 +679,7 @@ export default function WorkflowPage() {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search loan #, borrower, loan officer, processor, status, or update"
+                placeholder="Search loan #, borrower, address, agents, processor, status, or update"
                 style={styles.searchInput}
               />
             </div>
@@ -677,6 +722,9 @@ export default function WorkflowPage() {
                             <div style={styles.slimBorrower}>{file.borrowerName}</div>
                             <div style={styles.slimMeta}>
                               Loan # {file.loanNumber || "Not Assigned"} · {file.purpose} · {formatCurrency(file.amount)}
+                            </div>
+                            <div style={styles.slimMetaSecondary}>
+                              {file.propertyAddress || "No property address entered"}
                             </div>
                             <div style={styles.slimMetaSecondary}>
                               Last update: {file.latestUpdate || "No update yet."}
@@ -744,6 +792,9 @@ export default function WorkflowPage() {
                           <div style={styles.attentionMeta}>
                             Loan # {item.loanNumber || "Not Assigned"} · {getStatusLabel(item.status)} · {item.fileAgeDays} days in workflow
                           </div>
+                          <div style={styles.attentionMeta}>
+                            {item.propertyAddress || "No property address entered"}
+                          </div>
                         </div>
                         <div style={styles.attentionIssue}>{item.blocker}</div>
                       </div>
@@ -775,6 +826,14 @@ export default function WorkflowPage() {
                 placeholder="Borrower full name"
               />
 
+              <label style={styles.label}>Property address</label>
+              <input
+                value={createPropertyAddress}
+                onChange={(e) => setCreatePropertyAddress(e.target.value)}
+                style={styles.input}
+                placeholder="123 Main St, City, ST ZIP"
+              />
+
               <label style={styles.label}>Loan purpose</label>
               <select
                 value={createPurpose}
@@ -804,9 +863,7 @@ export default function WorkflowPage() {
                 placeholder="Loan officer name"
               />
 
-              <label style={styles.label}>
-                Requested processor note to Production Manager
-              </label>
+              <label style={styles.label}>Requested processor note to Production Manager</label>
               <textarea
                 value={createRequestedProcessorNote}
                 onChange={(e) => setCreateRequestedProcessorNote(e.target.value)}
@@ -874,6 +931,64 @@ export default function WorkflowPage() {
                 style={styles.textarea}
               />
 
+              <div style={styles.agentSectionCard}>
+                <div style={styles.agentSectionTitle}>Listing Agent</div>
+
+                <label style={styles.label}>Listing agent name</label>
+                <input
+                  value={createListingAgentName}
+                  onChange={(e) => setCreateListingAgentName(e.target.value)}
+                  style={styles.input}
+                  placeholder="Listing agent name"
+                />
+
+                <label style={styles.label}>Listing agent email</label>
+                <input
+                  value={createListingAgentEmail}
+                  onChange={(e) => setCreateListingAgentEmail(e.target.value)}
+                  style={styles.input}
+                  placeholder="listing.agent@email.com"
+                  type="email"
+                />
+
+                <label style={styles.label}>Listing agent phone</label>
+                <input
+                  value={createListingAgentPhone}
+                  onChange={(e) => setCreateListingAgentPhone(formatPhoneDisplay(e.target.value))}
+                  style={styles.input}
+                  placeholder="617.555.1212"
+                />
+              </div>
+
+              <div style={styles.agentSectionCard}>
+                <div style={styles.agentSectionTitle}>Buyer Agent</div>
+
+                <label style={styles.label}>Buyer agent name</label>
+                <input
+                  value={createBuyerAgentName}
+                  onChange={(e) => setCreateBuyerAgentName(e.target.value)}
+                  style={styles.input}
+                  placeholder="Buyer agent name"
+                />
+
+                <label style={styles.label}>Buyer agent email</label>
+                <input
+                  value={createBuyerAgentEmail}
+                  onChange={(e) => setCreateBuyerAgentEmail(e.target.value)}
+                  style={styles.input}
+                  placeholder="buyer.agent@email.com"
+                  type="email"
+                />
+
+                <label style={styles.label}>Buyer agent phone</label>
+                <input
+                  value={createBuyerAgentPhone}
+                  onChange={(e) => setCreateBuyerAgentPhone(formatPhoneDisplay(e.target.value))}
+                  style={styles.input}
+                  placeholder="617.555.1212"
+                />
+              </div>
+
               <button
                 type="button"
                 onClick={createWorkflowFile}
@@ -890,27 +1005,30 @@ export default function WorkflowPage() {
 
             <div style={styles.card}>
               <div style={styles.sectionEyebrow}>FILE RECORDS</div>
-              <h2 style={styles.sectionTitle}>How Phase 3 works</h2>
+              <h2 style={styles.sectionTitle}>How Phase 4 works</h2>
 
               <div style={styles.moduleStack}>
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Open by file</div>
+                  <div style={styles.moduleTitle}>Address and agent anchored</div>
                   <div style={styles.moduleText}>
-                    Click any workflow card to open its dedicated record page.
+                    Each workflow file now stores the property address, listing agent,
+                    and buyer agent so the system always knows who to notify.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Loan number aligned</div>
+                  <div style={styles.moduleTitle}>Milestone visibility</div>
                   <div style={styles.moduleText}>
-                    The visible workflow identifier is now the loan number, so it can stay consistent with ARIVE and internal operations.
+                    Agents can receive automated notifications when the file is
+                    registered and when status moves through key milestones.
                   </div>
                 </div>
 
                 <div style={styles.moduleCard}>
-                  <div style={styles.moduleTitle}>Priority-first visibility</div>
+                  <div style={styles.moduleTitle}>Final close logic</div>
                   <div style={styles.moduleText}>
-                    Rush files remain at the top, then Priority, then Standard, so the queue stays operationally disciplined.
+                    When a file reaches closed / funded, the system sends a final
+                    notification and then deactivates further automated agent alerts.
                   </div>
                 </div>
               </div>
@@ -1532,6 +1650,19 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.7,
     fontSize: 14,
     marginTop: 10,
+  },
+  agentSectionCard: {
+    marginTop: 18,
+    borderRadius: 20,
+    border: "1px solid #D7E2F0",
+    backgroundColor: "#F9FBFE",
+    padding: 16,
+  },
+  agentSectionTitle: {
+    fontSize: 18,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 4,
   },
 };
 
