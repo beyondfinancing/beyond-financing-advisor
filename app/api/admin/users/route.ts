@@ -2,57 +2,34 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { signInAdminSession } from "@/lib/admin-auth";
 
-type TeamRole =
-  | "Loan Officer"
-  | "Loan Officer Assistant"
-  | "Processor"
-  | "Production Manager"
-  | "Branch Manager"
-  | "Real Estate Agent";
-
 type CreateUserPayload = {
   name?: string;
   email?: string;
   nmls?: string;
-  role?: TeamRole;
+  role?: string;
   calendly?: string;
   assistantEmail?: string;
   phone?: string;
   isActive?: boolean;
 };
 
-type SessionUser = {
-  id?: string;
-  name?: string;
-  email?: string;
-  role?: TeamRole;
-};
-
-const APPROVED_ADMIN_EMAIL = "pansini@beyondfinancing.com";
-
-function normalizeString(value: unknown): string {
+function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
-async function ensureApprovedAdminAccess() {
+async function ensureAdminApiAccess() {
   try {
-    const session = (await signInAdminSession()) as SessionUser | undefined;
-    const email = normalizeString(session?.email).toLowerCase();
-
-    if (email !== APPROVED_ADMIN_EMAIL) {
-      return { ok: false as const, user: null };
-    }
-
-    return { ok: true as const, user: session ?? null };
+    await signInAdminSession();
+    return true;
   } catch {
-    return { ok: false as const, user: null };
+    return false;
   }
 }
 
 export async function GET() {
-  const auth = await ensureApprovedAdminAccess();
+  const allowed = await ensureAdminApiAccess();
 
-  if (!auth.ok) {
+  if (!allowed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -69,27 +46,21 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const auth = await ensureApprovedAdminAccess();
+  const allowed = await ensureAdminApiAccess();
 
-  if (!auth.ok) {
+  if (!allowed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: CreateUserPayload;
+  const body = (await req.json()) as CreateUserPayload;
 
-  try {
-    body = (await req.json()) as CreateUserPayload;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
-
-  const name = normalizeString(body.name);
-  const email = normalizeString(body.email).toLowerCase();
-  const nmls = normalizeString(body.nmls);
-  const role = normalizeString(body.role) as TeamRole;
-  const calendly = normalizeString(body.calendly);
-  const assistantEmail = normalizeString(body.assistantEmail).toLowerCase();
-  const phone = normalizeString(body.phone);
+  const name = clean(body.name);
+  const email = clean(body.email).toLowerCase();
+  const nmls = clean(body.nmls);
+  const role = clean(body.role);
+  const calendly = clean(body.calendly);
+  const assistantEmail = clean(body.assistantEmail).toLowerCase();
+  const phone = clean(body.phone);
   const isActive = Boolean(body.isActive ?? true);
 
   if (!name || !email || !role) {
@@ -102,8 +73,11 @@ export async function POST(req: Request) {
   const { data, error } = await supabaseAdmin
     .from("team_users")
     .insert({
+      full_name: name,
       name,
       email,
+      credential: role,
+      password_hash: "",
       nmls,
       role,
       calendly,
