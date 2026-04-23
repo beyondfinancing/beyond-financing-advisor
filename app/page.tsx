@@ -15,6 +15,12 @@ const COPY: Record<
     heroTitle3: string;
     heroTitle4: string;
     heroText: string;
+    proInquiryEyebrow: string;
+    proInquiryTitle: string;
+    proInquiryText1: string;
+    proInquiryText2: string;
+    proInquiryButton: string;
+    proInquiryNote: string;
     structureTitle: string;
     structureText: string;
     structureLine1: string;
@@ -73,6 +79,15 @@ const COPY: Record<
     heroTitle4: "and workflow execution.",
     heroText:
       "Beyond Intelligence™ is an AI-powered mortgage operating system supervised by an Independent Certified Mortgage Advisor. It is designed to separate borrower interaction, professional mortgage thinking, and team workflow execution into disciplined product layers that scale cleanly.",
+    proInquiryEyebrow: "MORTGAGE PROFESSIONAL ACCESS",
+    proInquiryTitle: "Request access to Beyond Intelligence™",
+    proInquiryText1:
+      "Built for mortgage professionals who want structured borrower analysis, real-time scenario intelligence, and a disciplined system that moves conversations toward execution.",
+    proInquiryText2:
+      "If you are evaluating how this system could fit into your mortgage business, request a guided introduction.",
+    proInquiryButton: "Request Professional Access",
+    proInquiryNote:
+      "Serious inquiries only. Name, phone, email, and NMLS # are required.",
     structureTitle: "PLATFORM STRUCTURE",
     structureText:
       "One system. Three environments. Each with a distinct role in the mortgage journey.",
@@ -143,6 +158,15 @@ const COPY: Record<
     heroTitle4: "e execução operacional.",
     heroText:
       "Beyond Intelligence™ é um sistema operacional hipotecário com IA, supervisionado por um Independent Certified Mortgage Advisor. Ele foi projetado para separar a interação com o cliente, o raciocínio hipotecário profissional e a execução operacional da equipe em camadas de produto disciplinadas e escaláveis.",
+    proInquiryEyebrow: "ACESSO PARA PROFISSIONAIS HIPOTECÁRIOS",
+    proInquiryTitle: "Solicite acesso ao Beyond Intelligence™",
+    proInquiryText1:
+      "Criado para profissionais hipotecários que desejam análise estruturada do cliente, inteligência de cenário em tempo real e um sistema disciplinado que conduz conversas para execução.",
+    proInquiryText2:
+      "Se você está avaliando como este sistema pode se encaixar no seu negócio hipotecário, solicite uma introdução guiada.",
+    proInquiryButton: "Solicitar Acesso Profissional",
+    proInquiryNote:
+      "Somente consultas sérias. Nome, telefone, email e NMLS # são obrigatórios.",
     structureTitle: "ESTRUTURA DA PLATAFORMA",
     structureText:
       "Um sistema. Três ambientes. Cada um com uma função distinta na jornada hipotecária.",
@@ -213,6 +237,15 @@ const COPY: Record<
     heroTitle4: "y ejecución operativa.",
     heroText:
       "Beyond Intelligence™ es un sistema operativo hipotecario impulsado por IA y supervisado por un Independent Certified Mortgage Advisor. Está diseñado para separar la interacción con el cliente, el pensamiento hipotecario profesional y la ejecución operativa del equipo en capas disciplinadas y escalables.",
+    proInquiryEyebrow: "ACCESO PARA PROFESIONALES HIPOTECARIOS",
+    proInquiryTitle: "Solicite acceso a Beyond Intelligence™",
+    proInquiryText1:
+      "Creado para profesionales hipotecarios que desean análisis estructurado del cliente, inteligencia de escenarios en tiempo real y un sistema disciplinado que mueve conversaciones hacia la ejecución.",
+    proInquiryText2:
+      "Si está evaluando cómo este sistema puede integrarse en su negocio hipotecario, solicite una introducción guiada.",
+    proInquiryButton: "Solicitar Acceso Profesional",
+    proInquiryNote:
+      "Solo consultas serias. Nombre, teléfono, correo electrónico y NMLS # son obligatorios.",
     structureTitle: "ESTRUCTURA DE LA PLATAFORMA",
     structureText:
       "Un sistema. Tres entornos. Cada uno con una función distinta en la trayectoria hipotecaria.",
@@ -279,7 +312,7 @@ const COPY: Record<
 
 export default function HomePage() {
   const [language, setLanguage] = useState<SiteLanguage>("en");
-  const t = COPY[language];
+  const t = COPY[language as LanguageCode];
 
   return (
     <main style={styles.page}>
@@ -308,14 +341,38 @@ export default function HomePage() {
               </h1>
 
               <p style={styles.heroText}>{t.heroText}</p>
+
+              <div style={styles.proInquiryBox}>
+                <div style={styles.proInquiryEyebrow}>
+                  {t.proInquiryEyebrow}
+                </div>
+
+                <div style={styles.proInquiryTitle}>
+                  {t.proInquiryTitle}
+                </div>
+
+                <div style={styles.proInquiryText}>
+                  {t.proInquiryText1}
+                </div>
+
+                <div style={styles.proInquiryText}>
+                  {t.proInquiryText2}
+                </div>
+
+                <a href="/inquire" style={styles.proInquiryButton}>
+                  {t.proInquiryButton}
+                </a>
+
+                <div style={styles.proInquiryNote}>
+                  {t.proInquiryNote}
+                </div>
+              </div>
             </div>
 
             <div style={styles.heroStack}>
               <div style={styles.heroPanel}>
                 <div style={styles.heroPanelTitle}>{t.structureTitle}</div>
-
                 <div style={styles.heroPanelText}>{t.structureText}</div>
-
                 <div style={styles.heroPanelList}>
                   <div>{t.structureLine1}</div>
                   <div>{t.structureLine2}</div>
@@ -325,9 +382,7 @@ export default function HomePage() {
 
               <div style={styles.heroPanel}>
                 <div style={styles.heroPanelTitle}>{t.startHereTitle}</div>
-
                 <div style={styles.startHereHeadline}>{t.startHereHeadline}</div>
-
                 <div style={styles.heroPanelText}>{t.startHereText}</div>
 
                 <a href="/borrower" style={styles.startHereButton}>
@@ -348,16 +403,13 @@ export default function HomePage() {
               <br />
               {t.borrowerTitle2}
             </h2>
-
             <p style={styles.cardText}>{t.borrowerText}</p>
-
             <div style={styles.cardList}>
               <div>{t.borrowerBullet1}</div>
               <div>{t.borrowerBullet2}</div>
               <div>{t.borrowerBullet3}</div>
               <div>{t.borrowerBullet4}</div>
             </div>
-
             <div style={styles.cardActions}>
               <a href="/borrower" style={styles.primaryAction}>
                 {t.borrowerButton}
@@ -372,16 +424,13 @@ export default function HomePage() {
               <br />
               {t.teamTitle2}
             </h2>
-
             <p style={styles.cardText}>{t.teamText}</p>
-
             <div style={styles.cardList}>
               <div>{t.teamBullet1}</div>
               <div>{t.teamBullet2}</div>
               <div>{t.teamBullet3}</div>
               <div>{t.teamBullet4}</div>
             </div>
-
             <div style={styles.cardActions}>
               <a href="/team" style={styles.secondaryAction}>
                 {t.teamButton}
@@ -396,16 +445,13 @@ export default function HomePage() {
               <br />
               {t.workflowTitle2}
             </h2>
-
             <p style={styles.cardText}>{t.workflowText}</p>
-
             <div style={styles.cardList}>
               <div>{t.workflowBullet1}</div>
               <div>{t.workflowBullet2}</div>
               <div>{t.workflowBullet3}</div>
               <div>{t.workflowBullet4}</div>
             </div>
-
             <div style={styles.cardActions}>
               <a href="/workflow" style={styles.outlineAction}>
                 {t.workflowButton}
@@ -545,6 +591,58 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 17,
     lineHeight: 1.75,
     color: "rgba(255,255,255,0.94)",
+  },
+  proInquiryBox: {
+    marginTop: 28,
+    padding: 22,
+    borderRadius: 24,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    border: "1px solid rgba(255,255,255,0.20)",
+    maxWidth: 560,
+    boxShadow: "0 14px 28px rgba(10,25,60,0.12)",
+  },
+  proInquiryEyebrow: {
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: 8,
+    color: "rgba(255,255,255,0.88)",
+  },
+  proInquiryTitle: {
+    fontSize: 24,
+    fontWeight: 900,
+    marginBottom: 12,
+    color: "#ffffff",
+    lineHeight: 1.15,
+  },
+  proInquiryText: {
+    fontSize: 14,
+    lineHeight: 1.7,
+    color: "rgba(255,255,255,0.94)",
+    marginBottom: 10,
+  },
+  proInquiryButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    minHeight: 48,
+    backgroundColor: "#ffffff",
+    color: "#263366",
+    padding: "13px 18px",
+    borderRadius: 16,
+    fontWeight: 900,
+    textDecoration: "none",
+    fontSize: 14,
+    boxShadow: "0 10px 20px rgba(20,35,80,0.16)",
+  },
+  proInquiryNote: {
+    marginTop: 12,
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: "rgba(255,255,255,0.78)",
+    fontWeight: 700,
   },
   heroPanel: {
     backgroundColor: "rgba(255,255,255,0.12)",
