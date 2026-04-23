@@ -16,6 +16,7 @@ type LeadPayload = {
   preferredLanguage?: PreferredLanguage;
   loanOfficer?: string;
   assignedEmail?: string;
+  assistantEmail?: string;
   realtorName?: string;
   realtorEmail?: string;
   realtorPhone?: string;
@@ -37,6 +38,16 @@ const loanOfficerMap: Record<string, string> = {
   warren: "warren@beyondfinancing.com",
 };
 
+const assistantMapByOfficerName: Record<string, string> = {
+  "sandro pansini souza": "amarilis@beyondfinancing.com",
+  "warren wendt": "amarilis@beyondfinancing.com",
+  "finley beyond": "amarilis@beyondfinancing.com",
+};
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -48,6 +59,14 @@ function escapeHtml(value: string): string {
 
 function nl2br(value: string): string {
   return escapeHtml(value).replace(/\n/g, "<br />");
+}
+
+function parseJsonSafely<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
 }
 
 function buildTranscriptHtml(messages: ChatMessage[]): string {
@@ -66,14 +85,6 @@ function buildTranscriptHtml(messages: ChatMessage[]): string {
       `;
     })
     .join("");
-}
-
-function parseJsonSafely<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 function buildFallbackSummary(
@@ -112,7 +123,7 @@ function buildFallbackSummary(
         : trigger === "schedule"
         ? "Borrower moved toward consultation scheduling."
         : trigger === "contact"
-        ? "Borrower moved toward direct contact."
+        ? "Borrower moved toward direct email contact."
         : trigger === "call"
         ? "Borrower moved toward direct phone contact."
         : "Borrower appears ready for a licensed loan officer to review and follow up.",
@@ -131,7 +142,7 @@ async function sendResendEmail(args: {
   html: string;
   replyTo?: string;
 }) {
-  if (!process.env.RESEND_API_KEY) return;
+  if (!process.env.RESEND_API_KEY || args.to.length === 0) return;
 
   await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -156,13 +167,15 @@ async function sendTwilioSms(to: string, body: string) {
 
   if (!sid || !token || !from) return;
 
-  const cleanTo = to.replace(/[^\d+]/g, "");
-  if (!cleanTo) return;
+  const digits = to.replace(/\D/g, "");
+  if (!digits) return;
+
+  const normalizedTo = digits.length === 11 && digits.startsWith("1") ? `+${digits}` : `+1${digits}`;
 
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
   const params = new URLSearchParams();
   params.set("From", from);
-  params.set("To", cleanTo.startsWith("+") ? cleanTo : `+1${cleanTo}`);
+  params.set("To", normalizedTo);
   params.set("Body", body);
 
   await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
@@ -173,6 +186,182 @@ async function sendTwilioSms(to: string, body: string) {
     },
     body: params.toString(),
   });
+}
+
+function getBorrowerActionLabel(trigger: SummaryTrigger): string {
+  switch (trigger) {
+    case "apply":
+      return "application start";
+    case "schedule":
+      return "consultation scheduling request";
+    case "contact":
+      return "email contact request";
+    case "call":
+      return "phone contact request";
+    default:
+      return "mortgage interaction";
+  }
+}
+
+function buildInternalSummaryHtml(args: {
+  fullName: string;
+  email: string;
+  phone: string;
+  preferredLanguage: string;
+  loanOfficer: string;
+  selectedEmail: string;
+  assistantEmail?: string;
+  trigger: SummaryTrigger;
+  realtorName?: string;
+  realtorEmail?: string;
+  realtorPhone?: string;
+  summary: SummaryPayload;
+  transcriptHtml: string;
+}) {
+  const {
+    fullName,
+    email,
+    phone,
+    preferredLanguage,
+    loanOfficer,
+    selectedEmail,
+    assistantEmail,
+    trigger,
+    realtorName,
+    realtorEmail,
+    realtorPhone,
+    summary,
+    transcriptHtml,
+  } = args;
+
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
+      <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond</h1>
+
+      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
+        <p><strong>Full Name:</strong> ${escapeHtml(fullName)}</p>
+        <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
+        <p><strong>Language:</strong> ${escapeHtml(preferredLanguage)}</p>
+        <p><strong>Selected Loan Officer:</strong> ${escapeHtml(loanOfficer)}</p>
+        <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
+        ${
+          assistantEmail
+            ? `<p><strong>Assistant Email:</strong> ${escapeHtml(assistantEmail)}</p>`
+            : ""
+        }
+        <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
+        ${
+          realtorName || realtorEmail || realtorPhone
+            ? `<p><strong>Realtor:</strong> ${escapeHtml(
+                [realtorName, realtorEmail, realtorPhone].filter(Boolean).join(" · ")
+              )}</p>`
+            : ""
+        }
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Borrower Summary</h2>
+        <p style="line-height:1.7;">${nl2br(summary.borrowerSummary)}</p>
+
+        <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
+        <p style="line-height:1.7;">${nl2br(summary.likelyDirection)}</p>
+
+        <h3 style="margin:18px 0 8px 0;">Provisional Program Directions</h3>
+        <ul style="line-height:1.8;">
+          ${summary.provisionalPrograms
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("")}
+        </ul>
+
+        <h3 style="margin:18px 0 8px 0;">Strengths</h3>
+        <ul style="line-height:1.8;">
+          ${summary.strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+
+        <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
+        <ul style="line-height:1.8;">
+          ${summary.openQuestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+
+        <h3 style="margin:18px 0 8px 0;">Recommended Next Step</h3>
+        <p style="line-height:1.7;">${nl2br(summary.recommendedNextStep)}</p>
+
+        <h3 style="margin:18px 0 8px 0;">Loan Officer Action Plan</h3>
+        <ul style="line-height:1.8;">
+          ${summary.loanOfficerActionPlan.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+        <h2 style="margin:0 0 12px 0;font-size:20px;">Full Conversation Transcript</h2>
+        ${transcriptHtml || "<p>No transcript available.</p>"}
+      </div>
+    </div>
+  `;
+}
+
+function buildBorrowerConfirmationEmailHtml(args: {
+  borrowerName: string;
+  loanOfficerName: string;
+  trigger: SummaryTrigger;
+}) {
+  const borrowerName = escapeHtml(args.borrowerName || "Borrower");
+  const loanOfficerName = escapeHtml(args.loanOfficerName || "your assigned loan officer");
+  const actionLabel = escapeHtml(getBorrowerActionLabel(args.trigger));
+
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
+      <h1 style="margin:0 0 18px 0;color:#263366;">Acknowledgment from Beyond Intelligence™</h1>
+
+      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+        <p style="line-height:1.7;margin-top:0;">Hello ${borrowerName},</p>
+
+        <p style="line-height:1.7;">
+          This message confirms that your ${actionLabel} has been received after your interaction with Finley Beyond.
+        </p>
+
+        <p style="line-height:1.7;">
+          ${loanOfficerName} will review your file, analyze the scenario, and continue the next stage of the pre-approval or consultation process as appropriate.
+        </p>
+
+        <p style="line-height:1.7;margin-bottom:0;">
+          This notice is an acknowledgment of your request and should not be interpreted as a loan approval, underwriting decision, or commitment to lend.
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+function buildAssistantAcknowledgmentEmailHtml(args: {
+  borrowerName: string;
+  loanOfficerName: string;
+  trigger: SummaryTrigger;
+}) {
+  const borrowerName = escapeHtml(args.borrowerName || "Borrower");
+  const loanOfficerName = escapeHtml(args.loanOfficerName || "Assigned loan officer");
+  const actionLabel = escapeHtml(getBorrowerActionLabel(args.trigger));
+
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
+      <h1 style="margin:0 0 18px 0;color:#263366;">Action Acknowledgment - Beyond Intelligence™</h1>
+
+      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+        <p style="line-height:1.7;margin-top:0;">
+          ${borrowerName} has triggered a ${actionLabel} through Finley Beyond.
+        </p>
+
+        <p style="line-height:1.7;">
+          The assigned loan officer is ${loanOfficerName}. This message is intended as a same-moment acknowledgment for team continuity.
+        </p>
+
+        <p style="line-height:1.7;margin-bottom:0;">
+          The internal summary has also been routed for professional review.
+        </p>
+      </div>
+    </div>
+  `;
 }
 
 function buildRealtorEmailHtml(args: {
@@ -192,7 +381,7 @@ function buildRealtorEmailHtml(args: {
         <p style="line-height:1.7;margin-top:0;">Hello ${realtorName},</p>
 
         <p style="line-height:1.7;">
-          This is a courtesy update to let you know that ${borrowerName} has completed a successful interaction with Finley Beyond, the AI Loan Officer Assistant powered by Beyond Intelligence™, and has now started the loan application process.
+          This is a courtesy update to let you know that ${borrowerName} completed a successful interaction with Finley Beyond, the AI Loan Officer Assistant powered by Beyond Intelligence™, and has now started the loan application process.
         </p>
 
         <p style="line-height:1.7;">
@@ -242,8 +431,13 @@ export async function POST(req: Request) {
 
     const selectedEmail =
       String(lead.assignedEmail || "").trim() ||
-      loanOfficerMap[loanOfficer.toLowerCase()] ||
+      loanOfficerMap[normalizeKey(loanOfficer)] ||
       "finley@beyondfinancing.com";
+
+    const assistantEmail =
+      String(lead.assistantEmail || "").trim() ||
+      assistantMapByOfficerName[normalizeKey(loanOfficer)] ||
+      "";
 
     let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger);
 
@@ -331,7 +525,8 @@ ${messages
                 ? parsed.strengths
                 : summary.strengths,
             openQuestions:
-              Array.isArray(parsed.openQuestions) && parsed.openQuestions.length > 0
+              Array.isArray(parsed.openQuestions) &&
+              parsed.openQuestions.length > 0
                 ? parsed.openQuestions
                 : summary.openQuestions,
             provisionalPrograms:
@@ -353,98 +548,100 @@ ${messages
 
     const transcriptHtml = buildTranscriptHtml(messages);
 
-    const internalHtml = `
-      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
-        <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond</h1>
-
-        <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
-          <h2 style="margin:0 0 12px 0;font-size:20px;">Lead Details</h2>
-          <p><strong>Full Name:</strong> ${escapeHtml(fullName)}</p>
-          <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-          <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
-          <p><strong>Language:</strong> ${escapeHtml(preferredLanguage)}</p>
-          <p><strong>Selected Loan Officer:</strong> ${escapeHtml(loanOfficer)}</p>
-          <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
-          <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
-          ${
-            realtorName || realtorEmail || realtorPhone
-              ? `<p><strong>Realtor:</strong> ${escapeHtml(
-                  [realtorName, realtorEmail, realtorPhone].filter(Boolean).join(" · ")
-                )}</p>`
-              : ""
-          }
-        </div>
-
-        <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
-          <h2 style="margin:0 0 12px 0;font-size:20px;">Borrower Summary</h2>
-          <p style="line-height:1.7;">${nl2br(summary.borrowerSummary)}</p>
-
-          <h3 style="margin:18px 0 8px 0;">Likely Direction</h3>
-          <p style="line-height:1.7;">${nl2br(summary.likelyDirection)}</p>
-
-          <h3 style="margin:18px 0 8px 0;">Provisional Program Directions</h3>
-          <ul style="line-height:1.8;">
-            ${summary.provisionalPrograms
-              .map((item) => `<li>${escapeHtml(item)}</li>`)
-              .join("")}
-          </ul>
-
-          <h3 style="margin:18px 0 8px 0;">Strengths</h3>
-          <ul style="line-height:1.8;">
-            ${summary.strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-          </ul>
-
-          <h3 style="margin:18px 0 8px 0;">Open Questions</h3>
-          <ul style="line-height:1.8;">
-            ${summary.openQuestions
-              .map((item) => `<li>${escapeHtml(item)}</li>`)
-              .join("")}
-          </ul>
-
-          <h3 style="margin:18px 0 8px 0;">Recommended Next Step</h3>
-          <p style="line-height:1.7;">${nl2br(summary.recommendedNextStep)}</p>
-
-          <h3 style="margin:18px 0 8px 0;">Loan Officer Action Plan</h3>
-          <ul style="line-height:1.8;">
-            ${summary.loanOfficerActionPlan
-              .map((item) => `<li>${escapeHtml(item)}</li>`)
-              .join("")}
-          </ul>
-        </div>
-
-        <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
-          <h2 style="margin:0 0 12px 0;font-size:20px;">Full Conversation Transcript</h2>
-          ${transcriptHtml || "<p>No transcript available.</p>"}
-        </div>
-      </div>
-    `;
-
-    await sendResendEmail({
-      to: [selectedEmail],
-      subject: `Conversation Summary: ${fullName}`,
-      html: internalHtml,
-      replyTo: email,
+    const internalHtml = buildInternalSummaryHtml({
+      fullName,
+      email,
+      phone,
+      preferredLanguage,
+      loanOfficer,
+      selectedEmail,
+      assistantEmail,
+      trigger,
+      realtorName,
+      realtorEmail,
+      realtorPhone,
+      summary,
+      transcriptHtml,
     });
 
-    if (trigger === "apply" && realtorEmail) {
-      await sendResendEmail({
-        to: [realtorEmail],
-        subject: `Application Started: ${fullName}`,
-        html: buildRealtorEmailHtml({
-          realtorName,
+    const tasks: Promise<unknown>[] = [];
+
+    // Internal summary to loan officer
+    tasks.push(
+      sendResendEmail({
+        to: [selectedEmail],
+        subject: `Conversation Summary: ${fullName}`,
+        html: internalHtml,
+        replyTo: email,
+      })
+    );
+
+    // Borrower confirmation email
+    tasks.push(
+      sendResendEmail({
+        to: [email],
+        subject: `Acknowledgment from Beyond Intelligence™`,
+        html: buildBorrowerConfirmationEmailHtml({
           borrowerName: fullName,
           loanOfficerName: loanOfficer,
+          trigger,
         }),
         replyTo: selectedEmail,
-      });
+      })
+    );
+
+    // Borrower confirmation SMS
+    tasks.push(
+      sendTwilioSms(
+        phone,
+        `${fullName}, your ${getBorrowerActionLabel(
+          trigger
+        )} was received by Beyond Intelligence. ${loanOfficer} will review your file and continue the next step as appropriate.`
+      )
+    );
+
+    // Assistant acknowledgment email
+    if (assistantEmail && assistantEmail !== selectedEmail) {
+      tasks.push(
+        sendResendEmail({
+          to: [assistantEmail],
+          subject: `Borrower Action Acknowledgment: ${fullName}`,
+          html: buildAssistantAcknowledgmentEmailHtml({
+            borrowerName: fullName,
+            loanOfficerName: loanOfficer,
+            trigger,
+          }),
+          replyTo: selectedEmail,
+        })
+      );
+    }
+
+    // Realtor apply notifications only
+    if (trigger === "apply" && realtorEmail) {
+      tasks.push(
+        sendResendEmail({
+          to: [realtorEmail],
+          subject: `Application Started: ${fullName}`,
+          html: buildRealtorEmailHtml({
+            realtorName,
+            borrowerName: fullName,
+            loanOfficerName: loanOfficer,
+          }),
+          replyTo: selectedEmail,
+        })
+      );
     }
 
     if (trigger === "apply" && realtorPhone) {
-      await sendTwilioSms(
-        realtorPhone,
-        `${fullName} has started a mortgage application through Finley Beyond. ${loanOfficer} will review the file and begin pre-approval analysis as appropriate.`
+      tasks.push(
+        sendTwilioSms(
+          realtorPhone,
+          `${fullName} has started a mortgage application through Finley Beyond. ${loanOfficer} will review the file and begin pre-approval analysis as appropriate.`
+        )
       );
     }
+
+    await Promise.allSettled(tasks);
 
     return NextResponse.json({ success: true });
   } catch {
