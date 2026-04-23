@@ -63,9 +63,9 @@ export default function PrivacyPage() {
         <p style={styles.text}>
           For questions regarding this policy, please contact:
           <br />
-          Beyond Financing, Inc.
+          Beyond Intelligence, LLC.
           <br />
-          support@beyondfinancing.com
+          support@beyondintelligence.io
         </p>
       </div>
     </main>
