@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 type WorkflowUrgency = "Standard" | "Priority" | "Rush";
@@ -13,7 +13,26 @@ type UpdateWorkflowBody = {
   actorRole?: string;
 };
 
-export async function POST(req: Request) {
+async function triggerNotification(origin: string, workflowFileId: string) {
+  try {
+    const response = await fetch(`${origin}/api/workflow-notify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workflowFileId,
+        eventType: "status_change",
+      }),
+    });
+
+    return response.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as UpdateWorkflowBody;
 
@@ -95,9 +114,22 @@ export async function POST(req: Request) {
       );
     }
 
+    await supabaseAdmin.from("workflow_updates").insert({
+      workflow_file_id: id,
+      previous_status: existingFile.status,
+      new_status: "sent_to_processing",
+      actor_name: actorName,
+      actor_role: actorRole,
+      note: latestUpdate,
+      created_at: new Date().toISOString(),
+    });
+
+    const notifyResult = await triggerNotification(req.nextUrl.origin, id);
+
     return NextResponse.json({
       success: true,
       message: "Workflow file updated successfully.",
+      notifyResult,
     });
   } catch (error) {
     return NextResponse.json(
