@@ -1,278 +1,1160 @@
 "use client";
 
-import React from "react";
+import Link from "next/link";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "radial-gradient(circle at top left, #f8fbff 0%, #f3f6fb 45%, #eef2f7 100%)",
-    color: "#1F2937",
-    fontFamily: "Inter, Arial, Helvetica, sans-serif",
-  },
-  wrap: {
-    maxWidth: 1400,
-    margin: "0 auto",
-    padding: "24px 18px 48px",
-  },
-  nav: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 20,
-    flexWrap: "wrap",
-  },
-  brand: {
-    textDecoration: "none",
-    color: "#263366",
-    fontSize: 16,
-    fontWeight: 900,
-    letterSpacing: 0.2,
-  },
-  navLinks: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-  navLink: {
-    textDecoration: "none",
-    color: "#263366",
-    backgroundColor: "#F7F9FD",
-    border: "1px solid #C9D5EA",
-    borderRadius: 999,
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 800,
-    lineHeight: 1,
-  },
-  hero: {
-    background: "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
-    borderRadius: 30,
-    padding: 30,
-    color: "#ffffff",
-    boxShadow: "0 18px 40px rgba(38,51,102,0.18)",
-    marginBottom: 22,
-  },
-  heroGrid: {
-    display: "grid",
-    gridTemplateColumns: "1.2fr 0.8fr",
-    gap: 22,
-    alignItems: "start",
-  },
-  badge: {
-    display: "inline-block",
-    padding: "10px 14px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    fontSize: 13,
-    fontWeight: 900,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginBottom: 18,
-  },
-  heroTitle: {
-    margin: 0,
-    fontSize: 58,
-    lineHeight: 0.96,
-    fontWeight: 900,
-  },
-  heroText: {
-    marginTop: 22,
-    marginBottom: 0,
-    maxWidth: 840,
-    fontSize: 17,
-    lineHeight: 1.75,
-    color: "rgba(255,255,255,0.94)",
-  },
-  heroPanel: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-    border: "1px solid rgba(255,255,255,0.18)",
-    borderRadius: 24,
-    padding: 20,
-  },
-  heroPanelTitle: {
-    fontSize: 14,
-    fontWeight: 900,
-    letterSpacing: 0.5,
-    marginBottom: 14,
-  },
-  heroPanelText: {
-    color: "rgba(255,255,255,0.94)",
-    lineHeight: 1.7,
-    fontSize: 15,
-    marginBottom: 16,
-  },
-  heroPanelList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    color: "rgba(255,255,255,0.96)",
-    fontSize: 15,
-    lineHeight: 1.6,
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 18,
-    marginBottom: 22,
-  },
-  card: {
-    backgroundColor: "#ffffff",
-    borderRadius: 28,
-    padding: 24,
-    boxShadow: "0 12px 28px rgba(15,23,42,0.06)",
-    border: "1px solid #E5ECF5",
-    display: "flex",
-    flexDirection: "column",
-    minHeight: 100,
-  },
-  cardEyebrow: {
-    fontSize: 13,
-    fontWeight: 900,
-    color: "#0284C7",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    marginBottom: 10,
-  },
-  cardTitle: {
-    margin: 0,
-    fontSize: 34,
-    lineHeight: 1.05,
-    color: "#2D3B78",
-    fontWeight: 900,
-    marginBottom: 14,
-  },
-  cardText: {
-    margin: 0,
-    color: "#526581",
-    fontSize: 15,
-    lineHeight: 1.75,
-  },
-  cardList: {
-    marginTop: 18,
-    marginBottom: 18,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    color: "#526581",
-    fontSize: 14,
-    lineHeight: 1.6,
-  },
-  cardActions: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    marginTop: "auto",
-  },
-  primaryAction: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 16,
-    backgroundColor: "#263366",
-    color: "#ffffff",
-    padding: "14px 18px",
-    fontWeight: 900,
-    fontSize: 14,
-    boxShadow: "0 10px 20px rgba(38,51,102,0.14)",
-  },
-  secondaryAction: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 16,
-    backgroundColor: "#0096C7",
-    color: "#ffffff",
-    padding: "14px 18px",
-    fontWeight: 900,
-    fontSize: 14,
-  },
-  outlineAction: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 16,
-    border: "1px solid #263366",
-    backgroundColor: "#ffffff",
-    color: "#263366",
-    padding: "14px 18px",
-    fontWeight: 900,
-    fontSize: 14,
-  },
-  architectureCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 28,
-    padding: 24,
-    boxShadow: "0 12px 28px rgba(15,23,42,0.06)",
-    border: "1px solid #E5ECF5",
-  },
-  architectureHeader: {
-    marginBottom: 18,
-  },
-  sectionEyebrow: {
-    fontSize: 13,
-    fontWeight: 900,
-    color: "#0284C7",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: 34,
-    lineHeight: 1.08,
-    color: "#2D3B78",
-    fontWeight: 900,
-  },
-  sectionText: {
-    marginTop: 12,
-    marginBottom: 0,
-    color: "#526581",
-    fontSize: 15,
-    lineHeight: 1.75,
-    maxWidth: 920,
-  },
-  architectureGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 16,
-  },
-  architectureItem: {
-    borderRadius: 22,
-    border: "1px solid #D9E4F1",
-    backgroundColor: "#F9FBFE",
-    padding: 18,
-  },
-  architectureItemTitle: {
-    fontSize: 20,
-    fontWeight: 900,
-    color: "#2D3B78",
-    marginBottom: 8,
-  },
-  architectureItemText: {
-    color: "#526581",
-    fontSize: 14,
-    lineHeight: 1.7,
-  },
-  footer: {
-    marginTop: 22,
-    textAlign: "center",
-    color: "#64748B",
-    fontSize: 14,
-    lineHeight: 1.6,
-  },
-  footerTag: {
-    display: "inline-block",
-    marginTop: 12,
-    padding: "8px 12px",
-    borderRadius: 999,
-    backgroundColor: "#EFF6FF",
-    border: "1px solid #BFDBFE",
-    color: "#1D4ED8",
-    fontWeight: 900,
-    fontSize: 12,
-    letterSpacing: 0.4,
-  },
+type TeamRole =
+  | "Loan Officer"
+  | "Loan Officer Assistant"
+  | "Processor"
+  | "Production Manager"
+  | "Branch Manager"
+  | "Real Estate Agent";
+
+type TeamUser = {
+  id: string;
+  name: string;
+  email: string;
+  nmls: string;
+  role: TeamRole;
+  calendly?: string;
+  assistantEmail?: string;
+  phone?: string;
 };
+
+type WorkflowStatus =
+  | "new_scenario"
+  | "pre_approval_review"
+  | "sent_to_processing"
+  | "processing_active"
+  | "submitted_to_lender"
+  | "conditional_approval"
+  | "clear_to_close"
+  | "closed";
+
+type WorkflowUrgency = "Standard" | "Priority" | "Rush";
+
+type ProcessorOption = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type WorkflowFile = {
+  id: string;
+  loanNumber: string;
+  borrowerName: string;
+  purpose: string;
+  amount: number;
+  status: WorkflowStatus;
+  urgency: WorkflowUrgency;
+  loanOfficer: string;
+  processor: string;
+  productionManager: string;
+  requestedProcessorNote: string;
+  targetClose: string;
+  fileAgeDays: number;
+  occupancy: string;
+  blocker: string;
+  nextInternalAction: string;
+  nextBorrowerAction: string;
+  latestUpdate: string;
+  propertyAddress: string;
+  listingAgentName: string;
+  buyerAgentName: string;
+};
+
+type WorkflowApiFile = {
+  id: string;
+  file_number?: string | null;
+  borrower_name: string;
+  purpose: string;
+  amount: number | string | null;
+  status: WorkflowStatus;
+  urgency: WorkflowUrgency;
+  loan_officer: string;
+  processor: string | null;
+  production_manager?: string | null;
+  requested_processor_note?: string | null;
+  target_close: string | null;
+  file_age_days: number | null;
+  occupancy: string;
+  blocker: string;
+  next_internal_action: string;
+  next_borrower_action: string;
+  latest_update: string;
+  property_address?: string | null;
+  listing_agent_name?: string | null;
+  buyer_agent_name?: string | null;
+};
+
+const PROCESSORS: ProcessorOption[] = [
+  {
+    id: "amarilis-santos",
+    name: "Amarilis Santos",
+    email: "amarilis@beyondfinancing.com",
+  },
+  {
+    id: "kyle-nicholson",
+    name: "Kyle Nicholson",
+    email: "kyle@beyondfinancing.com",
+  },
+  {
+    id: "bia-marques",
+    name: "Bia Marques",
+    email: "bia@beyondfinancing.com",
+  },
+];
+
+function formatCurrency(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "$0";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatPhoneDisplay(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+
+  if (!digits) return "";
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
+}
+
+function normalizeCurrencyInput(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
+function getStatusLabel(status: WorkflowStatus) {
+  switch (status) {
+    case "new_scenario":
+      return "New Scenario";
+    case "pre_approval_review":
+      return "Pre-Approval Review";
+    case "sent_to_processing":
+      return "Sent to Processing";
+    case "processing_active":
+      return "Processing Active";
+    case "submitted_to_lender":
+      return "Submitted to Lender";
+    case "conditional_approval":
+      return "Conditional Approval";
+    case "clear_to_close":
+      return "Clear to Close";
+    case "closed":
+      return "Closed / Funded";
+    default:
+      return status;
+  }
+}
+
+function getStatusTone(status: WorkflowStatus) {
+  switch (status) {
+    case "new_scenario":
+      return { bg: "#EEF2FF", border: "#C7D2FE", text: "#3755A5" };
+    case "pre_approval_review":
+      return { bg: "#F3F0FF", border: "#D8CCFF", text: "#5B3DB4" };
+    case "sent_to_processing":
+      return { bg: "#ECFEFF", border: "#A5F3FC", text: "#0E7490" };
+    case "processing_active":
+      return { bg: "#ECFDF3", border: "#BBF7D0", text: "#15803D" };
+    case "submitted_to_lender":
+      return { bg: "#FFF7ED", border: "#FDBA74", text: "#C2410C" };
+    case "conditional_approval":
+      return { bg: "#FFF7ED", border: "#FDBA74", text: "#C2410C" };
+    case "clear_to_close":
+      return { bg: "#ECFDF3", border: "#86EFAC", text: "#047857" };
+    case "closed":
+      return { bg: "#F3F4F6", border: "#D1D5DB", text: "#374151" };
+    default:
+      return { bg: "#F8FAFC", border: "#CBD5E1", text: "#475569" };
+  }
+}
+
+function getUrgencyTone(urgency: WorkflowUrgency) {
+  switch (urgency) {
+    case "Rush":
+      return { bg: "#FDF2F8", border: "#F9A8D4", text: "#BE185D" };
+    case "Priority":
+      return { bg: "#FFF7ED", border: "#FDBA74", text: "#C2410C" };
+    default:
+      return { bg: "#F8FAFC", border: "#CBD5E1", text: "#475569" };
+  }
+}
+
+function getUrgencyRank(urgency: WorkflowUrgency) {
+  switch (urgency) {
+    case "Rush":
+      return 3;
+    case "Priority":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function getStatusRank(status: WorkflowStatus) {
+  switch (status) {
+    case "conditional_approval":
+      return 8;
+    case "submitted_to_lender":
+      return 7;
+    case "processing_active":
+      return 6;
+    case "sent_to_processing":
+      return 5;
+    case "pre_approval_review":
+      return 4;
+    case "new_scenario":
+      return 3;
+    case "clear_to_close":
+      return 2;
+    case "closed":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function compareWorkflowFiles(a: WorkflowFile, b: WorkflowFile) {
+  const urgencyDiff = getUrgencyRank(b.urgency) - getUrgencyRank(a.urgency);
+  if (urgencyDiff !== 0) return urgencyDiff;
+
+  const statusDiff = getStatusRank(b.status) - getStatusRank(a.status);
+  if (statusDiff !== 0) return statusDiff;
+
+  const ageDiff = b.fileAgeDays - a.fileAgeDays;
+  if (ageDiff !== 0) return ageDiff;
+
+  return a.borrowerName.localeCompare(b.borrowerName);
+}
+
+export default function WorkflowPage() {
+  const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
+  const [authCheckLoading, setAuthCheckLoading] = useState(true);
+
+  const [files, setFiles] = useState<WorkflowFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const [createLoanNumber, setCreateLoanNumber] = useState("");
+  const [createBorrowerName, setCreateBorrowerName] = useState("");
+  const [createPurpose, setCreatePurpose] = useState("Purchase");
+  const [createAmount, setCreateAmount] = useState("");
+  const [createLoanOfficer, setCreateLoanOfficer] = useState("");
+  const [createProcessor, setCreateProcessor] = useState("Unassigned");
+  const [createTargetClose, setCreateTargetClose] = useState("");
+  const [createUrgency, setCreateUrgency] =
+    useState<WorkflowUrgency>("Priority");
+  const [createOccupancy, setCreateOccupancy] = useState("Primary Residence");
+  const [createBlocker, setCreateBlocker] = useState("None currently.");
+  const [createRequestedProcessorNote, setCreateRequestedProcessorNote] =
+    useState("");
+
+  const [createPropertyAddress, setCreatePropertyAddress] = useState("");
+  const [createListingAgentName, setCreateListingAgentName] = useState("");
+  const [createListingAgentEmail, setCreateListingAgentEmail] = useState("");
+  const [createListingAgentPhone, setCreateListingAgentPhone] = useState("");
+  const [createBuyerAgentName, setCreateBuyerAgentName] = useState("");
+  const [createBuyerAgentEmail, setCreateBuyerAgentEmail] = useState("");
+  const [createBuyerAgentPhone, setCreateBuyerAgentPhone] = useState("");
+
+  const [createStatusMessage, setCreateStatusMessage] = useState("");
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+
+  const canManageProcessing =
+    activeUser?.role === "Production Manager" ||
+    activeUser?.name === "Amarilis Santos";
+
+  const handleSignOut = async () => {
+    await fetch("/api/team-auth/logout", { method: "POST" });
+    setActiveUser(null);
+    window.location.href = "/team";
+  };
+
+  const loadFiles = useCallback(async () => {
+    try {
+      setFilesLoading(true);
+
+      const res = await fetch("/api/workflow", { cache: "no-store" });
+      const data = await res.json();
+
+      const mappedFiles: WorkflowFile[] = Array.isArray(data?.files)
+        ? (data.files as WorkflowApiFile[]).map((f) => ({
+            id: String(f.id ?? ""),
+            loanNumber: String(f.file_number ?? ""),
+            borrowerName: String(f.borrower_name ?? ""),
+            purpose: String(f.purpose ?? ""),
+            amount: Number(f.amount ?? 0),
+            status: f.status,
+            urgency: f.urgency,
+            loanOfficer: String(f.loan_officer ?? ""),
+            processor: String(f.processor ?? "Unassigned"),
+            productionManager: String(
+              f.production_manager ?? "Pending Assignment"
+            ),
+            requestedProcessorNote: String(
+              f.requested_processor_note ?? ""
+            ),
+            targetClose: String(f.target_close ?? ""),
+            fileAgeDays: Number(f.file_age_days ?? 0),
+            occupancy: String(f.occupancy ?? ""),
+            blocker: String(f.blocker ?? ""),
+            nextInternalAction: String(f.next_internal_action ?? ""),
+            nextBorrowerAction: String(f.next_borrower_action ?? ""),
+            latestUpdate: String(f.latest_update ?? ""),
+            propertyAddress: String(f.property_address ?? ""),
+            listingAgentName: String(f.listing_agent_name ?? ""),
+            buyerAgentName: String(f.buyer_agent_name ?? ""),
+          }))
+        : [];
+
+      setFiles(mappedFiles);
+    } catch (err) {
+      console.error("Failed to load workflow files", err);
+      setFiles([]);
+    } finally {
+      setFilesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const response = await fetch("/api/team-auth/me");
+
+        if (response.ok) {
+          const data = await response.json();
+
+          if (data?.authenticated && data?.user) {
+            setActiveUser(data.user);
+            setCreateLoanOfficer(data.user.name || "");
+          }
+        }
+      } catch {
+        // no-op
+      } finally {
+        setAuthCheckLoading(false);
+      }
+    };
+
+    void loadUser();
+  }, []);
+
+  useEffect(() => {
+    void loadFiles();
+  }, [loadFiles]);
+
+  const sortedFiles = useMemo(() => {
+    return [...files].sort(compareWorkflowFiles);
+  }, [files]);
+
+  const filteredFiles = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return sortedFiles;
+
+    return sortedFiles.filter((file) => {
+      const haystack = [
+        file.loanNumber,
+        file.borrowerName,
+        file.loanOfficer,
+        file.processor,
+        file.productionManager,
+        file.purpose,
+        file.propertyAddress,
+        file.listingAgentName,
+        file.buyerAgentName,
+        getStatusLabel(file.status),
+        file.latestUpdate,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [sortedFiles, searchQuery]);
+
+  const pipelineCounts = useMemo(() => {
+    return {
+      newScenario: files.filter((f) => f.status === "new_scenario").length,
+      preApprovalReview: files.filter(
+        (f) => f.status === "pre_approval_review"
+      ).length,
+      sentToProcessing: files.filter((f) => f.status === "sent_to_processing")
+        .length,
+      processingActive: files.filter((f) => f.status === "processing_active")
+        .length,
+      submittedToLender: files.filter((f) => f.status === "submitted_to_lender")
+        .length,
+      conditionalApproval: files.filter(
+        (f) => f.status === "conditional_approval"
+      ).length,
+      clearToClose: files.filter((f) => f.status === "clear_to_close").length,
+      closed: files.filter((f) => f.status === "closed").length,
+    };
+  }, [files]);
+
+  const processingActiveCount = files.filter(
+    (f) =>
+      f.status === "sent_to_processing" ||
+      f.status === "processing_active" ||
+      f.status === "submitted_to_lender" ||
+      f.status === "conditional_approval"
+  ).length;
+
+  const nearingCloseCount = files.filter(
+    (f) => f.status === "conditional_approval" || f.status === "clear_to_close"
+  ).length;
+
+  const rushFilesCount = files.filter((f) => f.urgency === "Rush").length;
+
+  const averageAge = files.length
+    ? Math.round(
+        files.reduce((sum, file) => sum + file.fileAgeDays, 0) / files.length
+      )
+    : 0;
+
+  const urgentItems = useMemo(() => {
+    return [...files]
+      .filter(
+        (file) =>
+          file.urgency !== "Standard" ||
+          file.blocker.toLowerCase() !== "none currently."
+      )
+      .sort(compareWorkflowFiles);
+  }, [files]);
+
+  const createWorkflowFile = async () => {
+    const borrowerName = createBorrowerName.trim();
+    const loanOfficer = createLoanOfficer.trim() || activeUser?.name || "";
+    const loanNumber = createLoanNumber.trim();
+    const propertyAddress = createPropertyAddress.trim();
+
+    if (!borrowerName || !loanOfficer || !loanNumber || !propertyAddress) {
+      setCreateStatusMessage(
+        "Loan number, borrower name, property address, and loan officer are required."
+      );
+      return;
+    }
+
+    try {
+      setIsCreatingFile(true);
+      setCreateStatusMessage("");
+
+      const response = await fetch("/api/workflow", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "create_file",
+          loanNumber,
+          borrowerName,
+          purpose: createPurpose,
+          amount: Number(createAmount || 0),
+          loanOfficer,
+          processor: createProcessor,
+          targetClose: createTargetClose,
+          urgency: createUrgency,
+          occupancy: createOccupancy,
+          blocker: createBlocker,
+          requestedProcessorNote: createRequestedProcessorNote,
+          propertyAddress,
+          listingAgentName: createListingAgentName,
+          listingAgentEmail: createListingAgentEmail,
+          listingAgentPhone: createListingAgentPhone,
+          buyerAgentName: createBuyerAgentName,
+          buyerAgentEmail: createBuyerAgentEmail,
+          buyerAgentPhone: createBuyerAgentPhone,
+          author: activeUser?.name || "Team User",
+          role: activeUser?.role || "Professional",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        setCreateStatusMessage(
+          data?.error || "Unable to create workflow file."
+        );
+        return;
+      }
+
+      setCreateLoanNumber("");
+      setCreateBorrowerName("");
+      setCreatePurpose("Purchase");
+      setCreateAmount("");
+      setCreateProcessor("Unassigned");
+      setCreateTargetClose("");
+      setCreateUrgency("Priority");
+      setCreateOccupancy("Primary Residence");
+      setCreateBlocker("None currently.");
+      setCreateRequestedProcessorNote("");
+      setCreatePropertyAddress("");
+      setCreateListingAgentName("");
+      setCreateListingAgentEmail("");
+      setCreateListingAgentPhone("");
+      setCreateBuyerAgentName("");
+      setCreateBuyerAgentEmail("");
+      setCreateBuyerAgentPhone("");
+      setCreateStatusMessage(
+        "Workflow file created successfully and notifications were triggered where agent contact data was provided."
+      );
+
+      await loadFiles();
+    } catch (err) {
+      console.error(err);
+      setCreateStatusMessage("Unable to create workflow file.");
+    } finally {
+      setIsCreatingFile(false);
+    }
+  };
+
+  if (authCheckLoading) {
+    return (
+      <main style={styles.page}>
+        <style>{responsiveCss}</style>
+        <div className="bf-wrap" style={styles.wrap}>
+          <TopNav />
+          <section style={styles.hero}>
+            <div style={styles.heroBadge}>TEAM WORKFLOW INTELLIGENCE</div>
+            <h1 style={styles.heroTitle}>
+              Beyond Intelligence™ Team Workflow Intelligence
+            </h1>
+            <p style={styles.heroText}>
+              Loading protected workflow command center...
+            </p>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (!activeUser) {
+    return (
+      <main style={styles.page}>
+        <style>{responsiveCss}</style>
+        <div className="bf-wrap" style={styles.wrap}>
+          <TopNav />
+          <section style={styles.hero}>
+            <div style={styles.heroBadge}>TEAM WORKFLOW INTELLIGENCE</div>
+            <h1 style={styles.heroTitle}>
+              Beyond Intelligence™ Team Workflow Intelligence
+            </h1>
+            <p style={styles.heroText}>
+              Processing handoff, file command, milestone visibility, and
+              execution tracking from pre-approval through closing.
+            </p>
+          </section>
+
+          <div style={styles.loginCard}>
+            <h2 style={styles.sectionTitle}>Protected Professional Access</h2>
+            <p style={styles.sectionText}>
+              This page uses the same professional authentication layer as Team
+              Mortgage Intelligence. Please sign in through your protected team
+              access first.
+            </p>
+
+            <div style={styles.loginActions}>
+              <a href="/team" style={styles.primaryLinkButton}>
+                Go to Mortgage Intelligence Login
+              </a>
+              <a href="/" style={styles.secondaryLinkButton}>
+                Back to Homepage
+              </a>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main style={styles.page}>
+      <style>{responsiveCss}</style>
+
+      <div className="bf-wrap" style={styles.wrap}>
+        <TopNav active="workflow" />
+
+        <section style={styles.hero}>
+          <div className="bf-workflow-hero-top" style={styles.workflowHeroTopBar}>
+            <div style={styles.workflowHeroLeft}>
+              <div style={styles.heroBadge}>TEAM COMMAND CENTER</div>
+              <h1 style={styles.heroTitle}>
+                Mortgage workflow intelligence
+                <br />
+                from pre-approval handoff
+                <br />
+                through closing.
+              </h1>
+              <p style={styles.heroText}>
+                Built for loan officers, processors, assistants, and leadership
+                teams who need one disciplined operating layer to manage file
+                handoff, milestone visibility, accountability, and internal
+                communication from processing entry to clear-to-close.
+              </p>
+            </div>
+
+            <div style={styles.workflowHeroRight}>
+              <div style={styles.userBadge}>
+                <div style={styles.userBadgeTitle}>
+                  Logged in as: {activeUser.name}
+                </div>
+                <div style={styles.userBadgeSubtext}>
+                  Role: {activeUser.role} · {activeUser.email}
+                </div>
+              </div>
+
+              <div style={styles.heroPurposeCard}>
+                <div style={styles.heroPurposeTitle}>COMMAND PURPOSE</div>
+                <div style={styles.heroPurposeList}>
+                  <div>• Open each file as a true operational record.</div>
+                  <div>• Keep production assignment under Production Manager control.</div>
+                  <div>• Keep agents informed that the file is progressing.</div>
+                  <div>• Keep updates, visibility, and accountability in one place.</div>
+                </div>
+
+                <div style={styles.heroActionRow}>
+                  <a href="/" style={styles.heroActionOutline}>
+                    Back to Homepage
+                  </a>
+                  <a href="/borrower" style={styles.heroActionGhost}>
+                    Open Borrower Experience
+                  </a>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                style={styles.signOutButton}
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div className="bf-stat-grid" style={styles.statGrid}>
+          <StatCard
+            title="Processing Active"
+            value={String(processingActiveCount)}
+            subtext="Files currently in execution"
+          />
+          <StatCard
+            title="Nearing Close"
+            value={String(nearingCloseCount)}
+            subtext="Conditional approval or better"
+          />
+          <StatCard
+            title="Rush Files"
+            value={String(rushFilesCount)}
+            subtext="Priority oversight required"
+          />
+          <StatCard
+            title="Average Age"
+            value={`${averageAge}d`}
+            subtext="Average file age in command center"
+          />
+        </div>
+
+        <section style={styles.card}>
+          <div style={styles.pipelineHeader}>
+            <div>
+              <div style={styles.sectionEyebrow}>PIPELINE</div>
+              <h2 style={styles.sectionTitle}>Live command pipeline</h2>
+            </div>
+
+            <div style={styles.searchWrap}>
+              <label style={styles.searchLabel}>Search files</label>
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search loan #, borrower, address, agents, processor, status, or update"
+                style={styles.searchInput}
+              />
+            </div>
+          </div>
+
+          <div className="bf-pipeline-grid" style={styles.pipelineGrid}>
+            <PipelineCard label="New Scenario" value={pipelineCounts.newScenario} status="new_scenario" />
+            <PipelineCard label="Pre-Approval Review" value={pipelineCounts.preApprovalReview} status="pre_approval_review" />
+            <PipelineCard label="Sent to Processing" value={pipelineCounts.sentToProcessing} status="sent_to_processing" />
+            <PipelineCard label="Processing Active" value={pipelineCounts.processingActive} status="processing_active" />
+            <PipelineCard label="Submitted to Lender" value={pipelineCounts.submittedToLender} status="submitted_to_lender" />
+            <PipelineCard label="Conditional Approval" value={pipelineCounts.conditionalApproval} status="conditional_approval" />
+            <PipelineCard label="Clear to Close" value={pipelineCounts.clearToClose} status="clear_to_close" />
+            <PipelineCard label="Closed" value={pipelineCounts.closed} status="closed" />
+          </div>
+        </section>
+
+        <div className="bf-main-grid" style={styles.mainGrid}>
+          <section style={styles.column}>
+            <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>ACTIVE FILES</div>
+              <h2 style={styles.sectionTitle}>Processing and handoff queue</h2>
+
+              {filesLoading ? (
+                <div style={styles.placeholderBox}>Loading workflow files...</div>
+              ) : (
+                <div style={styles.slimList}>
+                  {filteredFiles.map((file) => {
+                    const statusTone = getStatusTone(file.status);
+                    const urgencyTone = getUrgencyTone(file.urgency);
+
+                    return (
+                      <Link
+                        key={file.id}
+                        href={`/workflow/${file.id}`}
+                        style={styles.slimFileLink}
+                      >
+                        <div style={styles.slimFileCard}>
+                          <div style={styles.slimFileLeft}>
+                            <div style={styles.slimBorrower}>{file.borrowerName}</div>
+                            <div style={styles.slimMeta}>
+                              Loan # {file.loanNumber || "Not Assigned"} · {file.purpose} · {formatCurrency(file.amount)}
+                            </div>
+                            <div style={styles.slimMetaSecondary}>
+                              {file.propertyAddress || "No property address entered"}
+                            </div>
+                            <div style={styles.slimMetaSecondary}>
+                              Last update: {file.latestUpdate || "No update yet."}
+                            </div>
+                          </div>
+
+                          <div style={styles.slimFileRight}>
+                            <span
+                              style={{
+                                ...styles.badge,
+                                backgroundColor: statusTone.bg,
+                                borderColor: statusTone.border,
+                                color: statusTone.text,
+                              }}
+                            >
+                              {getStatusLabel(file.status)}
+                            </span>
+
+                            <span
+                              style={{
+                                ...styles.badge,
+                                backgroundColor: urgencyTone.bg,
+                                borderColor: urgencyTone.border,
+                                color: urgencyTone.text,
+                              }}
+                            >
+                              {file.urgency}
+                            </span>
+
+                            <div style={styles.slimOpenText}>Open record</div>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+
+                  {filteredFiles.length === 0 ? (
+                    <div style={styles.placeholderBox}>
+                      No files match the current search.
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>URGENT OVERSIGHT</div>
+              <h2 style={styles.sectionTitle}>Files needing attention</h2>
+
+              <div style={styles.attentionList}>
+                {urgentItems.length === 0 ? (
+                  <div style={styles.placeholderBox}>
+                    No urgent items are currently flagged.
+                  </div>
+                ) : (
+                  urgentItems.map((item) => (
+                    <Link
+                      key={`urgent-${item.id}`}
+                      href={`/workflow/${item.id}`}
+                      style={styles.attentionLink}
+                    >
+                      <div style={styles.attentionCard}>
+                        <div>
+                          <div style={styles.attentionName}>{item.borrowerName}</div>
+                          <div style={styles.attentionMeta}>
+                            Loan # {item.loanNumber || "Not Assigned"} · {getStatusLabel(item.status)} · {item.fileAgeDays} days in workflow
+                          </div>
+                          <div style={styles.attentionMeta}>
+                            {item.propertyAddress || "No property address entered"}
+                          </div>
+                        </div>
+                        <div style={styles.attentionIssue}>{item.blocker}</div>
+                      </div>
+                    </Link>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
+          <aside style={styles.column}>
+            <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>ADD LOAN APP</div>
+              <h2 style={styles.sectionTitle}>Create workflow file</h2>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void createWorkflowFile();
+                }}
+              >
+                <label style={styles.label}>Loan number</label>
+                <input
+                  value={createLoanNumber}
+                  onChange={(e) => setCreateLoanNumber(e.target.value)}
+                  style={styles.input}
+                  placeholder="Example: 2026-00124 or ARIVE loan number"
+                />
+
+                <label style={styles.label}>Borrower full name</label>
+                <input
+                  value={createBorrowerName}
+                  onChange={(e) => setCreateBorrowerName(e.target.value)}
+                  style={styles.input}
+                  placeholder="Borrower full name"
+                />
+
+                <label style={styles.label}>Property address</label>
+                <input
+                  value={createPropertyAddress}
+                  onChange={(e) => setCreatePropertyAddress(e.target.value)}
+                  style={styles.input}
+                  placeholder="123 Main St, City, ST ZIP"
+                  autoComplete="street-address"
+                />
+
+                <div style={styles.infoBox}>
+                  Address entry is active with manual input. This version removes the
+                  hard Mapbox dependency so deployment remains stable.
+                </div>
+
+                <label style={styles.label}>Loan purpose</label>
+                <select
+                  value={createPurpose}
+                  onChange={(e) => setCreatePurpose(e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="Purchase">Purchase</option>
+                  <option value="Rate/Term Refinance">Rate/Term Refinance</option>
+                  <option value="Cash-Out Refinance">Cash-Out Refinance</option>
+                  <option value="HELOC">HELOC</option>
+                  <option value="DSCR">DSCR</option>
+                </select>
+
+                <label style={styles.label}>Amount</label>
+                <input
+                  value={createAmount}
+                  onChange={(e) =>
+                    setCreateAmount(normalizeCurrencyInput(e.target.value))
+                  }
+                  style={styles.input}
+                  placeholder="612000"
+                  inputMode="numeric"
+                />
+                {createAmount ? (
+                  <div style={styles.inlineHelperText}>
+                    Display amount: {formatCurrency(Number(createAmount || 0))}
+                  </div>
+                ) : null}
+
+                <label style={styles.label}>Loan officer</label>
+                <input
+                  value={createLoanOfficer}
+                  onChange={(e) => setCreateLoanOfficer(e.target.value)}
+                  style={styles.input}
+                  placeholder="Loan officer name"
+                />
+
+                <label style={styles.label}>
+                  Requested processor note to Production Manager
+                </label>
+                <textarea
+                  value={createRequestedProcessorNote}
+                  onChange={(e) => setCreateRequestedProcessorNote(e.target.value)}
+                  rows={3}
+                  style={styles.textarea}
+                  placeholder="Example: If possible, I would like Bia Marques on this file because of borrower language needs."
+                />
+
+                <label style={styles.label}>Assign processor</label>
+                <select
+                  value={createProcessor}
+                  onChange={(e) => setCreateProcessor(e.target.value)}
+                  style={styles.input}
+                  disabled={!canManageProcessing}
+                >
+                  <option value="Unassigned">Unassigned</option>
+                  {PROCESSORS.map((processor) => (
+                    <option key={processor.id} value={processor.name}>
+                      {processor.name}
+                    </option>
+                  ))}
+                </select>
+
+                {!canManageProcessing ? (
+                  <div style={styles.infoBox}>
+                    Processor assignment is controlled by the Production Manager.
+                    Loan Officers may leave a requested processor note above.
+                  </div>
+                ) : null}
+
+                <label style={styles.label}>Target close date</label>
+                <input
+                  type="date"
+                  value={createTargetClose}
+                  onChange={(e) => setCreateTargetClose(e.target.value)}
+                  style={styles.input}
+                />
+
+                <label style={styles.label}>Urgency</label>
+                <select
+                  value={createUrgency}
+                  onChange={(e) =>
+                    setCreateUrgency(e.target.value as WorkflowUrgency)
+                  }
+                  style={styles.input}
+                >
+                  <option value="Standard">Standard</option>
+                  <option value="Priority">Priority</option>
+                  <option value="Rush">Rush</option>
+                </select>
+
+                <label style={styles.label}>Occupancy</label>
+                <input
+                  value={createOccupancy}
+                  onChange={(e) => setCreateOccupancy(e.target.value)}
+                  style={styles.input}
+                  placeholder="Primary Residence"
+                />
+
+                <label style={styles.label}>Current blocker</label>
+                <textarea
+                  value={createBlocker}
+                  onChange={(e) => setCreateBlocker(e.target.value)}
+                  rows={3}
+                  style={styles.textarea}
+                />
+
+                <div style={styles.agentSectionCard}>
+                  <div style={styles.agentSectionTitle}>Listing Agent</div>
+
+                  <label style={styles.label}>Listing agent name</label>
+                  <input
+                    value={createListingAgentName}
+                    onChange={(e) => setCreateListingAgentName(e.target.value)}
+                    style={styles.input}
+                    placeholder="Listing agent name"
+                  />
+
+                  <label style={styles.label}>Listing agent email</label>
+                  <input
+                    value={createListingAgentEmail}
+                    onChange={(e) => setCreateListingAgentEmail(e.target.value)}
+                    style={styles.input}
+                    placeholder="listing.agent@email.com"
+                    type="email"
+                  />
+
+                  <label style={styles.label}>Listing agent phone</label>
+                  <input
+                    value={createListingAgentPhone}
+                    onChange={(e) =>
+                      setCreateListingAgentPhone(
+                        formatPhoneDisplay(e.target.value)
+                      )
+                    }
+                    style={styles.input}
+                    placeholder="617.555.1212"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                <div style={styles.agentSectionCard}>
+                  <div style={styles.agentSectionTitle}>Buyer Agent</div>
+
+                  <label style={styles.label}>Buyer agent name</label>
+                  <input
+                    value={createBuyerAgentName}
+                    onChange={(e) => setCreateBuyerAgentName(e.target.value)}
+                    style={styles.input}
+                    placeholder="Buyer agent name"
+                  />
+
+                  <label style={styles.label}>Buyer agent email</label>
+                  <input
+                    value={createBuyerAgentEmail}
+                    onChange={(e) => setCreateBuyerAgentEmail(e.target.value)}
+                    style={styles.input}
+                    placeholder="buyer.agent@email.com"
+                    type="email"
+                  />
+
+                  <label style={styles.label}>Buyer agent phone</label>
+                  <input
+                    value={createBuyerAgentPhone}
+                    onChange={(e) =>
+                      setCreateBuyerAgentPhone(
+                        formatPhoneDisplay(e.target.value)
+                      )
+                    }
+                    style={styles.input}
+                    placeholder="617.555.1212"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  style={{
+                    ...styles.commandButton,
+                    opacity: isCreatingFile ? 0.75 : 1,
+                    cursor: isCreatingFile ? "not-allowed" : "pointer",
+                  }}
+                  disabled={isCreatingFile}
+                >
+                  {isCreatingFile ? "Creating File..." : "Add to Workflow"}
+                </button>
+              </form>
+
+              {createStatusMessage ? (
+                <div style={styles.infoBox}>{createStatusMessage}</div>
+              ) : null}
+            </div>
+
+            <div style={styles.card}>
+              <div style={styles.sectionEyebrow}>FILE RECORDS</div>
+              <h2 style={styles.sectionTitle}>How Phase 4 works</h2>
+
+              <div style={styles.moduleStack}>
+                <div style={styles.moduleCard}>
+                  <div style={styles.moduleTitle}>Address and agent anchored</div>
+                  <div style={styles.moduleText}>
+                    Each workflow file now stores the property address, listing agent,
+                    and buyer agent so the system always knows who to notify.
+                  </div>
+                </div>
+
+                <div style={styles.moduleCard}>
+                  <div style={styles.moduleTitle}>Milestone visibility</div>
+                  <div style={styles.moduleText}>
+                    Agents can receive automated notifications when the file is
+                    registered and when status moves through key milestones.
+                  </div>
+                </div>
+
+                <div style={styles.moduleCard}>
+                  <div style={styles.moduleTitle}>Final close logic</div>
+                  <div style={styles.moduleText}>
+                    When a file reaches closed / funded, the system sends a final
+                    notification and then deactivates further automated agent alerts.
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.footerBrand}>
+                Powered and Designed by Beyond Intelligence™ © 2026
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function TopNav({ active = "workflow" }: { active?: "team" | "workflow" }) {
+  return (
+    <div style={navStyles.topBar}>
+      <a href="/" style={navStyles.brand}>
+        Beyond Intelligence™
+      </a>
+
+      <div style={navStyles.topBarLinks}>
+        <a href="/" style={navStyles.topBarLink}>
+          Home
+        </a>
+        <a href="/borrower" style={navStyles.topBarLink}>
+          Borrower Experience
+        </a>
+        <a
+          href="/team"
+          style={
+            active === "team"
+              ? navStyles.topBarLinkActive
+              : navStyles.topBarLink
+          }
+        >
+          Mortgage Intelligence
+        </a>
+        <a
+          href="/workflow"
+          style={
+            active === "workflow"
+              ? navStyles.topBarLinkActive
+              : navStyles.topBarLink
+          }
+        >
+          Workflow Intelligence
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  subtext,
+}: {
+  title: string;
+  value: string;
+  subtext: string;
+}) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statTitle}>{title}</div>
+      <div style={styles.statValue}>{value}</div>
+      <div style={styles.statSubtext}>{subtext}</div>
+    </div>
+  );
+}
+
+function PipelineCard({
+  label,
+  value,
+  status,
+}: {
+  label: string;
+  value: number;
+  status: WorkflowStatus;
+}) {
+  const tone = getStatusTone(status);
+
+  return (
+    <div
+      style={{
+        ...styles.pipelineCard,
+        backgroundColor: tone.bg,
+        borderColor: tone.border,
+      }}
+    >
+      <div style={{ ...styles.pipelineLabel, color: tone.text }}>{label}</div>
+      <div style={{ ...styles.pipelineValue, color: tone.text }}>{value}</div>
+    </div>
+  );
+}
 
 const responsiveCss = `
   * {
@@ -285,232 +1167,581 @@ const responsiveCss = `
   }
 
   @media (max-width: 1160px) {
-    .bf-hero-grid,
-    .bf-main-grid,
-    .bf-arch-grid {
+    .bf-main-grid {
       grid-template-columns: 1fr !important;
     }
   }
 
-  @media (max-width: 760px) {
+  @media (max-width: 1080px) {
+    .bf-workflow-hero-top {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (max-width: 920px) {
+    .bf-stat-grid,
+    .bf-pipeline-grid {
+      grid-template-columns: 1fr 1fr !important;
+    }
+  }
+
+  @media (max-width: 680px) {
     .bf-wrap {
       padding: 18px 12px 32px !important;
     }
 
-    .bf-hero-title {
-      font-size: 38px !important;
-      line-height: 1.02 !important;
-    }
-
-    .bf-card-title {
-      font-size: 28px !important;
-    }
-
-    .bf-section-title {
-      font-size: 28px !important;
+    .bf-stat-grid,
+    .bf-pipeline-grid {
+      grid-template-columns: 1fr !important;
     }
   }
 `;
 
-export default function HomePage() {
-  return (
-    <main style={styles.page}>
-      <style>{responsiveCss}</style>
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    backgroundColor: "#F3F6FB",
+    color: "#1F2937",
+    fontFamily: "Inter, Arial, Helvetica, sans-serif",
+  },
+  wrap: {
+    maxWidth: 1400,
+    margin: "0 auto",
+    padding: "24px 18px 40px",
+  },
+  hero: {
+    background: "linear-gradient(135deg, #263366 0%, #0096C7 100%)",
+    borderRadius: 30,
+    padding: 28,
+    color: "#ffffff",
+    boxShadow: "0 16px 34px rgba(38,51,102,0.16)",
+    marginBottom: 20,
+  },
+  workflowHeroTopBar: {
+    display: "grid",
+    gridTemplateColumns: "1.2fr 0.8fr",
+    gap: 22,
+    alignItems: "start",
+  },
+  workflowHeroLeft: {
+    minWidth: 0,
+  },
+  workflowHeroRight: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    minWidth: 320,
+  },
+  userBadge: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    borderRadius: 20,
+    padding: 16,
+  },
+  userBadgeTitle: {
+    fontWeight: 800,
+    fontSize: 15,
+    marginBottom: 4,
+    color: "#ffffff",
+  },
+  userBadgeSubtext: {
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: "rgba(255,255,255,0.92)",
+  },
+  signOutButton: {
+    border: "1px solid rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    color: "#ffffff",
+    borderRadius: 16,
+    padding: "14px 16px",
+    fontWeight: 800,
+    fontSize: 15,
+  },
+  heroBadge: {
+    display: "inline-block",
+    fontSize: 13,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    fontWeight: 800,
+    opacity: 0.98,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    padding: "10px 14px",
+    marginBottom: 18,
+  },
+  heroTitle: {
+    margin: 0,
+    fontWeight: 900,
+    fontSize: 56,
+    lineHeight: 0.95,
+  },
+  heroText: {
+    marginTop: 22,
+    marginBottom: 0,
+    fontSize: 16,
+    lineHeight: 1.7,
+    maxWidth: 820,
+    color: "rgba(255,255,255,0.94)",
+  },
+  heroPurposeCard: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 24,
+    padding: 18,
+  },
+  heroPurposeTitle: {
+    fontSize: 14,
+    fontWeight: 900,
+    marginBottom: 14,
+    letterSpacing: 0.5,
+  },
+  heroPurposeList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    lineHeight: 1.6,
+    color: "rgba(255,255,255,0.95)",
+    marginBottom: 18,
+  },
+  heroActionRow: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  heroActionOutline: {
+    textDecoration: "none",
+    color: "#ffffff",
+    border: "1px solid rgba(255,255,255,0.26)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 16,
+    padding: "12px 16px",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+  heroActionGhost: {
+    textDecoration: "none",
+    color: "#ffffff",
+    border: "1px solid rgba(255,255,255,0.26)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 16,
+    padding: "12px 16px",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+  loginCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    padding: 24,
+    boxShadow: "0 10px 26px rgba(15,23,42,0.06)",
+    maxWidth: 760,
+    margin: "0 auto",
+  },
+  loginActions: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginTop: 18,
+  },
+  primaryLinkButton: {
+    textDecoration: "none",
+    textAlign: "center",
+    borderRadius: 14,
+    backgroundColor: "#263366",
+    color: "#ffffff",
+    padding: "13px 18px",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+  secondaryLinkButton: {
+    textDecoration: "none",
+    textAlign: "center",
+    borderRadius: 14,
+    border: "1px solid #263366",
+    backgroundColor: "#ffffff",
+    color: "#263366",
+    padding: "13px 18px",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+  statGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: 16,
+    marginBottom: 20,
+  },
+  statCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    padding: 20,
+    boxShadow: "0 10px 26px rgba(15,23,42,0.06)",
+  },
+  statTitle: {
+    fontSize: 14,
+    fontWeight: 900,
+    color: "#0284C7",
+    marginBottom: 10,
+  },
+  statValue: {
+    fontSize: 42,
+    lineHeight: 1,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 10,
+  },
+  statSubtext: {
+    color: "#64748B",
+    fontSize: 14,
+    lineHeight: 1.5,
+  },
+  card: {
+    backgroundColor: "#ffffff",
+    borderRadius: 28,
+    padding: 24,
+    boxShadow: "0 10px 26px rgba(15,23,42,0.06)",
+    marginBottom: 20,
+  },
+  sectionEyebrow: {
+    fontSize: 14,
+    fontWeight: 900,
+    color: "#0284C7",
+    letterSpacing: 0.4,
+    marginBottom: 10,
+    textTransform: "uppercase",
+  },
+  sectionTitle: {
+    margin: 0,
+    color: "#2D3B78",
+    fontSize: 28,
+    lineHeight: 1.15,
+    fontWeight: 900,
+  },
+  sectionText: {
+    color: "#64748B",
+    lineHeight: 1.7,
+    fontSize: 15,
+    marginTop: 10,
+    marginBottom: 0,
+  },
+  pipelineHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 18,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    marginBottom: 16,
+  },
+  searchWrap: {
+    minWidth: 320,
+    flex: "0 1 420px",
+  },
+  searchLabel: {
+    display: "block",
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#2D3B78",
+    marginBottom: 8,
+  },
+  searchInput: {
+    width: "100%",
+    borderRadius: 18,
+    border: "1px solid #B6C6E1",
+    padding: "13px 16px",
+    fontSize: 15,
+    outline: "none",
+    color: "#0F172A",
+    backgroundColor: "#ffffff",
+  },
+  pipelineGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(8, 1fr)",
+    gap: 10,
+  },
+  pipelineCard: {
+    borderRadius: 18,
+    border: "1px solid",
+    padding: 14,
+    minHeight: 108,
+  },
+  pipelineLabel: {
+    fontSize: 14,
+    fontWeight: 800,
+    lineHeight: 1.4,
+    marginBottom: 12,
+  },
+  pipelineValue: {
+    fontSize: 28,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
+  mainGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 0.95fr",
+    gap: 20,
+    alignItems: "start",
+  },
+  column: {
+    display: "flex",
+    flexDirection: "column",
+  },
+  slimList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    marginTop: 8,
+  },
+  slimFileLink: {
+    textDecoration: "none",
+    color: "inherit",
+  },
+  slimFileCard: {
+    borderRadius: 22,
+    border: "1px solid #D7E2F0",
+    backgroundColor: "#ffffff",
+    padding: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  slimFileLeft: {
+    minWidth: 0,
+    flex: 1,
+  },
+  slimBorrower: {
+    fontSize: 18,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 6,
+  },
+  slimMeta: {
+    color: "#64748B",
+    fontSize: 14,
+    lineHeight: 1.5,
+    wordBreak: "break-word",
+  },
+  slimMetaSecondary: {
+    color: "#526581",
+    fontSize: 14,
+    lineHeight: 1.5,
+    marginTop: 4,
+    wordBreak: "break-word",
+  },
+  slimFileRight: {
+    display: "flex",
+    gap: 10,
+    alignItems: "center",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  slimOpenText: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#263366",
+  },
+  badge: {
+    borderRadius: 999,
+    border: "1px solid",
+    padding: "8px 12px",
+    fontSize: 13,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+  label: {
+    display: "block",
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#2D3B78",
+    marginBottom: 8,
+    marginTop: 14,
+  },
+  input: {
+    width: "100%",
+    borderRadius: 18,
+    border: "1px solid #B6C6E1",
+    padding: "13px 16px",
+    fontSize: 15,
+    outline: "none",
+    color: "#0F172A",
+    backgroundColor: "#ffffff",
+  },
+  textarea: {
+    width: "100%",
+    borderRadius: 18,
+    border: "1px solid #B6C6E1",
+    padding: "13px 16px",
+    fontSize: 15,
+    outline: "none",
+    color: "#0F172A",
+    backgroundColor: "#ffffff",
+    resize: "vertical",
+  },
+  commandButton: {
+    width: "100%",
+    marginTop: 18,
+    border: "none",
+    borderRadius: 20,
+    backgroundColor: "#3E4E93",
+    color: "#ffffff",
+    padding: "16px 20px",
+    fontWeight: 900,
+    fontSize: 16,
+    boxShadow: "0 10px 20px rgba(38,51,102,0.16)",
+  },
+  infoBox: {
+    marginTop: 14,
+    backgroundColor: "#F8FBFF",
+    border: "1px solid #DBEAFE",
+    color: "#1E3A8A",
+    borderRadius: 16,
+    padding: 14,
+    lineHeight: 1.6,
+    fontSize: 14,
+  },
+  inlineHelperText: {
+    marginTop: 8,
+    color: "#526581",
+    fontSize: 13,
+    lineHeight: 1.5,
+  },
+  attentionList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    marginTop: 8,
+  },
+  attentionLink: {
+    textDecoration: "none",
+    color: "inherit",
+  },
+  attentionCard: {
+    borderRadius: 20,
+    border: "1px solid #F2C086",
+    backgroundColor: "#FFF9F2",
+    padding: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  attentionName: {
+    fontSize: 18,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 4,
+  },
+  attentionMeta: {
+    color: "#64748B",
+    fontSize: 14,
+    lineHeight: 1.5,
+  },
+  attentionIssue: {
+    color: "#9A3412",
+    fontWeight: 800,
+    fontSize: 14,
+    lineHeight: 1.5,
+  },
+  moduleStack: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    marginTop: 8,
+  },
+  moduleCard: {
+    borderRadius: 20,
+    border: "1px solid #D7E2F0",
+    backgroundColor: "#F9FBFE",
+    padding: 16,
+  },
+  moduleTitle: {
+    fontSize: 18,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 8,
+  },
+  moduleText: {
+    color: "#526581",
+    fontSize: 15,
+    lineHeight: 1.7,
+  },
+  footerBrand: {
+    textAlign: "center",
+    marginTop: 22,
+    paddingTop: 18,
+    borderTop: "1px solid #E2E8F0",
+    color: "#64748B",
+    fontSize: 14,
+  },
+  placeholderBox: {
+    borderRadius: 18,
+    border: "1px dashed #CBD5E1",
+    backgroundColor: "#F8FAFC",
+    color: "#475569",
+    padding: 16,
+    lineHeight: 1.7,
+    fontSize: 14,
+    marginTop: 10,
+  },
+  agentSectionCard: {
+    marginTop: 18,
+    borderRadius: 20,
+    border: "1px solid #D7E2F0",
+    backgroundColor: "#F9FBFE",
+    padding: 16,
+  },
+  agentSectionTitle: {
+    fontSize: 18,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 4,
+  },
+};
 
-      <div className="bf-wrap" style={styles.wrap}>
-        <nav style={styles.nav}>
-          <a href="/" style={styles.brand}>
-            Beyond Intelligence™
-          </a>
-
-          <div style={styles.navLinks}>
-            <a href="/borrower" style={styles.navLink}>
-              Borrower Intelligence
-            </a>
-            <a href="/team" style={styles.navLink}>
-              Team Mortgage Intelligence
-            </a>
-            <a href="/workflow" style={styles.navLink}>
-              Team Workflow Intelligence
-            </a>
-          </div>
-        </nav>
-
-        <section style={styles.hero}>
-          <div className="bf-hero-grid" style={styles.heroGrid}>
-            <div>
-              <div style={styles.badge}>BEYOND INTELLIGENCE™</div>
-
-              <h1 className="bf-hero-title" style={styles.heroTitle}>
-                Mortgage intelligence
-                <br />
-                for borrower guidance,
-                <br />
-                professional analysis,
-                <br />
-                and workflow execution.
-              </h1>
-
-              <p style={styles.heroText}>
-                Beyond Intelligence™ is an AI-powered mortgage operating system
-                supervised by an Independent Certified Mortgage Advisor. It is
-                designed to separate borrower interaction, professional mortgage
-                thinking, and team workflow execution into disciplined product
-                layers that scale cleanly.
-              </p>
-            </div>
-
-            <div style={styles.heroPanel}>
-              <div style={styles.heroPanelTitle}>PLATFORM STRUCTURE</div>
-
-              <div style={styles.heroPanelText}>
-                One system. Three environments. Each with a distinct role in the
-                mortgage journey.
-              </div>
-
-              <div style={styles.heroPanelList}>
-                <div>• Borrower Intelligence for guided client interaction.</div>
-                <div>• Team Mortgage Intelligence for professional analysis.</div>
-                <div>• Team Workflow Intelligence for execution and file command.</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="bf-main-grid" style={styles.grid}>
-          <div style={styles.card}>
-            <div style={styles.cardEyebrow}>BORROWER EXPERIENCE</div>
-            <h2 className="bf-card-title" style={styles.cardTitle}>
-              Borrower
-              <br />
-              Intelligence
-            </h2>
-
-            <p style={styles.cardText}>
-              Client-facing intake, mortgage guidance, routed loan officer
-              matching, and Finley Beyond conversation flow with required
-              disclaimer handling.
-            </p>
-
-            <div style={styles.cardList}>
-              <div>• Guided mortgage intake</div>
-              <div>• Loan officer routing</div>
-              <div>• Scenario review and borrower chat</div>
-              <div>• Apply, schedule, and contact actions</div>
-            </div>
-
-            <div style={styles.cardActions}>
-              <a href="/borrower" style={styles.primaryAction}>
-                Open Borrower Intelligence
-              </a>
-            </div>
-          </div>
-
-          <div style={styles.card}>
-            <div style={styles.cardEyebrow}>PROFESSIONAL THINKING LAYER</div>
-            <h2 className="bf-card-title" style={styles.cardTitle}>
-              Team Mortgage
-              <br />
-              Intelligence
-            </h2>
-
-            <p style={styles.cardText}>
-              Internal borrower analysis, directional program thinking, summary
-              generation, and professional review support for licensed mortgage
-              teams.
-            </p>
-
-            <div style={styles.cardList}>
-              <div>• Borrower scenario review</div>
-              <div>• Directional program analysis</div>
-              <div>• Finley professional decision support</div>
-              <div>• Internal summary email generation</div>
-            </div>
-
-            <div style={styles.cardActions}>
-              <a href="/team" style={styles.secondaryAction}>
-                Enter Mortgage Intelligence
-              </a>
-            </div>
-          </div>
-
-          <div style={styles.card}>
-            <div style={styles.cardEyebrow}>PROFESSIONAL EXECUTION LAYER</div>
-            <h2 className="bf-card-title" style={styles.cardTitle}>
-              Team Workflow
-              <br />
-              Intelligence
-            </h2>
-
-            <p style={styles.cardText}>
-              Command-center visibility for processing handoff, internal file
-              coordination, milestone tracking, blockers, urgency, and close
-              management.
-            </p>
-
-            <div style={styles.cardList}>
-              <div>• Processing handoff</div>
-              <div>• Active file queue and command panel</div>
-              <div>• Milestones, blockers, and urgency</div>
-              <div>• Internal file feed and execution tracking</div>
-            </div>
-
-            <div style={styles.cardActions}>
-              <a href="/workflow" style={styles.outlineAction}>
-                Enter Workflow Intelligence
-              </a>
-            </div>
-          </div>
-        </section>
-
-        <section style={styles.architectureCard}>
-          <div style={styles.architectureHeader}>
-            <div style={styles.sectionEyebrow}>PRODUCT ARCHITECTURE</div>
-            <h2 className="bf-section-title" style={styles.sectionTitle}>
-              A cleaner operating system for mortgage teams
-            </h2>
-            <p style={styles.sectionText}>
-              The platform now separates interaction, analysis, and execution so
-              each environment can become stronger without overcrowding the
-              others. This gives Beyond Intelligence™ a more disciplined,
-              premium, and scalable product structure.
-            </p>
-          </div>
-
-          <div className="bf-arch-grid" style={styles.architectureGrid}>
-            <div style={styles.architectureItem}>
-              <div style={styles.architectureItemTitle}>Borrower Interaction</div>
-              <div style={styles.architectureItemText}>
-                The borrower-facing environment captures the scenario, educates
-                the client, and moves the conversation toward a licensed advisor.
-              </div>
-            </div>
-
-            <div style={styles.architectureItem}>
-              <div style={styles.architectureItemTitle}>Mortgage Thinking</div>
-              <div style={styles.architectureItemText}>
-                The professional intelligence layer helps the team reason
-                through structure, fit, missing items, and the next best action.
-              </div>
-            </div>
-
-            <div style={styles.architectureItem}>
-              <div style={styles.architectureItemTitle}>Workflow Execution</div>
-              <div style={styles.architectureItemText}>
-                The command layer keeps handoff, processing, blockers, and
-                closing visibility aligned from pre-approval through funding.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div style={styles.footer}>
-          Beyond Intelligence™ helps organize borrower guidance, mortgage
-          analysis, and professional workflow execution under one supervised
-          system.
-          <div style={styles.footerTag}>MultiLender Intelligence™</div>
-        </div>
-      </div>
-    </main>
-  );
-}
+const navStyles: Record<string, React.CSSProperties> = {
+  topBar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 18,
+    padding: "4px 2px",
+    flexWrap: "wrap",
+  },
+  brand: {
+    textDecoration: "none",
+    color: "#263366",
+    fontSize: 15,
+    fontWeight: 800,
+    letterSpacing: 0.2,
+  },
+  topBarLinks: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  topBarLink: {
+    textDecoration: "none",
+    color: "#263366",
+    background: "#F7F9FD",
+    border: "1px solid #C9D5EA",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1,
+  },
+  topBarLinkActive: {
+    textDecoration: "none",
+    color: "#ffffff",
+    background: "#263366",
+    border: "1px solid #263366",
+    borderRadius: 999,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1,
+  },
+};
