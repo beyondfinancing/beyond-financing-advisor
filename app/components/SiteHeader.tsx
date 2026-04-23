@@ -62,11 +62,17 @@ export default function SiteHeader({
         {copy.brand}
       </Link>
 
-      <div style={styles.rightGroup}>
+      <div
+        style={{
+          ...styles.rightGroup,
+          minWidth: variant === "borrower" ? 290 : 520,
+        }}
+      >
         <div style={styles.languageWrap}>
           <label htmlFor="site-language" style={styles.screenReaderOnly}>
             {copy.language}
           </label>
+
           <div style={styles.selectPill}>
             <select
               id="site-language"
@@ -131,6 +137,7 @@ const styles: Record<string, React.CSSProperties> = {
   languageWrap: {
     display: "flex",
     alignItems: "center",
+    flexShrink: 0,
   },
   selectPill: {
     ...pillBase,
@@ -160,6 +167,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
+    justifyContent: "flex-end",
   },
   navLink: {
     ...pillBase,
