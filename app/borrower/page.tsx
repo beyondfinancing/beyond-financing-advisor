@@ -47,6 +47,22 @@ type LoanOfficerRecord = {
   scheduleUrl: string;
 };
 
+type BorrowerActionTrigger =
+  | "apply"
+  | "schedule"
+  | "contact"
+  | "call"
+  | "review"
+  | "scenario";
+
+type BorrowerActionEventType =
+  | "borrower_action_clicked"
+  | "borrower_action_completed"
+  | "borrower_action_failed"
+  | "summary_requested"
+  | "summary_completed"
+  | "summary_failed";
+
 const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
 
 const LOAN_OFFICERS: LoanOfficerRecord[] = [
@@ -262,7 +278,8 @@ const COPY: Record<
     realtorPhone: "Telefone do Realtor",
     realtorEmail: "Email do Realtor",
     loanOfficerSearch: "Comece a digitar para ver loan officers correspondentes.",
-    loanOfficerSearchHint: "Comece a digitar para ver loan officers correspondentes.",
+    loanOfficerSearchHint:
+      "Comece a digitar para ver loan officers correspondentes.",
     confirmLoanOfficer: "Confirmar Loan Officer",
     unknownLoanOfficer: "Não Sei Meu Loan Officer",
     assignedRouting: "ROTEAMENTO DEFINIDO",
@@ -330,7 +347,8 @@ const COPY: Record<
     realtorPhone: "Teléfono del Realtor",
     realtorEmail: "Correo del Realtor",
     loanOfficerSearch: "Comience a escribir para ver loan officers coincidentes.",
-    loanOfficerSearchHint: "Comience a escribir para ver loan officers coincidentes.",
+    loanOfficerSearchHint:
+      "Comience a escribir para ver loan officers coincidentes.",
     confirmLoanOfficer: "Confirmar Loan Officer",
     unknownLoanOfficer: "No Conozco Mi Loan Officer",
     assignedRouting: "ASIGNACIÓN DEFINIDA",
@@ -438,7 +456,9 @@ export default function BorrowerPage() {
   const [scenarioUnlocked, setScenarioUnlocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState<"" | "apply" | "schedule" | "email" | "call">("");
+  const [actionLoading, setActionLoading] = useState<
+    "" | "apply" | "schedule" | "email" | "call"
+  >("");
   const [errorMessage, setErrorMessage] = useState("");
   const [chatError, setChatError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -558,12 +578,72 @@ Respond in ${
       preferredLanguage: toPreferredLanguage(language),
       loanOfficer: activeOfficer.name,
       assignedEmail: activeOfficer.email,
+      assistantEmail: activeOfficer.assistantEmail,
       realtorName: realtorStatus === "yes" ? intakeForm.realtorName : "",
       realtorEmail: realtorStatus === "yes" ? intakeForm.realtorEmail : "",
       realtorPhone: realtorStatus === "yes" ? intakeForm.realtorPhone : "",
     },
     messages: conversation,
   });
+
+  const buildActionLogPayload = (
+    trigger: BorrowerActionTrigger,
+    eventType: BorrowerActionEventType,
+    status: "logged" | "success" | "failed",
+    notes = "",
+    metadata: Record<string, unknown> = {}
+  ) => ({
+    borrowerName: intakeForm.name,
+    borrowerEmail: intakeForm.email,
+    borrowerPhone: intakeForm.phone,
+    preferredLanguage: toPreferredLanguage(language),
+
+    loanOfficerName: activeOfficer.name,
+    loanOfficerEmail: activeOfficer.email,
+    assistantEmail: activeOfficer.assistantEmail,
+
+    realtorName: realtorStatus === "yes" ? intakeForm.realtorName : "",
+    realtorEmail: realtorStatus === "yes" ? intakeForm.realtorEmail : "",
+    realtorPhone: realtorStatus === "yes" ? intakeForm.realtorPhone : "",
+
+    trigger,
+    eventType,
+    status,
+    sourcePage: "/borrower",
+    notes,
+    metadata: {
+      borrowerPath,
+      realtorStatus,
+      homePrice: scenarioForm.homePrice || "",
+      downPayment: scenarioForm.downPayment || "",
+      occupancy: scenarioForm.occupancy || "",
+      estimatedLoanAmount,
+      estimatedLtv: Math.round(estimatedLtv * 100),
+      ...metadata,
+    },
+  });
+
+  const logBorrowerAction = async (
+    trigger: BorrowerActionTrigger,
+    eventType: BorrowerActionEventType,
+    status: "logged" | "success" | "failed",
+    notes = "",
+    metadata: Record<string, unknown> = {}
+  ) => {
+    try {
+      await fetch("/api/borrower-action-log", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(
+          buildActionLogPayload(trigger, eventType, status, notes, metadata)
+        ),
+      });
+    } catch {
+      // do not block borrower flow
+    }
+  };
 
   const confirmOfficerSelection = () => {
     const matched = resolveOfficerFromQuery(loanOfficerQuery);
@@ -599,8 +679,17 @@ Respond in ${
 
     if (!selectedOfficer || selectedOfficer.id !== resolvedOfficer.id) {
       setSelectedOfficer(resolvedOfficer);
-      setLoanOfficerQuery(`${resolvedOfficer.name} — NMLS ${resolvedOfficer.nmls}`);
+      setLoanOfficerQuery(
+        `${resolvedOfficer.name} — NMLS ${resolvedOfficer.nmls}`
+      );
     }
+
+    await logBorrowerAction(
+      "review",
+      "borrower_action_clicked",
+      "logged",
+      "Borrower triggered preliminary review."
+    );
 
     try {
       const prompt = `
@@ -653,6 +742,13 @@ Then ask the next logical qualification-style question.
 
       setConversation([{ role: "assistant", content: finalText }]);
       setScenarioUnlocked(true);
+
+      await logBorrowerAction(
+        "review",
+        "borrower_action_completed",
+        "success",
+        "Preliminary review completed successfully."
+      );
     } catch (error: unknown) {
       setErrorMessage(
         error instanceof Error
@@ -661,6 +757,16 @@ Then ask the next logical qualification-style question.
       );
       setConversation([]);
       setScenarioUnlocked(false);
+
+      await logBorrowerAction(
+        "review",
+        "borrower_action_failed",
+        "failed",
+        "Preliminary review failed.",
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        }
+      );
     } finally {
       setLoading(false);
     }
@@ -671,6 +777,13 @@ Then ask the next logical qualification-style question.
 
     setChatLoading(true);
     setChatError("");
+
+    await logBorrowerAction(
+      "scenario",
+      "borrower_action_clicked",
+      "logged",
+      "Borrower continued with property scenario."
+    );
 
     try {
       const prompt = `
@@ -714,19 +827,40 @@ Then ask the next logical qualification-style question.
 
       if (!response.ok) {
         throw new Error(
-          extractAiText(data) || "The scenario update did not complete successfully."
+          extractAiText(data) ||
+            "The scenario update did not complete successfully."
         );
       }
 
       const finalText =
         extractAiText(data) || "No response was returned from the AI system.";
 
-      setConversation((prev) => [...prev, { role: "assistant", content: finalText }]);
+      setConversation((prev) => [
+        ...prev,
+        { role: "assistant", content: finalText },
+      ]);
+
+      await logBorrowerAction(
+        "scenario",
+        "borrower_action_completed",
+        "success",
+        "Scenario continuation completed successfully."
+      );
     } catch (error: unknown) {
       setChatError(
         error instanceof Error
           ? error.message
           : "There was an error updating the scenario."
+      );
+
+      await logBorrowerAction(
+        "scenario",
+        "borrower_action_failed",
+        "failed",
+        "Scenario continuation failed.",
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        }
       );
     } finally {
       setChatLoading(false);
@@ -798,7 +932,10 @@ Advise that the assigned loan officer will personally review the scenario and ad
       const finalText =
         extractAiText(data) || "No response was returned from the AI system.";
 
-      setConversation((prev) => [...prev, { role: "assistant", content: finalText }]);
+      setConversation((prev) => [
+        ...prev,
+        { role: "assistant", content: finalText },
+      ]);
     } catch (error: unknown) {
       setChatError(
         error instanceof Error
@@ -815,11 +952,25 @@ Advise that the assigned loan officer will personally review the scenario and ad
     trigger: "apply" | "schedule" | "contact" | "call",
     action: () => void
   ) {
-    setActionLoading(trigger === "contact" ? "email" : (trigger as any));
+    setActionLoading(trigger === "contact" ? "email" : trigger);
     setActionMessage("");
 
+    await logBorrowerAction(
+      trigger,
+      "borrower_action_clicked",
+      "logged",
+      "Borrower clicked action button."
+    );
+
     try {
-      await fetch("/api/chat-summary", {
+      await logBorrowerAction(
+        trigger,
+        "summary_requested",
+        "logged",
+        "Notification and summary flow started."
+      );
+
+      const response = await fetch("/api/chat-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -828,8 +979,46 @@ Advise that the assigned loan officer will personally review the scenario and ad
         }),
       });
 
-      setActionMessage(t.summarySent);
-    } catch {
+      if (!response.ok) {
+        const errorText = await response.text();
+
+        await logBorrowerAction(
+          trigger,
+          "summary_failed",
+          "failed",
+          "Summary route returned non-200 response.",
+          { errorText }
+        );
+
+        setActionMessage(t.actionError);
+      } else {
+        await logBorrowerAction(
+          trigger,
+          "summary_completed",
+          "success",
+          "Summary route completed successfully."
+        );
+
+        await logBorrowerAction(
+          trigger,
+          "borrower_action_completed",
+          "success",
+          "Borrower action completed and downstream notifications were requested."
+        );
+
+        setActionMessage(t.summarySent);
+      }
+    } catch (error) {
+      await logBorrowerAction(
+        trigger,
+        "borrower_action_failed",
+        "failed",
+        "Borrower action flow threw an exception.",
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        }
+      );
+
       setActionMessage(t.actionError);
     } finally {
       action();
@@ -854,8 +1043,8 @@ Advise that the assigned loan officer will personally review the scenario and ad
       <div className="bf-wrap" style={styles.wrap}>
         <SiteHeader
           variant="borrower"
-          language={language}
-          onLanguageChange={setLanguage}
+          language={language as SiteLanguage}
+          onLanguageChange={(value) => setLanguage(value as LanguageCode)}
         />
 
         <h1 style={styles.pageTitle}>{t.title}</h1>
@@ -930,13 +1119,16 @@ Advise that the assigned loan officer will personally review the scenario and ad
         <div className="bf-borrower-grid" style={styles.mainGrid}>
           <div style={styles.formCard}>
             <div style={styles.pathRow}>
-              {(["Purchase", "Refinance", "Investment"] as BorrowerPath[]).map((path) => (
+              {(
+                ["Purchase", "Refinance", "Investment"] as BorrowerPath[]
+              ).map((path) => (
                 <button
                   key={path}
                   type="button"
                   style={{
                     ...styles.pathButton,
-                    backgroundColor: borrowerPath === path ? "#5CB2D8" : "#FFFFFF",
+                    backgroundColor:
+                      borrowerPath === path ? "#5CB2D8" : "#FFFFFF",
                     color: borrowerPath === path ? "#FFFFFF" : "#60749B",
                   }}
                   onClick={() => setBorrowerPath(path)}
@@ -967,7 +1159,9 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 style={styles.input}
                 placeholder={t.phone}
                 value={intakeForm.phone}
-                onChange={(e) => setIntakeField("phone", formatPhoneDisplay(e.target.value))}
+                onChange={(e) =>
+                  setIntakeField("phone", formatPhoneDisplay(e.target.value))
+                }
               />
               <input
                 style={styles.input}
@@ -1009,7 +1203,8 @@ Advise that the assigned loan officer will personally review the scenario and ad
                   type="button"
                   style={{
                     ...styles.realtorButton,
-                    backgroundColor: realtorStatus === status ? "#5CB2D8" : "#FFFFFF",
+                    backgroundColor:
+                      realtorStatus === status ? "#5CB2D8" : "#FFFFFF",
                     color: realtorStatus === status ? "#FFFFFF" : "#60749B",
                   }}
                   onClick={() => setRealtorStatus(status)}
@@ -1020,7 +1215,10 @@ Advise that the assigned loan officer will personally review the scenario and ad
             </div>
 
             {realtorStatus === "yes" && (
-              <div className="bf-form-grid" style={{ ...styles.formGrid, marginTop: 14 }}>
+              <div
+                className="bf-form-grid"
+                style={{ ...styles.formGrid, marginTop: 14 }}
+              >
                 <input
                   style={styles.input}
                   placeholder={t.realtorName}
@@ -1075,10 +1273,18 @@ Advise that the assigned loan officer will personally review the scenario and ad
             <div style={styles.hintText}>{t.loanOfficerSearchHint}</div>
 
             <div style={styles.confirmRow}>
-              <button type="button" style={styles.primaryButton} onClick={confirmOfficerSelection}>
+              <button
+                type="button"
+                style={styles.primaryButton}
+                onClick={confirmOfficerSelection}
+              >
                 {t.confirmLoanOfficer}
               </button>
-              <button type="button" style={styles.outlineButton} onClick={useDefaultFinley}>
+              <button
+                type="button"
+                style={styles.outlineButton}
+                onClick={useDefaultFinley}
+              >
                 {t.unknownLoanOfficer}
               </button>
             </div>
@@ -1118,7 +1324,9 @@ Advise that the assigned loan officer will personally review the scenario and ad
                   style={styles.input}
                   placeholder={t.downPayment}
                   value={scenarioForm.downPayment}
-                  onChange={(e) => setScenarioField("downPayment", e.target.value)}
+                  onChange={(e) =>
+                    setScenarioField("downPayment", e.target.value)
+                  }
                 />
               </div>
 
@@ -1129,12 +1337,16 @@ Advise that the assigned loan officer will personally review the scenario and ad
               >
                 <option value="primary_residence">{t.occupancyPrimary}</option>
                 <option value="second_home">{t.occupancySecond}</option>
-                <option value="investment_property">{t.occupancyInvestment}</option>
+                <option value="investment_property">
+                  {t.occupancyInvestment}
+                </option>
               </select>
 
               <div style={styles.metricCard}>
                 <div style={styles.metricLabel}>{t.estimatedLoanAmount}</div>
-                <div style={styles.metricValue}>{formatCurrency(estimatedLoanAmount)}</div>
+                <div style={styles.metricValue}>
+                  {formatCurrency(estimatedLoanAmount)}
+                </div>
                 <div style={styles.metricSubtext}>
                   {t.estimatedLtv}: {Math.round(estimatedLtv * 100)}%
                 </div>
@@ -1159,7 +1371,11 @@ Advise that the assigned loan officer will personally review the scenario and ad
               style={styles.actionBlue}
               onClick={() =>
                 void notifyAndOpen("apply", () => {
-                  window.open(activeOfficer.applyUrl, "_blank", "noopener,noreferrer");
+                  window.open(
+                    activeOfficer.applyUrl,
+                    "_blank",
+                    "noopener,noreferrer"
+                  );
                 })
               }
               disabled={actionLoading !== ""}
@@ -1172,7 +1388,11 @@ Advise that the assigned loan officer will personally review the scenario and ad
               style={styles.actionBlue}
               onClick={() =>
                 void notifyAndOpen("schedule", () => {
-                  window.open(activeOfficer.scheduleUrl, "_blank", "noopener,noreferrer");
+                  window.open(
+                    activeOfficer.scheduleUrl,
+                    "_blank",
+                    "noopener,noreferrer"
+                  );
                 })
               }
               disabled={actionLoading !== ""}
@@ -1206,7 +1426,9 @@ Advise that the assigned loan officer will personally review the scenario and ad
               {actionLoading === "call" ? t.sending : t.callLoanOfficer}
             </button>
 
-            {actionMessage ? <div style={styles.statusBox}>{actionMessage}</div> : null}
+            {actionMessage ? (
+              <div style={styles.statusBox}>{actionMessage}</div>
+            ) : null}
             {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
             {chatError ? <div style={styles.errorBox}>{chatError}</div> : null}
           </div>
