@@ -17,7 +17,6 @@ type Props = {
 type NavItem = {
   href: string;
   label: string;
-  active?: boolean;
 };
 
 function getNavItems(
@@ -65,19 +64,22 @@ export default function SiteHeader({
 
       <div style={styles.rightGroup}>
         <div style={styles.languageWrap}>
-          <label htmlFor="site-language" style={styles.languageLabel}>
+          <label htmlFor="site-language" style={styles.screenReaderOnly}>
             {copy.language}
           </label>
-          <select
-            id="site-language"
-            value={language}
-            onChange={(e) => onLanguageChange(e.target.value as SiteLanguage)}
-            style={styles.select}
-          >
-            <option value="en">{copy.english}</option>
-            <option value="pt">{copy.portuguese}</option>
-            <option value="es">{copy.spanish}</option>
-          </select>
+          <div style={styles.selectPill}>
+            <select
+              id="site-language"
+              value={language}
+              onChange={(e) => onLanguageChange(e.target.value as SiteLanguage)}
+              style={styles.select}
+              aria-label={copy.language}
+            >
+              <option value="en">{copy.english}</option>
+              <option value="pt">{copy.portuguese}</option>
+              <option value="es">{copy.spanish}</option>
+            </select>
+          </div>
         </div>
 
         <div style={styles.navLinks}>
@@ -91,6 +93,17 @@ export default function SiteHeader({
     </nav>
   );
 }
+
+const pillBase: React.CSSProperties = {
+  minHeight: 44,
+  borderRadius: 999,
+  border: "1px solid #C9D5EA",
+  backgroundColor: "#F7F9FD",
+  color: "#263366",
+  fontSize: 13,
+  fontWeight: 800,
+  lineHeight: 1,
+};
 
 const styles: Record<string, React.CSSProperties> = {
   nav: {
@@ -118,23 +131,30 @@ const styles: Record<string, React.CSSProperties> = {
   languageWrap: {
     display: "flex",
     alignItems: "center",
-    gap: 8,
-    flexWrap: "wrap",
   },
-  languageLabel: {
-    color: "#526581",
-    fontSize: 13,
-    fontWeight: 800,
+  selectPill: {
+    ...pillBase,
+    display: "inline-flex",
+    alignItems: "center",
+    paddingLeft: 14,
+    paddingRight: 12,
+    minWidth: 170,
   },
   select: {
-    borderRadius: 999,
-    border: "1px solid #C9D5EA",
-    backgroundColor: "#F7F9FD",
+    appearance: "none",
+    WebkitAppearance: "none",
+    MozAppearance: "none",
+    border: "none",
+    outline: "none",
+    backgroundColor: "transparent",
     color: "#263366",
-    padding: "10px 12px",
     fontSize: 13,
     fontWeight: 800,
-    outline: "none",
+    lineHeight: 1,
+    width: "100%",
+    height: 42,
+    cursor: "pointer",
+    paddingRight: 18,
   },
   navLinks: {
     display: "flex",
@@ -142,14 +162,23 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
   },
   navLink: {
+    ...pillBase,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
     textDecoration: "none",
-    color: "#263366",
-    backgroundColor: "#F7F9FD",
-    border: "1px solid #C9D5EA",
-    borderRadius: 999,
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 800,
-    lineHeight: 1,
+    padding: "0 14px",
+    whiteSpace: "nowrap",
+  },
+  screenReaderOnly: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    padding: 0,
+    margin: -1,
+    overflow: "hidden",
+    clip: "rect(0, 0, 0, 0)",
+    whiteSpace: "nowrap",
+    border: 0,
   },
 };
