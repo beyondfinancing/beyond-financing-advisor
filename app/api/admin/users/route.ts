@@ -21,23 +21,38 @@ type CreateUserPayload = {
   isActive?: boolean;
 };
 
+type SessionUser = {
+  id?: string;
+  name?: string;
+  email?: string;
+  role?: TeamRole;
+};
+
+const APPROVED_ADMIN_EMAIL = "pansini@beyondfinancing.com";
+
 function normalizeString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-async function ensureAdminAccess() {
+async function ensureApprovedAdminAccess() {
   try {
-    await signInAdminSession();
-    return true;
+    const session = (await signInAdminSession()) as SessionUser | undefined;
+    const email = normalizeString(session?.email).toLowerCase();
+
+    if (email !== APPROVED_ADMIN_EMAIL) {
+      return { ok: false as const, user: null };
+    }
+
+    return { ok: true as const, user: session ?? null };
   } catch {
-    return false;
+    return { ok: false as const, user: null };
   }
 }
 
 export async function GET() {
-  const isAdmin = await ensureAdminAccess();
+  const auth = await ensureApprovedAdminAccess();
 
-  if (!isAdmin) {
+  if (!auth.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -54,9 +69,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const isAdmin = await ensureAdminAccess();
+  const auth = await ensureApprovedAdminAccess();
 
-  if (!isAdmin) {
+  if (!auth.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
