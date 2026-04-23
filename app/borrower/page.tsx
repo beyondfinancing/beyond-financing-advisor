@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type LanguageCode = "en" | "pt" | "es";
 type TransactionType = "purchase" | "refinance" | "investment" | "";
@@ -14,18 +14,6 @@ type OccupancyType =
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
-};
-
-type LoanOfficerRecord = {
-  id: string;
-  name: string;
-  nmls: string;
-  email: string;
-  assistantEmail: string;
-  mobile: string;
-  assistantMobile: string;
-  applyUrl: string;
-  scheduleUrl: string;
 };
 
 type PreferredLanguage = "English" | "Português" | "Español";
@@ -44,47 +32,36 @@ type IntakeFormState = {
   realtorPhone: string;
 };
 
+type RawUserRecord = {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  nmls?: string | null;
+  mobile?: string | null;
+  assistantemail?: string | null;
+  assistantmobile?: string | null;
+  apply_url?: string | null;
+  schedule_url?: string | null;
+  company_name?: string | null;
+};
+
+type LoanOfficerRecord = {
+  id: string;
+  name: string;
+  role: string;
+  nmls: string;
+  email: string;
+  assistantEmail: string;
+  mobile: string;
+  assistantMobile: string;
+  applyUrl: string;
+  scheduleUrl: string;
+  companyName: string;
+};
+
 const APPLY_NOW_URL = "https://www.beyondfinancing.com/apply-now";
-
-const LOAN_OFFICERS: LoanOfficerRecord[] = [
-  {
-    id: "sandro-pansini-souza",
-    name: "Sandro Pansini Souza",
-    nmls: "1625542",
-    email: "pansini@beyondfinancing.com",
-    assistantEmail: "myloan@beyondfinancing.com",
-    mobile: "8576150836",
-    assistantMobile: "8576150836",
-    applyUrl: APPLY_NOW_URL,
-    scheduleUrl: "https://calendly.com/sandropansini",
-  },
-  {
-    id: "warren-wendt",
-    name: "Warren Wendt",
-    nmls: "18959",
-    email: "warren@beyondfinancing.com",
-    assistantEmail: "myloan@beyondfinancing.com",
-    mobile: "9788212250",
-    assistantMobile: "8576150836",
-    applyUrl: APPLY_NOW_URL,
-    scheduleUrl: "https://www.beyondfinancing.com",
-  },
-  {
-    id: "finley-beyond",
-    name: "Finley Beyond",
-    nmls: "16255BF",
-    email: "finley@beyondfinancing.com",
-    assistantEmail: "myloan@beyondfinancing.com",
-    mobile: "8576150836",
-    assistantMobile: "8576150836",
-    applyUrl: APPLY_NOW_URL,
-    scheduleUrl: "https://www.beyondfinancing.com",
-  },
-];
-
-const DEFAULT_LOAN_OFFICER =
-  LOAN_OFFICERS.find((officer) => officer.id === "finley-beyond") ||
-  LOAN_OFFICERS[0];
+const DEFAULT_SCHEDULE_URL = "https://www.beyondfinancing.com";
 
 const COPY = {
   en: {
@@ -147,6 +124,9 @@ const COPY = {
     emailOfficer: "Email Loan Officer",
     callOfficer: "Call Loan Officer",
     loading: "Loading...",
+    loadingLoanOfficers: "Loading loan officers...",
+    noLoanOfficers:
+      "Loan officers could not be loaded right now. Finley Beyond will remain the default routing option.",
   },
 } as const;
 
@@ -199,7 +179,7 @@ function normalizePhoneForSms(value: string) {
   if (!digits) return "";
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (value.startsWith("+")) return value;
+  if (String(value || "").startsWith("+")) return String(value);
   return `+${digits}`;
 }
 
@@ -215,6 +195,7 @@ function extractAiText(data: unknown): string {
       content?: string;
       text?: string;
       nextQuestion?: string;
+      error?: string;
     };
 
     return (
@@ -225,6 +206,7 @@ function extractAiText(data: unknown): string {
       obj.content ||
       obj.text ||
       obj.nextQuestion ||
+      obj.error ||
       ""
     );
   }
@@ -232,30 +214,78 @@ function extractAiText(data: unknown): string {
   return "";
 }
 
-function resolveOfficerFromQuery(query: string): LoanOfficerRecord | null {
+function toPreferredLanguage(language: LanguageCode): PreferredLanguage {
+  if (language === "pt") return "Português";
+  if (language === "es") return "Español";
+  return "English";
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function mapUserToOfficer(user: RawUserRecord): LoanOfficerRecord | null {
+  const email = String(user.email || "").trim();
+  const name = String(user.name || "").trim();
+
+  if (!email || !name) return null;
+
+  return {
+    id: slugify(name || email),
+    name,
+    role: String(user.role || "").trim(),
+    nmls: String(user.nmls || "").trim(),
+    email,
+    assistantEmail: String(user.assistantemail || "").trim(),
+    mobile: String(user.mobile || "").trim(),
+    assistantMobile: String(user.assistantmobile || "").trim(),
+    applyUrl: String(user.apply_url || "").trim() || APPLY_NOW_URL,
+    scheduleUrl: String(user.schedule_url || "").trim() || DEFAULT_SCHEDULE_URL,
+    companyName: String(user.company_name || "").trim(),
+  };
+}
+
+function isSelectableLoanOfficer(user: RawUserRecord) {
+  const role = String(user.role || "").trim().toLowerCase();
+  return role === "loan officer" || role === "loan officer assistant";
+}
+
+function getOfficerDisplay(officer: LoanOfficerRecord) {
+  return officer.nmls
+    ? `${officer.name} — NMLS ${officer.nmls}`
+    : officer.name;
+}
+
+function resolveOfficerFromQuery(
+  query: string,
+  officers: LoanOfficerRecord[]
+): LoanOfficerRecord | null {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return null;
 
-  const exact = LOAN_OFFICERS.find((officer) => {
-    const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
-
+  const exact = officers.find((officer) => {
+    const display = getOfficerDisplay(officer).toLowerCase();
     return (
       officer.name.toLowerCase() === trimmed ||
       officer.nmls.toLowerCase() === trimmed ||
-      display === trimmed
+      display === trimmed ||
+      officer.email.toLowerCase() === trimmed
     );
   });
 
   if (exact) return exact;
 
   return (
-    LOAN_OFFICERS.find((officer) => {
-      const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
-
+    officers.find((officer) => {
+      const display = getOfficerDisplay(officer).toLowerCase();
       return (
         officer.name.toLowerCase().includes(trimmed) ||
         officer.nmls.toLowerCase().includes(trimmed) ||
-        display.includes(trimmed)
+        display.includes(trimmed) ||
+        officer.email.toLowerCase().includes(trimmed)
       );
     }) || null
   );
@@ -272,6 +302,10 @@ export default function BorrowerPage() {
   const [realtorStatus, setRealtorStatus] = useState<RealtorStatus>("");
   const [realtorLocked, setRealtorLocked] = useState(false);
 
+  const [loanOfficers, setLoanOfficers] = useState<LoanOfficerRecord[]>([]);
+  const [loanOfficersLoading, setLoanOfficersLoading] = useState(true);
+  const [loanOfficersError, setLoanOfficersError] = useState("");
+
   const [loanOfficerQuery, setLoanOfficerQuery] = useState("");
   const [selectedOfficer, setSelectedOfficer] =
     useState<LoanOfficerRecord | null>(null);
@@ -280,6 +314,7 @@ export default function BorrowerPage() {
   const [preliminaryReviewRan, setPreliminaryReviewRan] = useState(false);
   const [scenarioConfirmed, setScenarioConfirmed] = useState(false);
 
+  const [language] = useState<LanguageCode>("en");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -306,24 +341,104 @@ export default function BorrowerPage() {
     occupancy: "" as OccupancyType,
   });
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLoanOfficers() {
+      setLoanOfficersLoading(true);
+      setLoanOfficersError("");
+
+      try {
+        const response = await fetch("/api/users", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        });
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(
+            extractAiText(data) || "Unable to load loan officers."
+          );
+        }
+
+        const rows = Array.isArray(data) ? data : Array.isArray(data?.users) ? data.users : [];
+        const mapped = rows
+          .filter((row: RawUserRecord) => isSelectableLoanOfficer(row))
+          .map((row: RawUserRecord) => mapUserToOfficer(row))
+          .filter(Boolean) as LoanOfficerRecord[];
+
+        mapped.sort((a, b) => a.name.localeCompare(b.name));
+
+        if (!isMounted) return;
+
+        setLoanOfficers(mapped);
+
+        const finley =
+          mapped.find((officer) =>
+            officer.name.toLowerCase().includes("finley beyond")
+          ) || null;
+
+        if (!selectedOfficer && finley) {
+          setSelectedOfficer(finley);
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        setLoanOfficersError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load loan officers."
+        );
+        setLoanOfficers([]);
+      } finally {
+        if (isMounted) setLoanOfficersLoading(false);
+      }
+    }
+
+    loadLoanOfficers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const defaultLoanOfficer = useMemo(() => {
+    return (
+      loanOfficers.find((officer) =>
+        officer.name.toLowerCase().includes("finley beyond")
+      ) ||
+      loanOfficers[0] ||
+      null
+    );
+  }, [loanOfficers]);
+
+  const matchedOfficerFromQuery = useMemo(
+    () => resolveOfficerFromQuery(loanOfficerQuery, loanOfficers),
+    [loanOfficerQuery, loanOfficers]
+  );
+
+  const activeOfficer =
+    selectedOfficer || matchedOfficerFromQuery || defaultLoanOfficer;
+
   const officerSuggestions = useMemo(() => {
     const query = loanOfficerQuery.trim().toLowerCase();
     if (!query || loanOfficerConfirmed) return [];
 
-    return LOAN_OFFICERS.filter((officer) => {
-      const display = `${officer.name} — NMLS ${officer.nmls}`.toLowerCase();
-      return (
-        officer.name.toLowerCase().includes(query) ||
-        officer.nmls.toLowerCase().includes(query) ||
-        display.includes(query)
-      );
-    }).slice(0, 5);
-  }, [loanOfficerQuery, loanOfficerConfirmed]);
-
-  const matchedOfficerFromQuery = resolveOfficerFromQuery(loanOfficerQuery);
-
-  const activeOfficer =
-    selectedOfficer || matchedOfficerFromQuery || DEFAULT_LOAN_OFFICER;
+    return loanOfficers
+      .filter((officer) => {
+        const display = getOfficerDisplay(officer).toLowerCase();
+        return (
+          officer.name.toLowerCase().includes(query) ||
+          officer.nmls.toLowerCase().includes(query) ||
+          display.includes(query) ||
+          officer.email.toLowerCase().includes(query)
+        );
+      })
+      .slice(0, 5);
+  }, [loanOfficerQuery, loanOfficerConfirmed, loanOfficers]);
 
   const estimatedLoanAmount = useMemo(() => {
     const homePrice = Number(String(scenario.homePrice).replace(/,/g, "")) || 0;
@@ -353,7 +468,8 @@ export default function BorrowerPage() {
     (realtorStatus !== "yes" ||
       (intakeForm.realtorName.trim() &&
         normalizeDigitsOnly(intakeForm.realtorPhone).length >= 10)) &&
-    loanOfficerConfirmed;
+    loanOfficerConfirmed &&
+    !!activeOfficer;
 
   const scenarioComplete =
     !!scenario.homePrice.trim() &&
@@ -364,7 +480,8 @@ export default function BorrowerPage() {
     accepted &&
     intakeComplete &&
     preliminaryReviewRan &&
-    scenarioConfirmed;
+    scenarioConfirmed &&
+    !!activeOfficer;
 
   const setIntakeField = (key: keyof IntakeFormState, value: string) => {
     setIntakeForm((prev) => ({ ...prev, [key]: value }));
@@ -378,7 +495,7 @@ export default function BorrowerPage() {
   };
 
   const buildBorrowerContext = () => {
-    const preferredLanguage: PreferredLanguage = "English";
+    const preferredLanguage = toPreferredLanguage(language);
 
     const occupancyLabel =
       scenario.occupancy === "primary_residence"
@@ -415,9 +532,10 @@ Borrower profile for context:
 - Realtor phone: ${
       normalizePhoneForSms(intakeForm.realtorPhone) || "Not provided"
     }
-- Assigned loan officer: ${activeOfficer.name}
-- Assigned loan officer NMLS: ${activeOfficer.nmls}
-- Assigned loan officer email: ${activeOfficer.email}
+- Assigned loan officer: ${activeOfficer?.name || "Not assigned"}
+- Assigned loan officer NMLS: ${activeOfficer?.nmls || "Not provided"}
+- Assigned loan officer email: ${activeOfficer?.email || "Not provided"}
+- Assigned assistant email: ${activeOfficer?.assistantEmail || "Not provided"}
 - Estimated home price: ${scenario.homePrice || "Not provided"}
 - Estimated down payment: ${scenario.downPayment || "Not provided"}
 - Estimated loan amount: ${
@@ -440,21 +558,25 @@ Instructions:
   };
 
   const buildRoutingPayload = () => ({
-    language: "en" as LanguageCode,
+    language,
     intakeComplete,
     scenarioComplete,
     loanOfficerQuery,
-    selectedOfficer: {
-      id: activeOfficer.id,
-      name: activeOfficer.name,
-      nmls: activeOfficer.nmls,
-      email: activeOfficer.email,
-      assistantEmail: activeOfficer.assistantEmail,
-      mobile: activeOfficer.mobile,
-      assistantMobile: activeOfficer.assistantMobile,
-      applyUrl: activeOfficer.applyUrl,
-      scheduleUrl: activeOfficer.scheduleUrl,
-    },
+    selectedOfficer: activeOfficer
+      ? {
+          id: activeOfficer.id,
+          name: activeOfficer.name,
+          nmls: activeOfficer.nmls,
+          email: activeOfficer.email,
+          assistantEmail: activeOfficer.assistantEmail,
+          mobile: activeOfficer.mobile,
+          assistantMobile: activeOfficer.assistantMobile,
+          applyUrl: activeOfficer.applyUrl,
+          scheduleUrl: activeOfficer.scheduleUrl,
+          role: activeOfficer.role,
+          companyName: activeOfficer.companyName,
+        }
+      : null,
     borrower: {
       name: intakeForm.fullName,
       email: intakeForm.email,
@@ -486,7 +608,7 @@ Instructions:
     setRealtorStatus("");
     setRealtorLocked(false);
     setLoanOfficerQuery("");
-    setSelectedOfficer(null);
+    setSelectedOfficer(defaultLoanOfficer || null);
     setLoanOfficerConfirmed(false);
     setPreliminaryReviewRan(false);
     setScenarioConfirmed(false);
@@ -514,18 +636,30 @@ Instructions:
 
   const confirmOfficerSelection = () => {
     const matched =
-      resolveOfficerFromQuery(loanOfficerQuery) || DEFAULT_LOAN_OFFICER;
+      resolveOfficerFromQuery(loanOfficerQuery, loanOfficers) ||
+      defaultLoanOfficer;
+
+    if (!matched) {
+      setErrorMessage("No loan officer is available to assign right now.");
+      return;
+    }
+
     setSelectedOfficer(matched);
-    setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
+    setLoanOfficerQuery(getOfficerDisplay(matched));
     setLoanOfficerConfirmed(true);
+    setErrorMessage("");
   };
 
   const useDefaultFinley = () => {
-    setSelectedOfficer(DEFAULT_LOAN_OFFICER);
-    setLoanOfficerQuery(
-      `${DEFAULT_LOAN_OFFICER.name} — NMLS ${DEFAULT_LOAN_OFFICER.nmls}`
-    );
+    if (!defaultLoanOfficer) {
+      setErrorMessage("No default loan officer is available right now.");
+      return;
+    }
+
+    setSelectedOfficer(defaultLoanOfficer);
+    setLoanOfficerQuery(getOfficerDisplay(defaultLoanOfficer));
     setLoanOfficerConfirmed(true);
+    setErrorMessage("");
   };
 
   const runPreliminaryReview = async () => {
@@ -533,6 +667,11 @@ Instructions:
       setErrorMessage(
         "Please complete the intake, realtor section, and loan officer confirmation before running the preliminary review."
       );
+      return;
+    }
+
+    if (!activeOfficer) {
+      setErrorMessage("A loan officer must be assigned before continuing.");
       return;
     }
 
@@ -559,6 +698,11 @@ Instructions:
       setErrorMessage(
         "Please complete the property scenario, including occupancy."
       );
+      return;
+    }
+
+    if (!activeOfficer) {
+      setErrorMessage("A loan officer must be assigned before continuing.");
       return;
     }
 
@@ -601,7 +745,14 @@ Important rules:
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          extractAiText(data) || "Unable to continue the scenario."
+        );
+      }
+
       const finalText =
         extractAiText(data) ||
         "Thank you. Your scenario has been organized for review by the assigned loan officer. You may now ask any remaining questions while the file is being reviewed.";
@@ -631,7 +782,7 @@ Important rules:
     }
 
     const trimmed = chatInput.trim();
-    if (!trimmed) return;
+    if (!trimmed || !activeOfficer) return;
 
     setChatLoading(true);
     setErrorMessage("");
@@ -675,7 +826,12 @@ Keep the response practical and professional.`,
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(extractAiText(data) || "Unable to send message.");
+      }
+
       const finalText =
         extractAiText(data) ||
         "Thank you. The assigned loan officer will review the scenario and advise next steps.";
@@ -695,18 +851,17 @@ Keep the response practical and professional.`,
   };
 
   const sendSummaryTrigger = async (trigger: SummaryTrigger) => {
+    if (!activeOfficer) {
+      throw new Error("No active loan officer available.");
+    }
+
     const payload = {
       lead: {
         fullName: intakeForm.fullName,
         email: intakeForm.email,
         phone: normalizePhoneForSms(intakeForm.phone),
-        preferredLanguage: "English" as PreferredLanguage,
-        loanOfficer:
-          activeOfficer.id === "sandro-pansini-souza"
-            ? "sandro"
-            : activeOfficer.id === "warren-wendt"
-            ? "warren"
-            : "finley",
+        preferredLanguage: toPreferredLanguage(language),
+        loanOfficer: activeOfficer.name,
         assignedEmail: activeOfficer.email,
         realtorName: intakeForm.realtorName,
         realtorPhone: normalizePhoneForSms(intakeForm.realtorPhone),
@@ -742,6 +897,11 @@ Keep the response practical and professional.`,
       return;
     }
 
+    if (!activeOfficer) {
+      setErrorMessage("No active loan officer is available.");
+      return;
+    }
+
     setActionLoading(true);
     setErrorMessage("");
 
@@ -749,11 +909,19 @@ Keep the response practical and professional.`,
       await sendSummaryTrigger(trigger);
 
       if (action === "apply") {
-        window.open(activeOfficer.applyUrl, "_blank", "noopener,noreferrer");
+        window.open(
+          activeOfficer.applyUrl || APPLY_NOW_URL,
+          "_blank",
+          "noopener,noreferrer"
+        );
       }
 
       if (action === "schedule") {
-        window.open(activeOfficer.scheduleUrl, "_blank", "noopener,noreferrer");
+        window.open(
+          activeOfficer.scheduleUrl || DEFAULT_SCHEDULE_URL,
+          "_blank",
+          "noopener,noreferrer"
+        );
       }
 
       if (action === "email") {
@@ -769,6 +937,8 @@ Keep the response practical and professional.`,
         const officerPhone = normalizeDigitsOnly(activeOfficer.mobile);
         if (officerPhone) {
           window.location.href = `tel:${officerPhone}`;
+        } else {
+          throw new Error("No phone number is available for this loan officer.");
         }
       }
 
@@ -794,15 +964,20 @@ Keep the response practical and professional.`,
   return (
     <main style={styles.page}>
       <div style={styles.wrap}>
-
         <div style={navStyles.topBar}>
           <a href="/" style={navStyles.brand}>
             Beyond Intelligence™
           </a>
           <div style={navStyles.topBarLinks}>
-            <a href="/" style={navStyles.topBarLink}>Home</a>
-            <a href="/borrower" style={navStyles.topBarLink}>Start as Borrower</a>
-            <a href="/team" style={navStyles.topBarLink}>Team Workspace</a>
+            <a href="/" style={navStyles.topBarLink}>
+              Home
+            </a>
+            <a href="/borrower" style={navStyles.topBarLink}>
+              Start as Borrower
+            </a>
+            <a href="/team" style={navStyles.topBarLink}>
+              Team Workspace
+            </a>
           </div>
         </div>
 
@@ -834,6 +1009,23 @@ Keep the response practical and professional.`,
                 <p style={{ ...styles.copyBlock, marginTop: 20 }}>
                   {preliminaryReviewRan ? t.scenarioDirectionReady : ""}
                 </p>
+                {loanOfficersLoading && (
+                  <p style={{ ...styles.copyBlock, marginTop: 12 }}>
+                    {t.loadingLoanOfficers}
+                  </p>
+                )}
+                {!loanOfficersLoading && loanOfficersError && (
+                  <p style={{ ...styles.copyBlock, marginTop: 12, color: "#991B1B" }}>
+                    {loanOfficersError}
+                  </p>
+                )}
+                {!loanOfficersLoading &&
+                  !loanOfficersError &&
+                  loanOfficers.length === 0 && (
+                    <p style={{ ...styles.copyBlock, marginTop: 12, color: "#991B1B" }}>
+                      {t.noLoanOfficers}
+                    </p>
+                  )}
               </div>
             </div>
 
@@ -1025,6 +1217,7 @@ Keep the response practical and professional.`,
                     }
                   }}
                   placeholder={t.loanOfficerPlaceholder}
+                  disabled={loanOfficersLoading || loanOfficers.length === 0}
                 />
 
                 {!loanOfficerConfirmed && officerSuggestions.length > 0 && (
@@ -1036,12 +1229,10 @@ Keep the response practical and professional.`,
                         style={styles.suggestionItem}
                         onClick={() => {
                           setSelectedOfficer(officer);
-                          setLoanOfficerQuery(
-                            `${officer.name} — NMLS ${officer.nmls}`
-                          );
+                          setLoanOfficerQuery(getOfficerDisplay(officer));
                         }}
                       >
-                        {officer.name} — NMLS {officer.nmls}
+                        {getOfficerDisplay(officer)}
                       </button>
                     ))}
                   </div>
@@ -1054,14 +1245,17 @@ Keep the response practical and professional.`,
                 <button
                   type="button"
                   onClick={confirmOfficerSelection}
-                  disabled={loanOfficerConfirmed}
+                  disabled={loanOfficerConfirmed || loanOfficersLoading}
                   style={{
                     ...styles.primaryButton,
                     backgroundColor: loanOfficerConfirmed
                       ? "#8BB7CC"
                       : "#62B3D6",
-                    cursor: loanOfficerConfirmed ? "default" : "pointer",
-                    opacity: loanOfficerConfirmed ? 0.9 : 1,
+                    cursor:
+                      loanOfficerConfirmed || loanOfficersLoading
+                        ? "default"
+                        : "pointer",
+                    opacity: loanOfficerConfirmed || loanOfficersLoading ? 0.9 : 1,
                   }}
                 >
                   {loanOfficerConfirmed
@@ -1072,11 +1266,15 @@ Keep the response practical and professional.`,
                 <button
                   type="button"
                   onClick={useDefaultFinley}
-                  disabled={loanOfficerConfirmed}
+                  disabled={loanOfficerConfirmed || !defaultLoanOfficer}
                   style={{
                     ...styles.outlineButton,
-                    opacity: loanOfficerConfirmed ? 0.7 : 1,
-                    cursor: loanOfficerConfirmed ? "default" : "pointer",
+                    opacity:
+                      loanOfficerConfirmed || !defaultLoanOfficer ? 0.7 : 1,
+                    cursor:
+                      loanOfficerConfirmed || !defaultLoanOfficer
+                        ? "default"
+                        : "pointer",
                   }}
                 >
                   {t.unknownLoanOfficer}
@@ -1086,22 +1284,31 @@ Keep the response practical and professional.`,
               <div style={styles.routingBox}>
                 <div style={styles.routingEyebrow}>{t.assignedRouting}</div>
                 <div style={styles.routingTitle}>
-                  {activeOfficer.name} — NMLS {activeOfficer.nmls}
+                  {activeOfficer
+                    ? getOfficerDisplay(activeOfficer)
+                    : "No loan officer assigned"}
                 </div>
                 <div style={styles.routingText}>
-                  {t.routingPrefix} {activeOfficer.email} and{" "}
-                  {activeOfficer.assistantEmail}.
+                  {activeOfficer
+                    ? `${t.routingPrefix} ${activeOfficer.email}${
+                        activeOfficer.assistantEmail
+                          ? ` and ${activeOfficer.assistantEmail}.`
+                          : "."
+                      }`
+                    : "Routing will become available after loan officers are loaded."}
                 </div>
               </div>
 
               <button
                 type="button"
                 onClick={runPreliminaryReview}
-                disabled={loading}
+                disabled={loading || !activeOfficer}
                 style={{
                   ...styles.primaryButton,
                   marginTop: 16,
                   backgroundColor: "#1493C7",
+                  opacity: !activeOfficer ? 0.7 : 1,
+                  cursor: !activeOfficer ? "not-allowed" : "pointer",
                 }}
               >
                 {loading ? t.loading : t.runPreliminaryReview}
@@ -1171,12 +1378,12 @@ Keep the response practical and professional.`,
               <button
                 type="button"
                 onClick={continueScenario}
-                disabled={chatLoading || scenarioConfirmed}
+                disabled={chatLoading || scenarioConfirmed || !activeOfficer}
                 style={{
                   ...styles.secondaryButton,
                   backgroundColor: "#8A95B8",
-                  opacity: scenarioConfirmed ? 0.9 : 1,
-                  cursor: scenarioConfirmed ? "default" : "pointer",
+                  opacity: scenarioConfirmed || !activeOfficer ? 0.9 : 1,
+                  cursor: scenarioConfirmed || !activeOfficer ? "default" : "pointer",
                 }}
               >
                 {scenarioConfirmed ? t.scenarioConfirmed : t.continueScenario}
@@ -1194,7 +1401,7 @@ Keep the response practical and professional.`,
                 </div>
               )}
 
-                            <div style={styles.chatArea}>
+              <div style={styles.chatArea}>
                 {conversation.map((message, index) => (
                   <div
                     key={`${message.role}-${index}`}
@@ -1246,8 +1453,15 @@ Keep the response practical and professional.`,
                 <button
                   type="button"
                   onClick={() => handleAction("apply", "apply")}
-                  disabled={actionLoading}
-                  style={styles.actionPrimary}
+                  disabled={actionLoading || !conversationReady}
+                  style={{
+                    ...styles.actionPrimary,
+                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                    cursor:
+                      actionLoading || !conversationReady
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
                 >
                   {t.applyNow}
                 </button>
@@ -1255,8 +1469,15 @@ Keep the response practical and professional.`,
                 <button
                   type="button"
                   onClick={() => handleAction("schedule", "schedule")}
-                  disabled={actionLoading}
-                  style={styles.actionPrimary}
+                  disabled={actionLoading || !conversationReady}
+                  style={{
+                    ...styles.actionPrimary,
+                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                    cursor:
+                      actionLoading || !conversationReady
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
                 >
                   {t.schedule}
                 </button>
@@ -1264,8 +1485,15 @@ Keep the response practical and professional.`,
                 <button
                   type="button"
                   onClick={() => handleAction("contact", "email")}
-                  disabled={actionLoading}
-                  style={styles.actionOutline}
+                  disabled={actionLoading || !conversationReady}
+                  style={{
+                    ...styles.actionOutline,
+                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                    cursor:
+                      actionLoading || !conversationReady
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
                 >
                   {t.emailOfficer}
                 </button>
@@ -1273,8 +1501,15 @@ Keep the response practical and professional.`,
                 <button
                   type="button"
                   onClick={() => handleAction("contact", "call")}
-                  disabled={actionLoading}
-                  style={styles.actionOutline}
+                  disabled={actionLoading || !conversationReady}
+                  style={{
+                    ...styles.actionOutline,
+                    opacity: actionLoading || !conversationReady ? 0.7 : 1,
+                    cursor:
+                      actionLoading || !conversationReady
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
                 >
                   {t.callOfficer}
                 </button>
@@ -1595,6 +1830,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
 };
+
 const navStyles: Record<string, React.CSSProperties> = {
   topBar: {
     display: "flex",
