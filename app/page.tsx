@@ -86,6 +86,11 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.75,
     color: "rgba(255,255,255,0.94)",
   },
+  heroRightColumn: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 18,
+  },
   heroPanel: {
     backgroundColor: "rgba(255,255,255,0.12)",
     border: "1px solid rgba(255,255,255,0.18)",
@@ -111,6 +116,56 @@ const styles: Record<string, React.CSSProperties> = {
     color: "rgba(255,255,255,0.96)",
     fontSize: 15,
     lineHeight: 1.6,
+  },
+  finleyPanel: {
+    backgroundColor: "rgba(255,255,255,0.14)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    borderRadius: 24,
+    padding: 22,
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+  },
+  finleyEyebrow: {
+    fontSize: 13,
+    fontWeight: 900,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.86)",
+    marginBottom: 10,
+  },
+  finleyTitle: {
+    margin: 0,
+    fontSize: 28,
+    lineHeight: 1.08,
+    fontWeight: 900,
+    color: "#ffffff",
+  },
+  finleyText: {
+    marginTop: 12,
+    marginBottom: 18,
+    color: "rgba(255,255,255,0.95)",
+    fontSize: 15,
+    lineHeight: 1.7,
+  },
+  finleyButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
+    width: "100%",
+    minHeight: 56,
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    color: "#263366",
+    padding: "14px 18px",
+    fontWeight: 900,
+    fontSize: 16,
+    boxShadow: "0 14px 24px rgba(15,23,42,0.14)",
+  },
+  finleySubtext: {
+    marginTop: 12,
+    fontSize: 13,
+    lineHeight: 1.6,
+    color: "rgba(255,255,255,0.82)",
   },
   grid: {
     display: "grid",
@@ -309,6 +364,10 @@ const responsiveCss = `
     .bf-section-title {
       font-size: 28px !important;
     }
+
+    .bf-finley-title {
+      font-size: 24px !important;
+    }
   }
 `;
 
@@ -344,11 +403,11 @@ export default function HomePage() {
               <h1 className="bf-hero-title" style={styles.heroTitle}>
                 Mortgage intelligence
                 <br />
-                for borrower guidance,
+                • for borrower guidance,
                 <br />
-                professional analysis,
+                • professional analysis,
                 <br />
-                and workflow execution.
+                • and workflow execution.
               </h1>
 
               <p style={styles.heroText}>
@@ -360,18 +419,41 @@ export default function HomePage() {
               </p>
             </div>
 
-            <div style={styles.heroPanel}>
-              <div style={styles.heroPanelTitle}>PLATFORM STRUCTURE</div>
+            <div style={styles.heroRightColumn}>
+              <div style={styles.heroPanel}>
+                <div style={styles.heroPanelTitle}>PLATFORM STRUCTURE</div>
 
-              <div style={styles.heroPanelText}>
-                One system. Three environments. Each with a distinct role in the
-                mortgage journey.
+                <div style={styles.heroPanelText}>
+                  One system. Three environments. Each with a distinct role in the
+                  mortgage journey.
+                </div>
+
+                <div style={styles.heroPanelList}>
+                  <div>• Borrower Intelligence for guided client interaction.</div>
+                  <div>• Team Mortgage Intelligence for professional analysis.</div>
+                  <div>• Team Workflow Intelligence for execution and file command.</div>
+                </div>
               </div>
 
-              <div style={styles.heroPanelList}>
-                <div>• Borrower Intelligence for guided client interaction.</div>
-                <div>• Team Mortgage Intelligence for professional analysis.</div>
-                <div>• Team Workflow Intelligence for execution and file command.</div>
+              <div style={styles.finleyPanel}>
+                <div style={styles.finleyEyebrow}>START HERE</div>
+                <h2 className="bf-finley-title" style={styles.finleyTitle}>
+                  Talk to Finley Beyond
+                </h2>
+                <p style={styles.finleyText}>
+                  Begin your borrower interaction here to review your mortgage
+                  scenario, answer qualification questions, and get routed toward
+                  the right next step.
+                </p>
+
+                <a href="/borrower" style={styles.finleyButton}>
+                  Start Borrower Conversation
+                </a>
+
+                <div style={styles.finleySubtext}>
+                  Designed for borrowers who want to begin with guided mortgage
+                  intake and Finley Beyond interaction.
+                </div>
               </div>
             </div>
           </div>
@@ -467,7 +549,7 @@ export default function HomePage() {
           <div style={styles.architectureHeader}>
             <div style={styles.sectionEyebrow}>PRODUCT ARCHITECTURE</div>
             <h2 className="bf-section-title" style={styles.sectionTitle}>
-              A cleaner operating system for mortgage teams
+              A cleaner operating system for real estate professionals
             </h2>
             <p style={styles.sectionText}>
               The platform now separates interaction, analysis, and execution so
