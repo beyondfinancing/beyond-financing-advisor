@@ -326,7 +326,7 @@ export async function POST(request: NextRequest) {
 ];
 
 const recipients: NotificationRecipient[] = rawRecipients.filter(
-  (item): item is NotificationRecipient => Boolean(item.email || item.phone)
+  (item) => Boolean(item.email || item.phone)
 );
 
 const recipients = rawRecipients.filter(
