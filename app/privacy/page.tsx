@@ -7,7 +7,7 @@ export default function PrivacyPage() {
         <p style={styles.text}>
           Beyond Intelligence™ is committed to protecting your privacy. This
           policy explains how we collect, use, and safeguard your information
-          when you interact with our mortgage advisory system.
+          when you interact with our educational platform.
         </p>
 
         <h2 style={styles.heading}>Information We Collect</h2>
