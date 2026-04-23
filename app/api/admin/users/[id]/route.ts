@@ -2,104 +2,72 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { signInAdminSession } from "@/lib/admin-auth";
 
-type TeamRole =
-  | "Loan Officer"
-  | "Loan Officer Assistant"
-  | "Processor"
-  | "Production Manager"
-  | "Branch Manager"
-  | "Real Estate Agent";
-
 type UpdateUserPayload = {
   name?: string;
   email?: string;
   nmls?: string;
-  role?: TeamRole;
+  role?: string;
   calendly?: string;
   assistantEmail?: string;
   phone?: string;
   isActive?: boolean;
 };
 
-type SessionUser = {
-  id?: string;
-  name?: string;
-  email?: string;
-  role?: TeamRole;
+type RouteContext = {
+  params: Promise<{ id: string }>;
 };
 
-const APPROVED_ADMIN_EMAIL = "pansini@beyondfinancing.com";
-
-function normalizeString(value: unknown): string {
+function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
-async function ensureApprovedAdminAccess() {
+async function ensureAdminApiAccess() {
   try {
-    const session = (await signInAdminSession()) as SessionUser | undefined;
-    const email = normalizeString(session?.email).toLowerCase();
-
-    if (email !== APPROVED_ADMIN_EMAIL) {
-      return { ok: false as const, user: null };
-    }
-
-    return { ok: true as const, user: session ?? null };
+    await signInAdminSession();
+    return true;
   } catch {
-    return { ok: false as const, user: null };
+    return false;
   }
 }
 
-type RouteContext = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
 export async function PATCH(req: Request, context: RouteContext) {
-  const auth = await ensureApprovedAdminAccess();
+  const allowed = await ensureAdminApiAccess();
 
-  if (!auth.ok) {
+  if (!allowed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await context.params;
-  const normalizedId = normalizeString(id);
-
-  if (!normalizedId) {
-    return NextResponse.json({ error: "Missing user id." }, { status: 400 });
-  }
-
-  let body: UpdateUserPayload;
-
-  try {
-    body = (await req.json()) as UpdateUserPayload;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
+  const body = (await req.json()) as UpdateUserPayload;
 
   const updatePayload: Record<string, unknown> = {};
 
-  if ("name" in body) updatePayload.name = normalizeString(body.name);
-  if ("email" in body) {
-    updatePayload.email = normalizeString(body.email).toLowerCase();
+  if ("name" in body) {
+    const name = clean(body.name);
+    updatePayload.name = name;
+    updatePayload.full_name = name;
   }
-  if ("nmls" in body) updatePayload.nmls = normalizeString(body.nmls);
-  if ("role" in body) updatePayload.role = normalizeString(body.role);
-  if ("calendly" in body) {
-    updatePayload.calendly = normalizeString(body.calendly);
+
+  if ("email" in body) updatePayload.email = clean(body.email).toLowerCase();
+  if ("nmls" in body) updatePayload.nmls = clean(body.nmls);
+
+  if ("role" in body) {
+    const role = clean(body.role);
+    updatePayload.role = role;
+    updatePayload.credential = role;
   }
+
+  if ("calendly" in body) updatePayload.calendly = clean(body.calendly);
   if ("assistantEmail" in body) {
-    updatePayload.assistant_email = normalizeString(
-      body.assistantEmail
-    ).toLowerCase();
+    updatePayload.assistant_email = clean(body.assistantEmail).toLowerCase();
   }
-  if ("phone" in body) updatePayload.phone = normalizeString(body.phone);
+  if ("phone" in body) updatePayload.phone = clean(body.phone);
   if ("isActive" in body) updatePayload.is_active = Boolean(body.isActive);
 
   const { data, error } = await supabaseAdmin
     .from("team_users")
     .update(updatePayload)
-    .eq("id", normalizedId)
+    .eq("id", clean(id))
     .select("*")
     .single();
 
@@ -111,23 +79,18 @@ export async function PATCH(req: Request, context: RouteContext) {
 }
 
 export async function DELETE(_req: Request, context: RouteContext) {
-  const auth = await ensureApprovedAdminAccess();
+  const allowed = await ensureAdminApiAccess();
 
-  if (!auth.ok) {
+  if (!allowed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await context.params;
-  const normalizedId = normalizeString(id);
-
-  if (!normalizedId) {
-    return NextResponse.json({ error: "Missing user id." }, { status: 400 });
-  }
 
   const { error } = await supabaseAdmin
     .from("team_users")
     .delete()
-    .eq("id", normalizedId);
+    .eq("id", clean(id));
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
