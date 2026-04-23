@@ -1,7 +1,20 @@
 export type SiteLanguage = "en" | "pt" | "es";
 export type HeaderVariant = "home" | "borrower" | "team" | "workflow" | "admin";
 
-export const SITE_HEADER_COPY = {
+export type SiteHeaderCopy = {
+  brand: string;
+  home: string;
+  borrower: string;
+  team: string;
+  workflow: string;
+  admin: string;
+  language: string;
+  english: string;
+  portuguese: string;
+  spanish: string;
+};
+
+export const SITE_HEADER_COPY: Record<SiteLanguage, SiteHeaderCopy> = {
   en: {
     brand: "Beyond Intelligence™",
     home: "Home",
@@ -38,4 +51,4 @@ export const SITE_HEADER_COPY = {
     portuguese: "Português",
     spanish: "Español",
   },
-} as const;
+};
