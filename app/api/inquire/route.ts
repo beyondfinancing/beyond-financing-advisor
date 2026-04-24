@@ -9,7 +9,7 @@ const TO_EMAIL =
 
 const FROM_EMAIL =
   process.env.RESEND_FROM_EMAIL ||
-  "Beyond Intelligence <onboarding@resend.dev>";
+  "Beyond Intelligence <pansini@beyondfinancing.com>";
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
@@ -40,7 +40,10 @@ export async function POST(req: Request) {
 
     if (!fullName || !email || !phone || !nmls) {
       return NextResponse.json(
-        { success: false, error: "Name, email, phone, and NMLS # are required." },
+        {
+          success: false,
+          error: "Name, email, phone, and NMLS # are required.",
+        },
         { status: 400 }
       );
     }
@@ -86,6 +89,7 @@ export async function POST(req: Request) {
     const safePhone = escapeHtml(phone);
     const safeNmls = escapeHtml(nmls);
     const safeNotes = escapeHtml(notes || "No notes provided.");
+    const safeInquiryId = escapeHtml(data?.id || "Not available");
 
     const emailResult = await resend.emails.send({
       from: FROM_EMAIL,
@@ -105,11 +109,13 @@ export async function POST(req: Request) {
           </div>
 
           <p style="margin-top:18px;">
-            Inquiry ID: ${data?.id || "Not available"}
+            Inquiry ID: ${safeInquiryId}
           </p>
         </div>
       `,
     });
+
+    console.log("EMAIL RESULT:", emailResult);
 
     if (emailResult.error) {
       console.error("Professional inquiry Resend error:", emailResult.error);
