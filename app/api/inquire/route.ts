@@ -94,7 +94,7 @@ export async function POST(req: Request) {
     const emailResult = await resend.emails.send({
       from: FROM_EMAIL,
       to: [TO_EMAIL],
-      subject: `New Beyond Intelligence™ Professional Inquiry — ${fullName}`,
+      subject: `[Beyond Intelligence™] New Professional Inquiry — ${fullName}`,
       html: `
         <div style="font-family: Arial, sans-serif; color:#1f2937; line-height:1.6;">
           <h2 style="color:#263366;">New Beyond Intelligence™ Professional Inquiry</h2>
