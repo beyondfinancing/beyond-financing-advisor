@@ -190,6 +190,7 @@ const COPY: Record<
     routingText: string;
     runReview: string;
     reviewing: string;
+    reviewCompleted: string;
     propertyScenario: string;
     homePrice: string;
     downPayment: string;
@@ -271,6 +272,7 @@ const COPY: Record<
       "Internal summary will route to the assigned loan officer and team support.",
     runReview: "Run Preliminary Review",
     reviewing: "Reviewing...",
+    reviewCompleted: "Preliminary Review Completed ✓",
     propertyScenario: "Property Scenario",
     homePrice: "Estimated Home Price",
     downPayment: "Estimated Down Payment",
@@ -351,6 +353,7 @@ const COPY: Record<
       "O resumo interno será enviado ao loan officer definido e ao suporte da equipe.",
     runReview: "Executar Revisão Preliminar",
     reviewing: "Analisando...",
+    reviewCompleted: "Revisão Preliminar Concluída ✓",
     propertyScenario: "Cenário do Imóvel",
     homePrice: "Preço Estimado do Imóvel",
     downPayment: "Entrada Estimada",
@@ -431,6 +434,7 @@ const COPY: Record<
       "El resumen interno se enviará al loan officer asignado y al soporte del equipo.",
     runReview: "Ejecutar Revisión Preliminar",
     reviewing: "Revisando...",
+    reviewCompleted: "Revisión Preliminar Completada ✓",
     propertyScenario: "Escenario de la Propiedad",
     homePrice: "Precio Estimado de la Propiedad",
     downPayment: "Pago Inicial Estimado",
@@ -1539,15 +1543,6 @@ Advise that the assigned loan officer will personally review the scenario and ad
               </div>
             </div>
 
-            <button
-              type="button"
-              style={styles.primaryButtonWide}
-              onClick={runPreliminaryReview}
-              disabled={!accepted || loading}
-            >
-              {loading ? t.reviewing : t.runReview}
-            </button>
-
             <div style={styles.propertyCard}>
               <h2 style={styles.boxTitle}>{t.propertyScenario}</h2>
 
@@ -1583,6 +1578,23 @@ Advise that the assigned loan officer will personally review the scenario and ad
                   {t.estimatedLtv}: {Math.round(estimatedLtv * 100)}%
                 </div>
               </div>
+
+              <button
+                type="button"
+                style={
+                  !accepted || loading || scenarioUnlocked
+                    ? styles.disabledButton
+                    : styles.primaryButtonWide
+                }
+                onClick={runPreliminaryReview}
+                disabled={!accepted || loading || scenarioUnlocked}
+              >
+                {loading
+                  ? t.reviewing
+                  : scenarioUnlocked
+                  ? t.reviewCompleted
+                  : t.runReview}
+              </button>
 
               <button
                 type="button"
