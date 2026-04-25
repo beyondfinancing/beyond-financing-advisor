@@ -24,7 +24,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "@/app/components/SiteHeader";
 import { SiteLanguage } from "@/app/components/site-header-translations";
 import { US_STATES, STATE_NAMES_BY_CODE } from "@/lib/us-states";
@@ -472,6 +472,19 @@ function formatPhoneDisplay(value: string) {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
 }
 
+// Phase 5-prep-D-bugs: format dollar amounts with thousands separators (no $ sign).
+// State holds raw digits (e.g. "700000"); display shows "700,000".
+// All Number(state) calls keep working because state stays numeric.
+function formatNumberDisplay(value: string): string {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("en-US");
+}
+
+function digitsOnly(value: string): string {
+  return String(value || "").replace(/\D/g, "");
+}
+
 function extractAiText(data: unknown): string {
   if (typeof data === "string") return data;
 
@@ -534,6 +547,12 @@ export default function BorrowerPage() {
   const [actionMessage, setActionMessage] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
+
+  // Phase 5-prep-D-bugs: auto-scroll the chat to the latest message
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [conversation.length, chatLoading]);
 
   // Phase 5-prep-B: split arrays from filtered API
   const [loanOfficersFromApi, setLoanOfficersFromApi] = useState<LoanOfficerOut[]>([]);
@@ -1327,16 +1346,18 @@ Advise that the assigned loan officer will personally review the scenario and ad
               <input
                 style={styles.input}
                 placeholder={t.grossMonthlyIncome}
-                value={intakeForm.income}
-                onChange={(e) => setIntakeField("income", e.target.value)}
+                value={formatNumberDisplay(intakeForm.income)}
+                onChange={(e) => setIntakeField("income", digitsOnly(e.target.value))}
                 disabled={!accepted}
+                inputMode="numeric"
               />
               <input
                 style={styles.input}
                 placeholder={t.monthlyDebt}
-                value={intakeForm.debt}
-                onChange={(e) => setIntakeField("debt", e.target.value)}
+                value={formatNumberDisplay(intakeForm.debt)}
+                onChange={(e) => setIntakeField("debt", digitsOnly(e.target.value))}
                 disabled={!accepted}
+                inputMode="numeric"
               />
 
               {/* Phase 5-prep-B: Current State as dropdown */}
@@ -1550,14 +1571,16 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 <input
                   style={styles.input}
                   placeholder={t.homePrice}
-                  value={scenarioForm.homePrice}
-                  onChange={(e) => setScenarioField("homePrice", e.target.value)}
+                  value={formatNumberDisplay(scenarioForm.homePrice)}
+                  onChange={(e) => setScenarioField("homePrice", digitsOnly(e.target.value))}
+                  inputMode="numeric"
                 />
                 <input
                   style={styles.input}
                   placeholder={t.downPayment}
-                  value={scenarioForm.downPayment}
-                  onChange={(e) => setScenarioField("downPayment", e.target.value)}
+                  value={formatNumberDisplay(scenarioForm.downPayment)}
+                  onChange={(e) => setScenarioField("downPayment", digitsOnly(e.target.value))}
+                  inputMode="numeric"
                 />
               </div>
 
@@ -1640,13 +1663,23 @@ Advise that the assigned loan officer will personally review the scenario and ad
                       style={{
                         ...styles.chatBubble,
                         backgroundColor:
-                          message.role === "user" ? "#E9F6FC" : "#F7F9FD",
+                          message.role === "user" ? "#5CB2D8" : "#F4F7FC",
+                        color: message.role === "user" ? "#ffffff" : "#243F7C",
+                        border:
+                          message.role === "user"
+                            ? "1px solid #5CB2D8"
+                            : "1px solid #E2E8F2",
+                        alignSelf:
+                          message.role === "user" ? "flex-end" : "flex-start",
+                        width: "auto",
+                        maxWidth: "88%",
                       }}
                     >
                       {message.content}
                     </div>
                   ))
                 )}
+                <div ref={chatEndRef} />
               </div>
             )}
 
@@ -1875,8 +1908,11 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 10,
     marginBottom: 14,
-    maxHeight: 280,
+    maxHeight: 360,
     overflowY: "auto",
+    overflowX: "hidden",
+    width: "100%",
+    boxSizing: "border-box",
   },
   chatBubble: {
     borderRadius: 16,
@@ -1887,6 +1923,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     border: "1px solid #D5E0F1",
     whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    overflowWrap: "anywhere",
+    width: "100%",
+    maxWidth: "100%",
+    boxSizing: "border-box",
   },
   formCard: {
     backgroundColor: "#ffffff",
