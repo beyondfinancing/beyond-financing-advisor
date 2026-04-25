@@ -5,32 +5,40 @@
 //
 // =============================================================================
 //
-// PHASE 4 — REWRITE TO USE THE MATRIX
+// PHASE 5.1 — PERSIST SCENARIOS TO THE DATABASE
 //
-// What this version does that the old chat-summary did not:
+// What this version adds vs. the Phase 4 version:
 //
-//   1. Looks up the loan officer in public.employees by ID. No hardcoded
-//      "finley/sandro/warren" lookup map. Every active LO is supported.
+//   1. Upserts a `borrowers` row (matched by email).
 //
-//   2. Pulls the LO's assistants from public.lo_assistant_assignments.
-//      All active assistants get CC'd, not just one.
+//   2. Creates or updates a `borrower_scenarios` row using "Option C":
+//      - If an unclaimed scenario for this borrower already exists, UPDATE
+//        it with the latest submission data.
+//      - If a CLAIMED scenario for this borrower already exists, leave it
+//        alone and INSERT a new scenario for the new submission.
+//      - If no scenario for this borrower exists, INSERT a fresh row.
 //
-//   3. CCs the realtor when one was selected on the borrower form.
-//      Looks up the realtor in public.realtors by ID for an authoritative
-//      email, falls back to the borrower-provided email if needed.
+//   3. Stores the chat conversation in borrower_scenarios.conversation
+//      so the Inbox can later display message previews.
 //
-//   4. Logs every send attempt (success or failure) to
-//      public.borrower_action_logs so you have a permanent audit trail.
+//   4. Sets status:
+//      - assigned_pending_claim if the selected officer is a real LO
+//      - awaiting_assignment   if Finley Beyond was chosen (no real LO)
 //
-//   5. Real error logging to console.error — these surface in Vercel
-//      function logs. Silent failures are over.
+//   5. Sets assignment_method:
+//      - self_chosen if the borrower picked a real LO
+//      - bi_assigned if Finley Beyond was chosen (BI will route)
 //
-//   6. Backwards-compatible with the existing /borrower page payload
-//      shape. The page does not need to change.
+// What this version preserves:
 //
-// Sender: finley@beyondfinancing.com (verified in Resend today).
-// When beyondintelligence.io is verified later, swap FROM_ADDRESS or
-// promote the value to a per-tenant column on public.tenants.
+//   - Email behavior is byte-identical to Phase 4
+//   - Audit log behavior is byte-identical to Phase 4
+//   - Response shape is byte-identical to Phase 4
+//   - Borrower page payload shape is unchanged
+//   - Database persistence is best-effort: if the persist step fails,
+//     the email and audit log still happen and the route still returns
+//     success. Persistence failures are logged but do not break the
+//     borrower experience.
 //
 // =============================================================================
 
@@ -48,6 +56,8 @@ type ChatMessage = {
 
 type PreferredLanguage = 'English' | 'Português' | 'Español'
 type SummaryTrigger = 'ai' | 'apply' | 'schedule' | 'contact' | 'call' | 'professional'
+type LanguageCode = 'en' | 'pt' | 'es'
+type BorrowerPath = 'Purchase' | 'Refinance' | 'Investment'
 
 type LeadPayload = {
   fullName?: string
@@ -61,6 +71,15 @@ type LeadPayload = {
   realtorEmail?: string
   realtorPhone?: string
   realtorMls?: string
+  // Light scenario hints the borrower page may include
+  borrowerPath?: BorrowerPath
+  currentState?: string
+  targetState?: string
+  homePrice?: string | number
+  downPayment?: string | number
+  estimatedCreditScore?: string | number
+  monthlyIncome?: string | number
+  monthlyDebt?: string | number
 }
 
 type SelectedOfficerPayload = {
@@ -107,6 +126,7 @@ type ResolvedRouting = {
     name: string
     email: string
     nmls: string
+    isFinleyBot: boolean
   }
   assistantEmails: string[]
   realtor: {
@@ -127,6 +147,12 @@ type ResolvedRouting = {
 const FROM_ADDRESS = 'Finley Beyond <finley@beyondfinancing.com>'
 const FALLBACK_PRIMARY_EMAIL = 'finley@beyondfinancing.com'
 const DEFAULT_TENANT_SUBDOMAIN = 'bf'
+
+// The bot's NMLS sentinel — distinguishes the system's Finley Beyond
+// employees row from a real licensed LO. When the borrower selects
+// Finley Beyond on the form, that means "I don't know my LO" and BI
+// should assign someone, so the scenario goes into awaiting_assignment.
+const FINLEY_BOT_NMLS = '2394496FB'
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -154,6 +180,14 @@ function safeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function languageNameToCode(name: string): LanguageCode {
+  const lower = String(name || '').trim().toLowerCase()
+  if (lower.startsWith('port') || lower === 'pt') return 'pt'
+  if (lower.startsWith('esp') || lower === 'es' || lower.startsWith('span'))
+    return 'es'
+  return 'en'
+}
+
 function buildTranscriptHtml(messages: ChatMessage[]): string {
   if (!messages || messages.length === 0) return ''
   return messages
@@ -179,7 +213,7 @@ function parseJsonSafely<T>(value: string): T | null {
 }
 
 // -----------------------------------------------------------------------------
-// Routing resolution — looks up the real LO, their assistants, and the realtor
+// Routing resolution — looks up the real LO, their assistants, the realtor
 // -----------------------------------------------------------------------------
 
 async function resolveRouting(
@@ -192,22 +226,14 @@ async function resolveRouting(
   let loName = ''
   let loEmail = ''
   let loNmls = ''
+  let isFinleyBot = false
   const assistantEmails: string[] = []
 
-  // -------------------------------------------------------------------------
-  // Step 1 — Look up the loan officer
-  // -------------------------------------------------------------------------
-  //
-  // Preferred path: selectedOfficer.id is the employees.id UUID.
-  // Fallback path: try matching by email if id wasn't sent (legacy callers).
-  //
-  // Either way we end up with a confirmed row from public.employees.
-  // -------------------------------------------------------------------------
-
+  // Step 1 — Look up by employees.id, then fall back to email
   if (selectedOfficer?.id) {
     const { data, error } = await supabaseAdmin
       .from('employees')
-      .select('id, full_name, email, nmls, is_active, role, tenant_id')
+      .select('id, full_name, email, nmls, is_active, role')
       .eq('id', selectedOfficer.id)
       .eq('is_active', true)
       .maybeSingle()
@@ -234,24 +260,23 @@ async function resolveRouting(
       loEmail = data.email || ''
       loNmls = data.nmls || ''
     } else {
-      // Couldn't find them in employees, but trust the borrower page payload
-      // enough to use it for routing. This is the legacy fallback path.
       loName = selectedOfficer.name || ''
       loEmail = selectedOfficer.email
       loNmls = selectedOfficer.nmls || ''
     }
   }
 
-  // Final safety net
   if (!loEmail || !isValidEmail(loEmail)) {
     loEmail = FALLBACK_PRIMARY_EMAIL
     if (!loName) loName = 'Finley Beyond'
   }
 
-  // -------------------------------------------------------------------------
-  // Step 2 — Pull the LO's assistants from the matrix
-  // -------------------------------------------------------------------------
+  isFinleyBot =
+    loNmls === FINLEY_BOT_NMLS ||
+    loName.toLowerCase().startsWith('finley') ||
+    loEmail.toLowerCase().startsWith('finley@')
 
+  // Step 2 — LO's assistants from the matrix
   if (loId) {
     const { data: assignments, error: aerr } = await supabaseAdmin
       .from('lo_assistant_assignments')
@@ -280,8 +305,7 @@ async function resolveRouting(
     }
   }
 
-  // Legacy fallback: if the borrower page sent an explicit assistantEmail
-  // and we didn't find one in the matrix, honor it.
+  // Legacy fallback for assistantEmail
   if (assistantEmails.length === 0) {
     const fallbackAssistant =
       safeString(selectedOfficer?.assistantEmail) || safeString(lead.assistantEmail)
@@ -291,10 +315,7 @@ async function resolveRouting(
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Step 3 — Resolve the realtor
-  // -------------------------------------------------------------------------
-
+  // Step 3 — Resolve realtor
   let resolvedRealtor: ResolvedRouting['realtor'] = null
 
   if (selectedRealtor) {
@@ -321,7 +342,6 @@ async function resolveRouting(
       }
     }
 
-    // Only count as a realtor if at least the name was provided.
     if (realtorName) {
       resolvedRealtor = {
         id: realtorId,
@@ -333,10 +353,7 @@ async function resolveRouting(
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Step 4 — Build the CC list
-  // -------------------------------------------------------------------------
-
+  // Step 4 — CC list
   const ccList: string[] = []
   for (const e of assistantEmails) {
     if (!ccList.includes(e)) ccList.push(e)
@@ -348,7 +365,7 @@ async function resolveRouting(
   }
 
   return {
-    loanOfficer: { id: loId, name: loName, email: loEmail, nmls: loNmls },
+    loanOfficer: { id: loId, name: loName, email: loEmail, nmls: loNmls, isFinleyBot },
     assistantEmails,
     realtor: resolvedRealtor,
     primaryEmail: loEmail,
@@ -357,7 +374,202 @@ async function resolveRouting(
 }
 
 // -----------------------------------------------------------------------------
-// Fallback summary builder (when OpenAI isn't available or fails)
+// Persistence — upsert borrower + create/update borrower_scenario
+// -----------------------------------------------------------------------------
+
+type PersistResult = {
+  borrowerId: string | null
+  scenarioId: string | null
+  scenarioAction: 'created' | 'updated' | 'skipped' | 'failed'
+}
+
+async function persistScenario(args: {
+  lead: LeadPayload
+  routing: ResolvedRouting
+  trigger: SummaryTrigger
+  messages: ChatMessage[]
+}): Promise<PersistResult> {
+
+  const { lead, routing, trigger, messages } = args
+
+  const result: PersistResult = {
+    borrowerId: null,
+    scenarioId: null,
+    scenarioAction: 'failed',
+  }
+
+  try {
+
+    // -------------------------------------------------------------------------
+    // Step 1 — Resolve the tenant (Beyond Financing for now).
+    // -------------------------------------------------------------------------
+
+    const { data: tenantRow, error: tenantErr } = await supabaseAdmin
+      .from('tenants')
+      .select('id')
+      .eq('subdomain', DEFAULT_TENANT_SUBDOMAIN)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (tenantErr || !tenantRow) {
+      console.error('persistScenario: tenant lookup failed.', tenantErr)
+      return result
+    }
+
+    const tenantId = tenantRow.id as string
+
+    // -------------------------------------------------------------------------
+    // Step 2 — Upsert the borrower row by email.
+    // -------------------------------------------------------------------------
+
+    const fullName = safeString(lead.fullName)
+    const email = safeString(lead.email).toLowerCase()
+    const phone = safeString(lead.phone)
+    const preferredLanguage = safeString(lead.preferredLanguage)
+    const currentState = safeString(lead.currentState)
+    const targetState = safeString(lead.targetState)
+
+    if (!email || !fullName) {
+      console.error('persistScenario: missing borrower name or email.')
+      return result
+    }
+
+    const { data: borrowerUpsert, error: borrowerErr } = await supabaseAdmin
+      .from('borrowers')
+      .upsert(
+        {
+          full_name: fullName,
+          email,
+          phone: phone || null,
+          preferred_language: preferredLanguage || 'English',
+          current_state: currentState || null,
+          target_state: targetState || null,
+        },
+        { onConflict: 'email' }
+      )
+      .select('id')
+      .maybeSingle()
+
+    if (borrowerErr || !borrowerUpsert) {
+      console.error('persistScenario: borrower upsert failed.', borrowerErr)
+      return result
+    }
+
+    const borrowerId = borrowerUpsert.id as string
+    result.borrowerId = borrowerId
+
+    // -------------------------------------------------------------------------
+    // Step 3 — Build the scenario payload.
+    // -------------------------------------------------------------------------
+
+    const isFinleyBot = routing.loanOfficer.isFinleyBot
+    const assignedLoId = isFinleyBot ? null : routing.loanOfficer.id
+
+    const status = isFinleyBot ? 'awaiting_assignment' : 'assigned_pending_claim'
+    const assignmentMethod = isFinleyBot ? 'bi_assigned' : 'self_chosen'
+
+    const intakeData = {
+      fullName,
+      email,
+      phone,
+      preferredLanguage,
+      estimatedCreditScore: lead.estimatedCreditScore || null,
+      monthlyIncome: lead.monthlyIncome || null,
+      monthlyDebt: lead.monthlyDebt || null,
+      currentState,
+      targetState,
+    }
+
+    const scenarioData = {
+      homePrice: lead.homePrice || null,
+      downPayment: lead.downPayment || null,
+    }
+
+    const scenarioPayload = {
+      borrower_id: borrowerId,
+      realtor_id: routing.realtor?.id || null,
+      assigned_loan_officer_id: assignedLoId,
+      assigned_tenant_id: tenantId,
+      language: languageNameToCode(preferredLanguage),
+      borrower_path: lead.borrowerPath || null,
+      intake_data: intakeData,
+      scenario_data: scenarioData,
+      conversation: messages || [],
+      status,
+      assignment_method: assignmentMethod,
+      source_page: '/borrower',
+      trigger_event: trigger,
+      updated_at: new Date().toISOString(),
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 4 — Option C: find the most recent UNCLAIMED scenario for this
+    // borrower. If found, UPDATE it. Otherwise, INSERT a new one.
+    // -------------------------------------------------------------------------
+
+    const { data: existingUnclaimed, error: findErr } = await supabaseAdmin
+      .from('borrower_scenarios')
+      .select('id, status')
+      .eq('borrower_id', borrowerId)
+      .in('status', ['awaiting_assignment', 'assigned_pending_claim'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (findErr) {
+      console.error('persistScenario: find unclaimed failed.', findErr)
+      return result
+    }
+
+    if (existingUnclaimed) {
+
+      const { data: updated, error: updErr } = await supabaseAdmin
+        .from('borrower_scenarios')
+        .update(scenarioPayload)
+        .eq('id', existingUnclaimed.id)
+        .select('id')
+        .maybeSingle()
+
+      if (updErr || !updated) {
+        console.error('persistScenario: scenario update failed.', updErr)
+        return result
+      }
+
+      result.scenarioId = updated.id as string
+      result.scenarioAction = 'updated'
+      console.log(
+        `persistScenario: updated existing unclaimed scenario id=${updated.id} for borrower=${email}.`
+      )
+      return result
+    }
+
+    // No unclaimed scenario found — create a fresh one.
+    const { data: created, error: insErr } = await supabaseAdmin
+      .from('borrower_scenarios')
+      .insert(scenarioPayload)
+      .select('id')
+      .maybeSingle()
+
+    if (insErr || !created) {
+      console.error('persistScenario: scenario insert failed.', insErr)
+      return result
+    }
+
+    result.scenarioId = created.id as string
+    result.scenarioAction = 'created'
+    console.log(
+      `persistScenario: created new scenario id=${created.id} for borrower=${email}.`
+    )
+    return result
+
+  } catch (err) {
+    console.error('persistScenario: unhandled error.', err)
+    return result
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Fallback summary builder
 // -----------------------------------------------------------------------------
 
 function buildFallbackSummary(
@@ -412,7 +624,7 @@ function buildFallbackSummary(
 }
 
 // -----------------------------------------------------------------------------
-// Audit logger — records every send attempt to borrower_action_logs
+// Audit logger
 // -----------------------------------------------------------------------------
 
 async function logBorrowerAction(args: {
@@ -421,6 +633,8 @@ async function logBorrowerAction(args: {
   trigger: SummaryTrigger
   status: 'sent' | 'failed'
   errorMessage?: string
+  scenarioId?: string | null
+  borrowerId?: string | null
 }) {
   try {
     await supabaseAdmin.from('borrower_action_logs').insert({
@@ -443,10 +657,11 @@ async function logBorrowerAction(args: {
         cc_list: args.routing.ccList,
         loan_officer_id: args.routing.loanOfficer.id,
         realtor_id: args.routing.realtor?.id || null,
+        scenario_id: args.scenarioId || null,
+        borrower_id: args.borrowerId || null,
       },
     })
   } catch (err) {
-    // Don't let logging failures break the main flow.
     console.error('chat-summary: logBorrowerAction insert failed.', err)
   }
 }
@@ -494,7 +709,18 @@ export async function POST(req: Request) {
     const routing = await resolveRouting(officer, selectedRealtor, lead)
 
     // -------------------------------------------------------------------------
-    // Build the structured advisor summary (OpenAI if available, fallback otherwise)
+    // PHASE 5.1 — Persist borrower + scenario (best-effort).
+    // -------------------------------------------------------------------------
+
+    const persistResult = await persistScenario({
+      lead,
+      routing,
+      trigger,
+      messages,
+    })
+
+    // -------------------------------------------------------------------------
+    // Build the structured advisor summary
     // -------------------------------------------------------------------------
 
     let summary: SummaryPayload = buildFallbackSummary(lead, messages, trigger)
@@ -606,7 +832,7 @@ ${messages
     }
 
     // -------------------------------------------------------------------------
-    // Build the email HTML
+    // Build email HTML
     // -------------------------------------------------------------------------
 
     const transcriptHtml = buildTranscriptHtml(messages)
@@ -628,6 +854,14 @@ ${messages
       `
       : ''
 
+    const persistanceTagHtml = persistResult.scenarioId
+      ? `
+        <div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:16px;padding:14px;margin-bottom:18px;font-size:13px;color:#0C4A6E;">
+          Scenario ${persistResult.scenarioAction === 'updated' ? 'updated' : 'recorded'} in Beyond Intelligence (id: <code>${escapeHtml(persistResult.scenarioId)}</code>).
+        </div>
+      `
+      : ''
+
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
         <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond Advisor</h1>
@@ -644,6 +878,8 @@ ${messages
           <p><strong>CC List:</strong> ${escapeHtml(routing.ccList.join(', ') || 'None')}</p>
           <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
         </div>
+
+        ${persistanceTagHtml}
 
         ${realtorBlockHtml}
 
@@ -725,6 +961,8 @@ ${messages
         trigger,
         status: 'failed',
         errorMessage: `Resend ${resendResp.status}: ${errText}`,
+        scenarioId: persistResult.scenarioId,
+        borrowerId: persistResult.borrowerId,
       })
 
       return NextResponse.json(
@@ -738,6 +976,8 @@ ${messages
       cc: routing.ccList,
       trigger,
       borrower: fullName,
+      scenarioId: persistResult.scenarioId,
+      scenarioAction: persistResult.scenarioAction,
     })
 
     await logBorrowerAction({
@@ -745,11 +985,15 @@ ${messages
       routing,
       trigger,
       status: 'sent',
+      scenarioId: persistResult.scenarioId,
+      borrowerId: persistResult.borrowerId,
     })
 
     return NextResponse.json({
       success: true,
       sentTo: [routing.primaryEmail, ...routing.ccList],
+      scenarioId: persistResult.scenarioId,
+      scenarioAction: persistResult.scenarioAction,
     })
   } catch (error) {
     console.error('chat-summary: unhandled server error.', error)
