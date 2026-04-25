@@ -1,3 +1,29 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace the existing file completely):
+//
+//     app/team/page.tsx
+//
+// =============================================================================
+//
+// PHASE 5-PREP — REAL LOGIN FORM + FORGOT PASSWORD
+//
+// What this version changes vs. the prior one:
+//
+//   1. The "!activeUser" state now shows a REAL login form: email,
+//      password, Sign In button. Posts to /api/team-auth/login.
+//
+//   2. New "Forgot Password?" link below Sign In. Clicking opens an
+//      inline section that takes an email and POSTs to
+//      /api/team-auth/request-reset.
+//
+//   3. Multilingual COPY for all the new strings, matching the existing
+//      en/pt/es pattern.
+//
+//   4. The "Loading", "Logged-in", and "Sign Out" branches are
+//      unchanged. Only the !activeUser branch was reworked.
+//
+// =============================================================================
+
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -33,6 +59,20 @@ const COPY: Record<
     loadingText: string;
     loginTitle: string;
     loginText: string;
+    emailOrNmls: string;
+    password: string;
+    signIn: string;
+    signingIn: string;
+    forgotPassword: string;
+    forgotTitle: string;
+    forgotText: string;
+    resetEmail: string;
+    sendResetLink: string;
+    sending: string;
+    backToSignIn: string;
+    forgotSubmitted: string;
+    invalidLogin: string;
+    requestFailed: string;
     goHome: string;
     openBorrower: string;
     openWorkflow: string;
@@ -63,6 +103,22 @@ const COPY: Record<
     loginTitle: "Professional Sign-In Required",
     loginText:
       "Please sign in through your protected team access to continue into Team Mortgage Intelligence.",
+    emailOrNmls: "Email or NMLS #",
+    password: "Password",
+    signIn: "Sign In",
+    signingIn: "Signing in...",
+    forgotPassword: "Forgot password?",
+    forgotTitle: "Reset Your Password",
+    forgotText:
+      "Enter your team email below. If your account exists, you will receive a reset link.",
+    resetEmail: "Email",
+    sendResetLink: "Send Reset Link",
+    sending: "Sending...",
+    backToSignIn: "Back to sign-in",
+    forgotSubmitted:
+      "If your email is on file, you will receive a reset link within a few minutes. Check your inbox and spam folder.",
+    invalidLogin: "Invalid credentials. Please try again.",
+    requestFailed: "Request could not be completed. Please try again shortly.",
     goHome: "Back to Homepage",
     openBorrower: "Open Borrower Experience",
     openWorkflow: "Open Workflow Intelligence",
@@ -100,6 +156,23 @@ const COPY: Record<
     loginTitle: "Login Profissional Necessário",
     loginText:
       "Faça login por meio do acesso protegido da equipe para continuar no Team Mortgage Intelligence.",
+    emailOrNmls: "Email ou NMLS #",
+    password: "Senha",
+    signIn: "Entrar",
+    signingIn: "Entrando...",
+    forgotPassword: "Esqueceu a senha?",
+    forgotTitle: "Redefinir Sua Senha",
+    forgotText:
+      "Insira seu email da equipe abaixo. Se sua conta existir, você receberá um link de redefinição.",
+    resetEmail: "Email",
+    sendResetLink: "Enviar Link de Redefinição",
+    sending: "Enviando...",
+    backToSignIn: "Voltar ao login",
+    forgotSubmitted:
+      "Se seu email estiver cadastrado, você receberá um link de redefinição em alguns minutos. Verifique sua caixa de entrada e spam.",
+    invalidLogin: "Credenciais inválidas. Tente novamente.",
+    requestFailed:
+      "Não foi possível concluir a solicitação. Tente novamente em instantes.",
     goHome: "Voltar à Página Inicial",
     openBorrower: "Abrir Experiência do Cliente",
     openWorkflow: "Abrir Workflow Intelligence",
@@ -137,6 +210,23 @@ const COPY: Record<
     loginTitle: "Se Requiere Inicio de Sesión Profesional",
     loginText:
       "Inicie sesión a través del acceso protegido del equipo para continuar en Team Mortgage Intelligence.",
+    emailOrNmls: "Correo o NMLS #",
+    password: "Contraseña",
+    signIn: "Iniciar Sesión",
+    signingIn: "Iniciando sesión...",
+    forgotPassword: "¿Olvidó su contraseña?",
+    forgotTitle: "Restablecer Contraseña",
+    forgotText:
+      "Ingrese su correo del equipo. Si su cuenta existe, recibirá un enlace para restablecer la contraseña.",
+    resetEmail: "Correo Electrónico",
+    sendResetLink: "Enviar Enlace de Restablecimiento",
+    sending: "Enviando...",
+    backToSignIn: "Volver al inicio de sesión",
+    forgotSubmitted:
+      "Si su correo está registrado, recibirá un enlace de restablecimiento en unos minutos. Revise su bandeja de entrada y spam.",
+    invalidLogin: "Credenciales inválidas. Intente de nuevo.",
+    requestFailed:
+      "No se pudo completar la solicitud. Intente de nuevo en unos momentos.",
     goHome: "Volver al Inicio",
     openBorrower: "Abrir Experiencia del Cliente",
     openWorkflow: "Abrir Workflow Intelligence",
@@ -170,6 +260,18 @@ export default function TeamPage() {
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Login form state
+  const [credential, setCredential] = useState("");
+  const [password, setPassword] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState("");
+
+  // Forgot password modal state
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState("");
+
   const t = COPY[language];
 
   useEffect(() => {
@@ -192,6 +294,70 @@ export default function TeamPage() {
 
     void loadUser();
   }, []);
+
+  const handleSignIn = async () => {
+    if (!credential.trim() || !password) return;
+    setSigningIn(true);
+    setSignInError("");
+
+    try {
+      const res = await fetch("/api/team-auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: credential.trim(), password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data?.success) {
+        setSignInError(data?.error || t.invalidLogin);
+        return;
+      }
+
+      // Successful login. Re-fetch /me to populate activeUser.
+      const meRes = await fetch("/api/team-auth/me");
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        if (meData?.authenticated && meData?.user) {
+          setActiveUser(meData.user);
+          setPassword("");
+          setCredential("");
+        }
+      }
+    } catch {
+      setSignInError(t.invalidLogin);
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  const handleForgotSubmit = async () => {
+    if (!forgotEmail.trim() || !forgotEmail.includes("@")) return;
+    setForgotLoading(true);
+    setForgotMessage("");
+
+    try {
+      const res = await fetch("/api/team-auth/request-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+
+      // We always show the same generic success message regardless of
+      // whether the email actually exists. This is a deliberate
+      // anti-enumeration behavior — never tell the caller whether an
+      // email address is on file.
+      if (res.ok) {
+        setForgotMessage(t.forgotSubmitted);
+      } else {
+        setForgotMessage(t.requestFailed);
+      }
+    } catch {
+      setForgotMessage(t.requestFailed);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleSignOut = async () => {
     await fetch("/api/team-auth/logout", { method: "POST" });
@@ -234,20 +400,134 @@ export default function TeamPage() {
             </section>
 
             <div style={styles.loginCard}>
-              <h2 style={styles.sectionTitle}>{t.loginTitle}</h2>
-              <p style={styles.sectionText}>{t.loginText}</p>
+              {!showForgot ? (
+                <>
+                  <h2 style={styles.sectionTitle}>{t.loginTitle}</h2>
+                  <p style={styles.sectionText}>{t.loginText}</p>
 
-              <div style={styles.quickActionRow}>
-                <a href="/" style={styles.primaryLinkButton}>
-                  {t.goHome}
-                </a>
-                <a href="/borrower" style={styles.secondaryLinkButton}>
-                  {t.openBorrower}
-                </a>
-                <a href="/workflow" style={styles.secondaryLinkButton}>
-                  {t.openWorkflow}
-                </a>
-              </div>
+                  <div style={styles.formColumn}>
+                    <label style={styles.label}>{t.emailOrNmls}</label>
+                    <input
+                      type="text"
+                      value={credential}
+                      onChange={(e) => setCredential(e.target.value)}
+                      style={styles.input}
+                      autoComplete="username"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleSignIn();
+                      }}
+                    />
+
+                    <label style={{ ...styles.label, marginTop: 14 }}>
+                      {t.password}
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      style={styles.input}
+                      autoComplete="current-password"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleSignIn();
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleSignIn}
+                      disabled={signingIn}
+                      style={{
+                        ...styles.primaryButton,
+                        opacity: signingIn ? 0.7 : 1,
+                        cursor: signingIn ? "not-allowed" : "pointer",
+                        marginTop: 18,
+                      }}
+                    >
+                      {signingIn ? t.signingIn : t.signIn}
+                    </button>
+
+                    {signInError ? (
+                      <div style={styles.errorBox}>{signInError}</div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgot(true);
+                        setSignInError("");
+                        setForgotMessage("");
+                        setForgotEmail("");
+                      }}
+                      style={styles.linkButton}
+                    >
+                      {t.forgotPassword}
+                    </button>
+                  </div>
+
+                  <div style={styles.dividerRow} />
+
+                  <div style={styles.quickActionRow}>
+                    <a href="/" style={styles.secondaryLinkButton}>
+                      {t.goHome}
+                    </a>
+                    <a href="/borrower" style={styles.secondaryLinkButton}>
+                      {t.openBorrower}
+                    </a>
+                    <a href="/workflow" style={styles.secondaryLinkButton}>
+                      {t.openWorkflow}
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 style={styles.sectionTitle}>{t.forgotTitle}</h2>
+                  <p style={styles.sectionText}>{t.forgotText}</p>
+
+                  <div style={styles.formColumn}>
+                    <label style={styles.label}>{t.resetEmail}</label>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      style={styles.input}
+                      autoComplete="email"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleForgotSubmit();
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleForgotSubmit}
+                      disabled={forgotLoading}
+                      style={{
+                        ...styles.primaryButton,
+                        opacity: forgotLoading ? 0.7 : 1,
+                        cursor: forgotLoading ? "not-allowed" : "pointer",
+                        marginTop: 18,
+                      }}
+                    >
+                      {forgotLoading ? t.sending : t.sendResetLink}
+                    </button>
+
+                    {forgotMessage ? (
+                      <div style={styles.successBox}>{forgotMessage}</div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgot(false);
+                        setForgotEmail("");
+                        setForgotMessage("");
+                      }}
+                      style={styles.linkButton}
+                    >
+                      {t.backToSignIn}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </>
         ) : (
@@ -529,11 +809,80 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sectionText: {
     marginTop: 12,
-    marginBottom: 0,
+    marginBottom: 12,
     color: "#526581",
     fontSize: 15,
     lineHeight: 1.75,
     maxWidth: 920,
+  },
+  formColumn: {
+    marginTop: 18,
+    display: "flex",
+    flexDirection: "column",
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: 800,
+    color: "#334155",
+    marginBottom: 6,
+    letterSpacing: 0.3,
+  },
+  input: {
+    width: "100%",
+    borderRadius: 14,
+    border: "1px solid #CBD5E1",
+    padding: "12px 14px",
+    fontSize: 15,
+    outline: "none",
+    color: "#111827",
+    backgroundColor: "#ffffff",
+  },
+  primaryButton: {
+    border: "none",
+    borderRadius: 14,
+    backgroundColor: "#263366",
+    color: "#ffffff",
+    padding: "14px 18px",
+    fontWeight: 900,
+    fontSize: 14,
+    boxShadow: "0 10px 20px rgba(38,51,102,0.18)",
+  },
+  linkButton: {
+    marginTop: 14,
+    background: "transparent",
+    border: "none",
+    color: "#0284C7",
+    fontWeight: 800,
+    fontSize: 14,
+    cursor: "pointer",
+    padding: "6px 0",
+    textAlign: "left",
+    width: "fit-content",
+  },
+  errorBox: {
+    marginTop: 14,
+    backgroundColor: "#FEF2F2",
+    border: "1px solid #FECACA",
+    color: "#991B1B",
+    borderRadius: 14,
+    padding: 12,
+    lineHeight: 1.5,
+    fontSize: 14,
+  },
+  successBox: {
+    marginTop: 14,
+    backgroundColor: "#ECFDF3",
+    border: "1px solid #BBF7D0",
+    color: "#166534",
+    borderRadius: 14,
+    padding: 14,
+    lineHeight: 1.6,
+    fontSize: 14,
+  },
+  dividerRow: {
+    height: 1,
+    backgroundColor: "#E5ECF5",
+    margin: "26px 0 0",
   },
   moduleGrid: {
     display: "grid",
