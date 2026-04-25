@@ -5,12 +5,20 @@
 //
 // =============================================================================
 //
-// PHASE 5-prep-B — State dropdowns and state-filtered autocomplete.
+// PHASE 5-prep-D — Borrower UX fixes
 //
-// Deploy ALL THREE Phase 5-prep-B files together in one commit:
-//   1. app/api/public/team-users/route.ts
-//   2. lib/us-states.ts
-//   3. app/borrower/page.tsx
+// What's new vs. Phase 5-prep-B:
+//   1. Bug fix: "Confirm Loan Officer" no longer reverts to Finley when an
+//      officer was already chosen from the autocomplete.
+//   2. resolveOfficerFromQuery() is more forgiving — it now matches
+//      "Sandro Pansini Souza — NMLS 1625542" style strings.
+//   3. Disclaimer gate: ALL form fields are disabled until the borrower
+//      acknowledges the disclaimer.
+//   4. "Continue with This Scenario" is properly disabled until Preliminary
+//      Review has run, with a hint explaining what to do.
+//   5. Action buttons (Apply Now / Schedule / Email / Call) reset the entire
+//      form 3 seconds after clicking, so the next borrower starts fresh.
+//   6. Visual lock notices indicate which sections are blocked and why.
 //
 // =============================================================================
 
@@ -196,6 +204,9 @@ const COPY: Record<
     summarySent: string;
     actionError: string;
     selectedRealtor: string;
+    formLockedNotice: string;
+    runReviewFirstHint: string;
+    formResetNotice: string;
   }
 > = {
   en: {
@@ -205,6 +216,12 @@ const COPY: Record<
     disclaimerText:
       "This system provides preliminary guidance only. It is not a loan approval, underwriting decision, commitment to lend, legal advice, tax advice, or final program determination. All scenarios remain subject to licensed loan officer review, documentation, verification, underwriting, title, appraisal, and current investor or agency guidelines.",
     disclaimerAccept: "I acknowledge and accept this disclaimer.",
+    formLockedNotice:
+      "Please acknowledge the disclaimer above to begin filling out this form.",
+    runReviewFirstHint:
+      "Click Run Preliminary Review above before continuing with the property scenario.",
+    formResetNotice:
+      "This form will reset shortly so the next borrower starts fresh.",
     scenarioDirectionTitle: "Internal Scenario Direction",
     scenarioDirectionText:
       "This section reflects Finley Beyond’s internal matching direction and is used to guide the conversation and routing.",
@@ -279,6 +296,12 @@ const COPY: Record<
     disclaimerText:
       "Este sistema fornece apenas orientação preliminar. Não constitui aprovação de empréstimo, decisão de underwriting, compromisso de concessão de crédito, aconselhamento jurídico, aconselhamento fiscal ou determinação final de programa. Todos os cenários permanecem sujeitos à revisão de um loan officer licenciado, documentação, verificação, underwriting, title, appraisal e diretrizes atuais do investidor ou agência.",
     disclaimerAccept: "Reconheço e aceito este aviso.",
+    formLockedNotice:
+      "Por favor, aceite o aviso acima para começar a preencher o formulário.",
+    runReviewFirstHint:
+      "Clique em Executar Revisão Preliminar antes de continuar com o cenário do imóvel.",
+    formResetNotice:
+      "Este formulário será reiniciado em instantes para o próximo cliente.",
     scenarioDirectionTitle: "Direção Interna do Cenário",
     scenarioDirectionText:
       "Esta seção reflete a direção interna de matching do Finley Beyond e é usada para orientar a conversa e o roteamento.",
@@ -353,6 +376,12 @@ const COPY: Record<
     disclaimerText:
       "Este sistema proporciona únicamente orientación preliminar. No constituye aprobación de préstamo, decisión de underwriting, compromiso de prestar, asesoría legal, asesoría fiscal ni determinación final del programa. Todos los escenarios permanecen sujetos a revisión por un loan officer con licencia, documentación, verificación, underwriting, title, appraisal y lineamientos actuales del inversionista o la agencia.",
     disclaimerAccept: "Reconozco y acepto este aviso.",
+    formLockedNotice:
+      "Por favor, acepte el aviso de arriba para comenzar a llenar el formulario.",
+    runReviewFirstHint:
+      "Haga clic en Ejecutar Revisión Preliminar antes de continuar con el escenario de la propiedad.",
+    formResetNotice:
+      "Este formulario se reiniciará en breve para que el próximo cliente comience desde cero.",
     scenarioDirectionTitle: "Dirección Interna del Escenario",
     scenarioDirectionText:
       "Esta sección refleja la dirección interna de matching de Finley Beyond y se utiliza para guiar la conversación y el enrutamiento.",
@@ -735,6 +764,7 @@ export default function BorrowerPage() {
     const trimmed = query.trim().toLowerCase();
     if (!trimmed) return null;
 
+    // Exact match by full name or NMLS
     const exact = dynamicLoanOfficers.find(
       (officer) =>
         officer.name.toLowerCase() === trimmed ||
@@ -743,6 +773,19 @@ export default function BorrowerPage() {
 
     if (exact) return exact;
 
+    // Phase 5-prep-D: handle the "Name — NMLS 12345" format produced when
+    // an officer is selected from autocomplete. The query string is then
+    // longer than any single field, so we check if the query CONTAINS a
+    // known officer name or NMLS.
+    const containedInQuery = dynamicLoanOfficers.find(
+      (officer) =>
+        trimmed.includes(officer.name.toLowerCase()) ||
+        (officer.nmls && trimmed.includes(officer.nmls.toLowerCase()))
+    );
+
+    if (containedInQuery) return containedInQuery;
+
+    // Fall back to partial match (officer field contains user-typed query)
     const partial = dynamicLoanOfficers.find(
       (officer) =>
         officer.name.toLowerCase().includes(trimmed) ||
@@ -838,6 +881,18 @@ Respond in ${
   });
 
   const confirmOfficerSelection = () => {
+    // Phase 5-prep-D fix: if user already selected an officer via the
+    // autocomplete dropdown, that selection is the source of truth.
+    // Re-resolving from the input text would parse the formatted
+    // "Name — NMLS 12345" string and incorrectly fall back to Finley.
+    if (selectedOfficer) {
+      // Keep the existing selection; just normalize the display string.
+      setLoanOfficerQuery(
+        `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`
+      );
+      return;
+    }
+
     const matched = resolveOfficerFromQuery(loanOfficerQuery);
     if (matched) {
       setSelectedOfficer(matched);
@@ -1086,6 +1141,45 @@ Advise that the assigned loan officer will personally review the scenario and ad
     }
   };
 
+  // Phase 5-prep-D: Reset entire form to initial state. Called 3 seconds
+  // after Apply / Schedule / Email / Call so the next borrower starts fresh.
+  const resetForm = () => {
+    setAccepted(false);
+    setBorrowerPath("Purchase");
+    setRealtorStatus("no");
+    setSubmitted(false);
+    setScenarioUnlocked(false);
+    setConversation([]);
+    setChatInput("");
+    setSelectedOfficer(null);
+    setSelectedRealtor(null);
+    setLoanOfficerQuery("");
+    setErrorMessage("");
+    setChatError("");
+    setActionMessage("");
+    setLoanOfficersFromApi([]);
+    setRealtorsFromApi([]);
+    setIntakeForm({
+      name: "",
+      email: "",
+      phone: "",
+      credit: "",
+      income: "",
+      debt: "",
+      currentState: "",
+      targetState: "",
+      realtorName: "",
+      realtorPhone: "",
+      realtorEmail: "",
+      realtorMls: "",
+    });
+    setScenarioForm({
+      homePrice: "",
+      downPayment: "",
+      occupancy: "primary_residence",
+    });
+  };
+
   async function notifyAndOpen(
     trigger: "apply" | "schedule" | "contact" | "call",
     action: () => void
@@ -1103,13 +1197,19 @@ Advise that the assigned loan officer will personally review the scenario and ad
         }),
       });
 
-      setActionMessage(t.summarySent);
+      setActionMessage(`${t.summarySent} ${t.formResetNotice}`);
     } catch {
       setActionMessage(t.actionError);
     } finally {
       action();
       setActionLoading("");
     }
+
+    // Phase 5-prep-D: reset the form 3 seconds after action so the user
+    // briefly sees the success message before the page clears.
+    setTimeout(() => {
+      resetForm();
+    }, 3000);
   }
 
   const mailtoHref = `mailto:${activeOfficer.email}?subject=${encodeURIComponent(
@@ -1159,66 +1259,28 @@ Advise that the assigned loan officer will personally review the scenario and ad
             <h2 style={styles.boxTitle}>{t.scenarioDirectionTitle}</h2>
             <p style={styles.boxText}>{t.scenarioDirectionText}</p>
           </div>
-
-          <div style={styles.box}>
-            <h2 style={styles.boxTitle}>{t.conversationTitle}</h2>
-
-            {!submitted ? (
-              <div style={styles.placeholderBox}>{t.conversationPlaceholder}</div>
-            ) : (
-              <div style={styles.chatThread}>
-                {conversation.length === 0 ? (
-                  <div style={styles.placeholderBox}>{t.startConversationHint}</div>
-                ) : (
-                  conversation.map((message, index) => (
-                    <div
-                      key={`${message.role}-${index}`}
-                      style={{
-                        ...styles.chatBubble,
-                        backgroundColor:
-                          message.role === "user" ? "#E9F6FC" : "#F7F9FD",
-                      }}
-                    >
-                      {message.content}
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            <textarea
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder={t.chatPlaceholder}
-              rows={4}
-              style={styles.textarea}
-              disabled={!submitted || chatLoading}
-            />
-
-            <button
-              type="button"
-              style={styles.disabledButton}
-              onClick={sendChatMessage}
-              disabled={!submitted || chatLoading || !chatInput.trim()}
-            >
-              {chatLoading ? t.sending : t.sendMessage}
-            </button>
-          </div>
         </div>
 
-        <div className="bf-borrower-grid" style={styles.mainGrid}>
+        <div style={styles.formSection}>
           <div style={styles.formCard}>
+            {!accepted && (
+              <div style={styles.lockNotice}>🔒 {t.formLockedNotice}</div>
+            )}
+
             <div style={styles.pathRow}>
               {(["Purchase", "Refinance", "Investment"] as BorrowerPath[]).map((path) => (
                 <button
                   key={path}
                   type="button"
+                  disabled={!accepted}
                   style={{
                     ...styles.pathButton,
                     backgroundColor: borrowerPath === path ? "#5CB2D8" : "#FFFFFF",
                     color: borrowerPath === path ? "#FFFFFF" : "#60749B",
+                    opacity: accepted ? 1 : 0.55,
+                    cursor: accepted ? "pointer" : "not-allowed",
                   }}
-                  onClick={() => setBorrowerPath(path)}
+                  onClick={() => accepted && setBorrowerPath(path)}
                 >
                   {path === "Purchase"
                     ? t.purchase
@@ -1235,36 +1297,42 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 placeholder={t.borrowerName}
                 value={intakeForm.name}
                 onChange={(e) => setIntakeField("name", e.target.value)}
+                disabled={!accepted}
               />
               <input
                 style={styles.input}
                 placeholder={t.email}
                 value={intakeForm.email}
                 onChange={(e) => setIntakeField("email", e.target.value)}
+                disabled={!accepted}
               />
               <input
                 style={styles.input}
                 placeholder={t.phone}
                 value={intakeForm.phone}
                 onChange={(e) => setIntakeField("phone", formatPhoneDisplay(e.target.value))}
+                disabled={!accepted}
               />
               <input
                 style={styles.input}
                 placeholder={t.estimatedCreditScore}
                 value={intakeForm.credit}
                 onChange={(e) => setIntakeField("credit", e.target.value)}
+                disabled={!accepted}
               />
               <input
                 style={styles.input}
                 placeholder={t.grossMonthlyIncome}
                 value={intakeForm.income}
                 onChange={(e) => setIntakeField("income", e.target.value)}
+                disabled={!accepted}
               />
               <input
                 style={styles.input}
                 placeholder={t.monthlyDebt}
                 value={intakeForm.debt}
                 onChange={(e) => setIntakeField("debt", e.target.value)}
+                disabled={!accepted}
               />
 
               {/* Phase 5-prep-B: Current State as dropdown */}
@@ -1273,6 +1341,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 value={intakeForm.currentState}
                 onChange={(e) => setIntakeField("currentState", e.target.value)}
                 aria-label={t.currentState}
+                disabled={!accepted}
               >
                 <option value="">
                   {t.currentState} — {t.selectStateOption}
@@ -1290,6 +1359,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 value={intakeForm.targetState}
                 onChange={(e) => setTargetState(e.target.value)}
                 aria-label={t.targetState}
+                disabled={!accepted}
               >
                 <option value="">
                   {t.targetState} — {t.selectStateOption}
@@ -1308,12 +1378,16 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 <button
                   key={status}
                   type="button"
+                  disabled={!accepted}
                   style={{
                     ...styles.realtorButton,
                     backgroundColor: realtorStatus === status ? "#5CB2D8" : "#FFFFFF",
                     color: realtorStatus === status ? "#FFFFFF" : "#60749B",
+                    opacity: accepted ? 1 : 0.55,
+                    cursor: accepted ? "pointer" : "not-allowed",
                   }}
                   onClick={() => {
+                    if (!accepted) return;
                     setRealtorStatus(status);
                     if (status !== "yes") {
                       setSelectedRealtor(null);
@@ -1341,7 +1415,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
                       placeholder={t.realtorName}
                       value={intakeForm.realtorName}
                       onChange={(e) => setIntakeField("realtorName", e.target.value)}
-                      disabled={!intakeForm.targetState}
+                      disabled={!accepted || !intakeForm.targetState}
                     />
 
                     {realtorSuggestions.length > 0 && (
@@ -1367,18 +1441,21 @@ Advise that the assigned loan officer will personally review the scenario and ad
                     onChange={(e) =>
                       setIntakeField("realtorPhone", formatPhoneDisplay(e.target.value))
                     }
+                    disabled={!accepted}
                   />
                   <input
                     style={styles.input}
                     placeholder={t.realtorEmail}
                     value={intakeForm.realtorEmail}
                     onChange={(e) => setIntakeField("realtorEmail", e.target.value)}
+                    disabled={!accepted}
                   />
                   <input
                     style={styles.input}
                     placeholder={t.realtorMls}
                     value={intakeForm.realtorMls}
                     onChange={(e) => setIntakeField("realtorMls", e.target.value)}
+                    disabled={!accepted}
                   />
                 </div>
 
@@ -1408,7 +1485,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 setLoanOfficerQuery(e.target.value);
                 setSelectedOfficer(null);
               }}
-              disabled={!intakeForm.targetState}
+              disabled={!accepted || !intakeForm.targetState}
             />
 
             {officerSuggestions.length > 0 && (
@@ -1436,7 +1513,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 type="button"
                 style={styles.primaryButton}
                 onClick={confirmOfficerSelection}
-                disabled={!intakeForm.targetState}
+                disabled={!accepted || !intakeForm.targetState}
               >
                 {t.confirmLoanOfficer}
               </button>
@@ -1444,6 +1521,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 type="button"
                 style={styles.outlineButton}
                 onClick={useDefaultFinley}
+                disabled={!accepted}
               >
                 {t.unknownLoanOfficer}
               </button>
@@ -1508,13 +1586,79 @@ Advise that the assigned loan officer will personally review the scenario and ad
 
               <button
                 type="button"
-                style={styles.disabledButton}
+                style={
+                  !scenarioUnlocked ||
+                  chatLoading ||
+                  !scenarioForm.homePrice ||
+                  !scenarioForm.downPayment
+                    ? styles.disabledButton
+                    : styles.primaryButtonWide
+                }
                 onClick={updateScenarioAndContinue}
-                disabled={chatLoading}
+                disabled={
+                  !scenarioUnlocked ||
+                  chatLoading ||
+                  !scenarioForm.homePrice ||
+                  !scenarioForm.downPayment
+                }
               >
                 {chatLoading ? t.updatingScenario : t.continueScenario}
               </button>
+              {!scenarioUnlocked && (
+                <div style={styles.hintText}>{t.runReviewFirstHint}</div>
+              )}
             </div>
+          </div>
+        </div>
+
+        <div className="bf-borrower-grid" style={styles.bottomGrid}>
+          <div style={styles.box}>
+            <h2 style={styles.boxTitle}>{t.conversationTitle}</h2>
+
+            {!submitted ? (
+              <div style={styles.placeholderBox}>{t.conversationPlaceholder}</div>
+            ) : (
+              <div style={styles.chatThread}>
+                {conversation.length === 0 ? (
+                  <div style={styles.placeholderBox}>{t.startConversationHint}</div>
+                ) : (
+                  conversation.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}`}
+                      style={{
+                        ...styles.chatBubble,
+                        backgroundColor:
+                          message.role === "user" ? "#E9F6FC" : "#F7F9FD",
+                      }}
+                    >
+                      {message.content}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            <textarea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder={t.chatPlaceholder}
+              rows={4}
+              style={styles.textarea}
+              disabled={!submitted || chatLoading}
+            />
+
+            <button
+              type="button"
+              style={
+                !submitted || chatLoading || !chatInput.trim()
+                  ? styles.disabledButton
+                  : styles.primaryButtonWide
+              }
+              onClick={sendChatMessage}
+              disabled={!submitted || chatLoading || !chatInput.trim()}
+            >
+              {chatLoading ? t.sending : t.sendMessage}
+            </button>
           </div>
 
           <div style={styles.actionsCard}>
@@ -1640,10 +1784,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   topGrid: {
     display: "grid",
-    gridTemplateColumns: "0.95fr 0.95fr 1.6fr",
+    gridTemplateColumns: "1fr 1fr",
     gap: 18,
     alignItems: "start",
     marginBottom: 18,
+  },
+  formSection: {
+    marginBottom: 18,
+  },
+  bottomGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.4fr 0.85fr",
+    gap: 18,
+    alignItems: "start",
   },
   mainGrid: {
     display: "grid",
@@ -1790,6 +1943,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#8A99B9",
     fontSize: 13,
     fontWeight: 800,
+  },
+  lockNotice: {
+    padding: "12px 16px",
+    borderRadius: 14,
+    backgroundColor: "#FFF8E6",
+    border: "1px solid #F4DDA1",
+    color: "#7C5A0F",
+    fontSize: 14,
+    fontWeight: 800,
+    marginBottom: 14,
   },
   confirmRow: {
     display: "flex",
