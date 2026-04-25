@@ -5,46 +5,28 @@
 //
 // =============================================================================
 //
-// PHASE 3 — STRANGLER FIG REWRITE
+// PHASE 3.1 — UPDATE AFTER SECONDARY-ROLE-FLAG PATCH
 //
-// What this version changes vs. the previous /api/public/team-users/route.ts:
+// What this version changes vs. the prior Phase 3 version:
 //
-//   1. Reads from the NEW public.employees and public.realtors tables
-//      instead of from public.team_users.
+//   1. Removed the unaliasEmail() helper. There are no more "+lo" aliases
+//      in the database — Sandro is one row with role='Loan Officer' and
+//      is_branch_manager=true. Real emails everywhere.
 //
-//   2. Filters employees by tenant. Defaults to Beyond Financing ('bf').
-//      A future Phase 7 update will derive the tenant from the request
-//      subdomain so each mortgage company sees only their own people.
+//   2. The borrower picker now shows each loan officer ONCE, never twice.
 //
-//   3. Sandro's dual-role (Branch Manager + Loan Officer) is now correctly
-//      represented because employees.id is tied to one role per row, not
-//      one row per human. The borrower page picker will show him as a
-//      Loan Officer (the role borrowers care about). His Branch Manager
-//      row is filtered out of the borrower-facing response.
+//   3. Added is_branch_manager to the employee SELECT so future endpoints
+//      that need to check Branch Manager privileges have the data already
+//      in flight. The borrower-facing response shape does NOT expose this
+//      flag — borrowers don't need to know who is a Branch Manager.
 //
-//   4. Realtors come from public.realtors instead of from team_users
-//      role='Real Estate Agent'. The legacy_team_user_id column links
-//      them back to their original team_users row for audit purposes.
+// What this version preserves:
 //
-// What this version preserves vs. the previous version:
-//
-//   1. The HTTP response shape is BYTE-IDENTICAL.
-//      Same envelope: { success: boolean, users: [...] }
-//      Same item fields: id, name, email, nmls, role, calendly,
+//   1. Same response shape: { success: boolean, users: [...] }
+//   2. Same item fields: id, name, email, nmls, role, calendly,
 //                        assistantEmail, phone
-//      The /borrower page consumes this without any changes.
-//
-//   2. The same query parameters work: ?role= to filter by role,
-//      ?q= for free-text search across name/email/nmls/phone.
-//
-//   3. supabaseAdmin client is still used (bypasses RLS, same as before).
-//
-// Why this matters:
-//
-//   The /borrower page calls fetch('/api/public/team-users') and reads
-//   data.users. As long as that array contains the same shape, the page
-//   has no idea anything changed under the hood. That's the strangler
-//   fig: replace the implementation, preserve the contract.
+//   3. Same query parameters: ?role= and ?q=
+//   4. Tenant filtering defaults to Beyond Financing ('bf').
 //
 // =============================================================================
 
@@ -78,22 +60,19 @@ type PublicTeamUser = {
 // Configuration
 // -----------------------------------------------------------------------------
 
-// Default tenant for any request that doesn't specify one. Today this is
-// always Beyond Financing because they are the only mortgage company tenant.
-// In Phase 7, we will derive this from the request subdomain instead.
+// Default tenant for any request that doesn't specify one. In Phase 7 we
+// will derive this from the request subdomain instead of hardcoding it.
 const DEFAULT_TENANT_SUBDOMAIN = "bf";
 
-// Roles that the /borrower page picker is allowed to show as Loan Officer
-// candidates. Branch Managers technically can act as Loan Officers but the
-// borrower-facing flow only shows people who hold the Loan Officer role
-// explicitly. Sandro's "Loan Officer" employees row will be returned for
-// borrower routing; his "Branch Manager" row will not.
+// Roles that the borrower-facing endpoint considers part of the mortgage
+// company team. Note that "Branch Manager" is intentionally absent from
+// this list because Branch Manager is now a flag (is_branch_manager) on
+// a person who is ALSO a Loan Officer or holds another primary role.
 const BORROWER_FACING_ROLES: TeamUserRole[] = [
   "Loan Officer",
   "Loan Officer Assistant",
   "Processor",
   "Production Manager",
-  "Branch Manager",
 ];
 
 // -----------------------------------------------------------------------------
@@ -113,19 +92,6 @@ function normalizeRole(value: string | null | undefined): TeamUserRole | null {
     return role as TeamUserRole;
   }
   return null;
-}
-
-/**
- * Recover the borrower-routable email for a Loan Officer row that was given
- * a "+lo" alias during the Phase 2 migration.
- *
- * In the database we store pansini+lo@beyondfinancing.com so the row can
- * coexist with the Branch Manager row that holds pansini@beyondfinancing.com.
- * But for the borrower-facing API we want to return the canonical address.
- */
-function unaliasEmail(email: string): string {
-  if (!email) return "";
-  return email.replace(/\+lo@/i, "@");
 }
 
 // -----------------------------------------------------------------------------
@@ -177,7 +143,7 @@ export async function GET(req: Request) {
     let employeeRequest = supabaseAdmin
       .from("employees")
       .select(
-        "id, full_name, email, nmls, role, calendly_url, phone, is_active"
+        "id, full_name, email, nmls, role, calendly_url, phone, is_active, is_branch_manager"
       )
       .eq("tenant_id", tenantId)
       .eq("is_active", true)
@@ -192,10 +158,29 @@ export async function GET(req: Request) {
           { status: 400 }
         );
       }
-      employeeRequest = employeeRequest.eq("role", normalized);
+      // Special case: if a caller asks for role='Branch Manager', we
+      // return employees with is_branch_manager=true regardless of their
+      // primary role. This preserves the legacy behavior of the old
+      // endpoint where "Branch Manager" was a queryable role.
+      if (normalized === "Branch Manager") {
+        employeeRequest = supabaseAdmin
+          .from("employees")
+          .select(
+            "id, full_name, email, nmls, role, calendly_url, phone, is_active, is_branch_manager"
+          )
+          .eq("tenant_id", tenantId)
+          .eq("is_active", true)
+          .eq("is_branch_manager", true)
+          .order("full_name", { ascending: true });
+      } else if (normalized !== "Real Estate Agent") {
+        employeeRequest = employeeRequest.eq("role", normalized);
+      }
     }
 
-    const { data: employeeRows, error: employeeError } = await employeeRequest;
+    const { data: employeeRows, error: employeeError } =
+      roleParam === "Real Estate Agent"
+        ? { data: [], error: null }
+        : await employeeRequest;
 
     if (employeeError) {
       return NextResponse.json(
@@ -205,8 +190,8 @@ export async function GET(req: Request) {
     }
 
     // -------------------------------------------------------------------------
-    // Build a map of LO -> assistant email so we can populate assistantEmail
-    // on each Loan Officer row (the previous /borrower expects this).
+    // Build a map of LO -> first-active-assistant email so we can populate
+    // assistantEmail on each Loan Officer row.
     // -------------------------------------------------------------------------
 
     const employeeIdSet = new Set<string>(
@@ -228,24 +213,39 @@ export async function GET(req: Request) {
       );
     }
 
-    // Resolve assistant_id -> assistant email by joining locally to employeeRows.
-    const employeeEmailById: Record<string, string> = {};
-    for (const e of employeeRows || []) {
-      employeeEmailById[String(e.id)] = unaliasEmail(String(e.email || ""));
+    // We need to know each assistant's email. Build a separate lookup of
+    // ALL active assistants in the tenant (not just the ones returned by
+    // the role filter above) so we can resolve assistant emails even if
+    // the caller is filtering for ?role=Loan%20Officer only.
+    const { data: assistantRows, error: assistantError } = await supabaseAdmin
+      .from("employees")
+      .select("id, email")
+      .eq("tenant_id", tenantId)
+      .eq("is_active", true)
+      .eq("role", "Loan Officer Assistant");
+
+    if (assistantError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Assistant lookup failed: ${assistantError.message}`,
+        },
+        { status: 500 }
+      );
     }
 
-    // For each LO, take the FIRST active assistant we find (LOs can have
-    // multiple assistants in the matrix, but the borrower-facing API only
-    // surfaces one for the convenience of the existing UI). When we build
-    // the LO Inbox in Phase 7, the LO and their entire team will see all
-    // assistants properly.
+    const emailById: Record<string, string> = {};
+    for (const a of assistantRows || []) {
+      emailById[String(a.id)] = String(a.email || "");
+    }
+
     const firstAssistantEmailByLo: Record<string, string> = {};
     for (const a of assignments || []) {
       const loId = String(a.loan_officer_id);
       const asstId = String(a.assistant_id);
-      if (!employeeIdSet.has(loId) || !employeeIdSet.has(asstId)) continue;
       if (firstAssistantEmailByLo[loId]) continue;
-      firstAssistantEmailByLo[loId] = employeeEmailById[asstId] || "";
+      const email = emailById[asstId];
+      if (email) firstAssistantEmailByLo[loId] = email;
     }
 
     // -------------------------------------------------------------------------
@@ -274,17 +274,24 @@ export async function GET(req: Request) {
         const role = normalizeRole(row.role);
         if (!role) return null;
         const name = String(row.full_name || "").trim();
-        const email = unaliasEmail(String(row.email || "").trim());
+        const email = String(row.email || "").trim();
         if (!name || !email) return null;
+
+        // For loan officers we want to surface the assigned assistant.
+        // For Branch Manager flag carriers we surface their primary role
+        // (Loan Officer in Sandro's case) so the borrower picker sees
+        // them in the LO group.
+        const surfaceRole: TeamUserRole = role;
+
         return {
           id: String(row.id),
           name,
           email,
           nmls: String(row.nmls || ""),
-          role,
+          role: surfaceRole,
           calendly: String(row.calendly_url || ""),
           assistantEmail:
-            role === "Loan Officer"
+            surfaceRole === "Loan Officer"
               ? firstAssistantEmailByLo[String(row.id)] || ""
               : "",
           phone: String(row.phone || ""),
@@ -303,12 +310,11 @@ export async function GET(req: Request) {
       phone: String(row.phone || ""),
     }));
 
-    // The role filter, if specified, decides whether to include realtors.
     let combined: PublicTeamUser[];
     if (roleParam === "Real Estate Agent") {
       combined = realtorUsers;
     } else if (roleParam) {
-      combined = employeeUsers; // already filtered by role above
+      combined = employeeUsers;
     } else {
       combined = [...employeeUsers, ...realtorUsers];
     }
