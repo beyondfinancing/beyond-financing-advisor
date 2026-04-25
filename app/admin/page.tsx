@@ -1,8 +1,36 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace the existing file completely):
+//
+//     app/admin/page.tsx
+//
+// =============================================================================
+//
+// PHASE 5-prep-C — Admin gets a "Licensed States" checkbox grid
+//
+// What's new:
+//   1. New `licensedStates: string[]` field on FormState.
+//   2. On mount, the admin page fetches /api/public/team-users (no state
+//      filter → returns ALL realtors and LOs with their licensed_states),
+//      then builds a lookup map keyed by email.
+//   3. When you click Edit on a Loan Officer or Real Estate Agent, the
+//      checkbox grid shows their current licensed_states with the right
+//      boxes checked.
+//   4. When you click Save Changes, licensed_states is included in the
+//      PATCH body. The PATCH route (Phase 5-prep-C piece 3) handles
+//      writing it to realtors or employees.
+//   5. The grid is hidden for non-licensed roles (Processor, etc.).
+//
+// What's NOT in this phase:
+//   - The Create form does NOT include the multi-select. After creating
+//     a user, click Edit on them to set their licensed_states.
+// =============================================================================
+
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import SiteHeader from "@/app/components/SiteHeader";
 import { SiteLanguage } from "@/app/components/site-header-translations";
+import { US_STATES } from "@/lib/us-states";
 
 type TeamRole =
   | "Loan Officer"
@@ -42,6 +70,7 @@ type FormState = {
   assistantEmail: string;
   phone: string;
   isActive: boolean;
+  licensedStates: string[];
 };
 
 const ROLE_OPTIONS: TeamRole[] = [
@@ -62,6 +91,7 @@ const EMPTY_FORM: FormState = {
   assistantEmail: "",
   phone: "",
   isActive: true,
+  licensedStates: [],
 };
 
 const APPROVED_ADMIN_EMAIL = "pansini@beyondfinancing.com";
@@ -112,6 +142,11 @@ function getAssistantDisplay(user: TeamUser) {
   return `Assistant: ${user.assistant_email || "—"}`;
 }
 
+// Phase 5-prep-C: roles that have state licenses
+function roleHasStateLicenses(role: TeamRole): boolean {
+  return role === "Loan Officer" || role === "Real Estate Agent";
+}
+
 export default function AdminPage() {
   const [language, setLanguage] = useState<SiteLanguage>("en");
   const [authLoading, setAuthLoading] = useState(true);
@@ -121,6 +156,11 @@ export default function AdminPage() {
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Phase 5-prep-C: licensed_states lookup map keyed by lowercased email
+  const [licensedStatesByEmail, setLicensedStatesByEmail] = useState<
+    Record<string, string[]>
+  >({});
 
   const [createForm, setCreateForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string>("");
@@ -164,6 +204,48 @@ export default function AdminPage() {
     void loadAuth();
   }, []);
 
+  // Phase 5-prep-C: Fetch licensed_states for all realtors and LOs.
+  // Calling /api/public/team-users with no state param returns everyone
+  // with their licensed_states arrays.
+  const loadLicensedStates = async () => {
+    try {
+      const response = await fetch("/api/public/team-users", {
+        cache: "no-store",
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) return;
+
+      const map: Record<string, string[]> = {};
+
+      if (Array.isArray(data.loanOfficers)) {
+        for (const lo of data.loanOfficers) {
+          const email = String(lo.email || "").toLowerCase().trim();
+          if (email) {
+            map[email] = Array.isArray(lo.licensedStates)
+              ? lo.licensedStates
+              : [];
+          }
+        }
+      }
+
+      if (Array.isArray(data.realtors)) {
+        for (const r of data.realtors) {
+          const email = String(r.email || "").toLowerCase().trim();
+          if (email) {
+            map[email] = Array.isArray(r.licensedStates)
+              ? r.licensedStates
+              : [];
+          }
+        }
+      }
+
+      setLicensedStatesByEmail(map);
+    } catch {
+      // Silent — multi-select will just default to empty
+    }
+  };
+
   const loadUsers = async () => {
     try {
       setUsersLoading(true);
@@ -190,6 +272,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (authorized) {
       void loadUsers();
+      void loadLicensedStates();
     }
   }, [authorized]);
 
@@ -278,7 +361,19 @@ export default function AdminPage() {
     });
   };
 
+  const toggleEditState = (code: string, checked: boolean) => {
+    setEditForm((prev) => {
+      const set = new Set(prev.licensedStates);
+      if (checked) set.add(code);
+      else set.delete(code);
+      return { ...prev, licensedStates: Array.from(set).sort() };
+    });
+  };
+
   const beginEdit = (user: TeamUser) => {
+    const emailKey = String(user.email || "").toLowerCase().trim();
+    const licensedStates = licensedStatesByEmail[emailKey] || [];
+
     setEditingId(user.id);
     setEditForm({
       name: user.name || "",
@@ -289,6 +384,7 @@ export default function AdminPage() {
       assistantEmail: isFinley(user) ? "" : user.assistant_email || "",
       phone: user.phone || "",
       isActive: Boolean(user.is_active ?? true),
+      licensedStates,
     });
     setStatusMessage("");
     setErrorMessage("");
@@ -328,8 +424,11 @@ export default function AdminPage() {
       }
 
       setCreateForm(EMPTY_FORM);
-      setStatusMessage("Team user created successfully.");
+      setStatusMessage(
+        "Team user created. Click Edit on the new user to set their licensed states."
+      );
       await loadUsers();
+      await loadLicensedStates();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to create user."
@@ -353,6 +452,10 @@ export default function AdminPage() {
           ? "finley@beyondintelligence.io"
           : editForm.email,
         assistantEmail: isFinley(editForm) ? "" : editForm.assistantEmail,
+        // Only send licensed_states for licensed roles
+        licensedStates: roleHasStateLicenses(editForm.role)
+          ? editForm.licensedStates
+          : [],
       };
 
       const response = await fetch(`/api/admin/users/${editingId}`, {
@@ -373,6 +476,7 @@ export default function AdminPage() {
       setEditForm(EMPTY_FORM);
       setStatusMessage("Team user updated successfully.");
       await loadUsers();
+      await loadLicensedStates();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to update user."
@@ -408,6 +512,7 @@ export default function AdminPage() {
 
       setStatusMessage("Team user deleted successfully.");
       await loadUsers();
+      await loadLicensedStates();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to delete user."
@@ -596,6 +701,13 @@ export default function AdminPage() {
               </label>
             </div>
 
+            {roleHasStateLicenses(createForm.role) && (
+              <div style={styles.statesNote}>
+                After creating this user, click their <strong>Edit</strong>{" "}
+                button to set their Licensed States.
+              </div>
+            )}
+
             <button
               type="button"
               style={styles.primaryButtonWide}
@@ -634,6 +746,8 @@ export default function AdminPage() {
                 {filteredUsers.map((user) => {
                   const isEditing = editingId === user.id;
                   const licenseLabel = getLicenseLabel(user.role);
+                  const emailKey = String(user.email || "").toLowerCase().trim();
+                  const cardStates = licensedStatesByEmail[emailKey] || [];
 
                   return (
                     <div key={user.id} style={styles.userCard}>
@@ -651,6 +765,14 @@ export default function AdminPage() {
                             <div style={styles.userMeta}>
                               {getAssistantDisplay(user)}
                             </div>
+                            {roleHasStateLicenses(user.role) && (
+                              <div style={styles.userMeta}>
+                                Licensed States:{" "}
+                                {cardStates.length > 0
+                                  ? cardStates.join(", ")
+                                  : "(none set)"}
+                              </div>
+                            )}
                             <div style={styles.userMeta}>
                               Active: {user.is_active ? "Yes" : "No"} · Created:{" "}
                               {formatDate(user.created_at)}
@@ -761,6 +883,64 @@ export default function AdminPage() {
                               <span>Active User</span>
                             </label>
                           </div>
+
+                          {roleHasStateLicenses(editForm.role) && (
+                            <div style={styles.statesSection}>
+                              <div style={styles.statesHeader}>
+                                <div style={styles.statesTitle}>
+                                  Licensed States
+                                </div>
+                                <div style={styles.statesSubtitle}>
+                                  Check every state where this{" "}
+                                  {editForm.role === "Real Estate Agent"
+                                    ? "Realtor"
+                                    : "Loan Officer"}{" "}
+                                  is licensed. Borrowers picking a Target State
+                                  will only see users licensed in that state.
+                                </div>
+                              </div>
+
+                              <div style={styles.statesGrid}>
+                                {US_STATES.map((s) => {
+                                  const checked = editForm.licensedStates.includes(
+                                    s.code
+                                  );
+                                  return (
+                                    <label
+                                      key={s.code}
+                                      title={s.name}
+                                      style={{
+                                        ...styles.stateCheckbox,
+                                        backgroundColor: checked
+                                          ? "#E0F4FB"
+                                          : "#ffffff",
+                                        borderColor: checked
+                                          ? "#5CB2D8"
+                                          : "#BFD0EA",
+                                        color: checked ? "#0E5F7F" : "#60749B",
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(e) =>
+                                          toggleEditState(s.code, e.target.checked)
+                                        }
+                                        style={{ marginRight: 6 }}
+                                      />
+                                      {s.code}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+
+                              <div style={styles.statesSelected}>
+                                {editForm.licensedStates.length > 0
+                                  ? `${editForm.licensedStates.length} selected: ${editForm.licensedStates.join(", ")}`
+                                  : "None selected"}
+                              </div>
+                            </div>
+                          )}
 
                           <div style={styles.actionRow}>
                             <button
@@ -982,6 +1162,66 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 10,
     color: "#243F7C",
+    fontWeight: 800,
+  },
+  statesNote: {
+    marginTop: 10,
+    padding: "10px 14px",
+    borderRadius: 14,
+    backgroundColor: "#FFF8E6",
+    border: "1px solid #F4DDA1",
+    color: "#7C5A0F",
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1.6,
+  },
+  statesSection: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: "#F8FAFE",
+    border: "1px solid #C8D6EC",
+  },
+  statesHeader: {
+    marginBottom: 12,
+  },
+  statesTitle: {
+    fontSize: 16,
+    fontWeight: 900,
+    color: "#2D3B78",
+    marginBottom: 4,
+  },
+  statesSubtitle: {
+    color: "#526581",
+    fontSize: 13,
+    lineHeight: 1.6,
+    fontWeight: 700,
+  },
+  statesGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
+    gap: 6,
+  },
+  stateCheckbox: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    padding: "8px 10px",
+    border: "1px solid",
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 800,
+    cursor: "pointer",
+    userSelect: "none",
+  },
+  statesSelected: {
+    marginTop: 12,
+    padding: "8px 12px",
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    border: "1px solid #DAE3F2",
+    color: "#526581",
+    fontSize: 13,
     fontWeight: 800,
   },
   primaryButtonWide: {
