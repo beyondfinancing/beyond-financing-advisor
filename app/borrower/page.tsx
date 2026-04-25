@@ -809,4 +809,1166 @@ Respond in ${
       loanOfficer: activeOfficer.name,
       assignedEmail: activeOfficer.email,
       assistantEmail: activeOfficer.assistantEmail,
-      realtorName: realtorStatus === "yes" ? intakeForm.realtorN
+      realtorName: realtorStatus === "yes" ? intakeForm.realtorName : "",
+      realtorEmail: realtorStatus === "yes" ? intakeForm.realtorEmail : "",
+      realtorPhone: realtorStatus === "yes" ? intakeForm.realtorPhone : "",
+      realtorMls: realtorStatus === "yes" ? intakeForm.realtorMls : "",
+      // Phase 5.1 — additional scenario context fields
+      borrowerPath,
+      currentState: intakeForm.currentState,
+      targetState: intakeForm.targetState,
+      homePrice: scenarioForm.homePrice,
+      downPayment: scenarioForm.downPayment,
+      estimatedCreditScore: intakeForm.credit,
+      monthlyIncome: intakeForm.income,
+      monthlyDebt: intakeForm.debt,
+    },
+    selectedOfficer: activeOfficer,
+    selectedRealtor:
+      realtorStatus === "yes"
+        ? {
+            id: selectedRealtor?.id || "",
+            name: intakeForm.realtorName,
+            email: intakeForm.realtorEmail,
+            phone: intakeForm.realtorPhone,
+            mls: intakeForm.realtorMls,
+          }
+        : null,
+    messages: conversation,
+  });
+
+  const confirmOfficerSelection = () => {
+    const matched = resolveOfficerFromQuery(loanOfficerQuery);
+    if (matched) {
+      setSelectedOfficer(matched);
+      setLoanOfficerQuery(`${matched.name} — NMLS ${matched.nmls}`);
+    } else {
+      setSelectedOfficer(defaultLoanOfficer);
+      setLoanOfficerQuery(
+        `${defaultLoanOfficer.name} — NMLS ${defaultLoanOfficer.nmls}`
+      );
+    }
+  };
+
+  const useDefaultFinley = () => {
+    setSelectedOfficer(defaultLoanOfficer);
+    setLoanOfficerQuery(
+      `${defaultLoanOfficer.name} — NMLS ${defaultLoanOfficer.nmls}`
+    );
+  };
+
+  const runPreliminaryReview = async () => {
+    setSubmitted(true);
+    setLoading(true);
+    setErrorMessage("");
+    setChatError("");
+    setConversation([]);
+
+    const resolvedOfficer =
+      selectedOfficer ||
+      resolveOfficerFromQuery(loanOfficerQuery) ||
+      defaultLoanOfficer;
+
+    if (!selectedOfficer || selectedOfficer.id !== resolvedOfficer.id) {
+      setSelectedOfficer(resolvedOfficer);
+      setLoanOfficerQuery(`${resolvedOfficer.name} — NMLS ${resolvedOfficer.nmls}`);
+    }
+
+    try {
+      const prompt = `
+${buildBorrowerContext()}
+
+Start the borrower conversation as a loan officer assistant.
+Briefly acknowledge the borrower information already entered.
+Do not disclose loan programs, rates, terms, or approval status.
+Tell the borrower that the assigned loan officer will review the information personally.
+Then ask the next logical qualification-style question.
+      `.trim();
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          stage: "initial_review",
+          routing: {
+            selectedOfficer: resolvedOfficer,
+            selectedRealtor,
+            borrower: intakeForm,
+            scenario: {
+              ...scenarioForm,
+              estimatedLoanAmount: String(estimatedLoanAmount || ""),
+              estimatedLtv:
+                Number(scenarioForm.homePrice) > 0
+                  ? `${Math.round(estimatedLtv * 100)}%`
+                  : "",
+            },
+            conversation,
+            language,
+            borrowerPath,
+            realtorStatus,
+          },
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          extractAiText(data) || "The AI request did not complete successfully."
+        );
+      }
+
+      const finalText =
+        extractAiText(data) || "No response was returned from the AI system.";
+
+      setConversation([{ role: "assistant", content: finalText }]);
+      setScenarioUnlocked(true);
+    } catch (error: unknown) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "There was an error connecting to the AI system."
+      );
+      setConversation([]);
+      setScenarioUnlocked(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateScenarioAndContinue = async () => {
+    if (!submitted || !scenarioUnlocked) return;
+
+    setChatLoading(true);
+    setChatError("");
+
+    try {
+      const prompt = `
+${buildBorrowerContext()}
+
+The borrower has now entered the target property scenario.
+Acknowledge it briefly.
+Do not disclose loan programs, rates, terms, or approval status.
+Tell the borrower this scenario will be shared with the assigned loan officer for analysis.
+Then ask the next logical qualification-style question.
+      `.trim();
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          stage: "scenario_review",
+          routing: {
+            selectedOfficer: activeOfficer,
+            selectedRealtor,
+            borrower: intakeForm,
+            scenario: {
+              ...scenarioForm,
+              estimatedLoanAmount: String(estimatedLoanAmount || ""),
+              estimatedLtv:
+                Number(scenarioForm.homePrice) > 0
+                  ? `${Math.round(estimatedLtv * 100)}%`
+                  : "",
+            },
+            conversation,
+            language,
+            borrowerPath,
+            realtorStatus,
+          },
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          extractAiText(data) || "The scenario update did not complete successfully."
+        );
+      }
+
+      const finalText =
+        extractAiText(data) || "No response was returned from the AI system.";
+
+      setConversation((prev) => [...prev, { role: "assistant", content: finalText }]);
+    } catch (error: unknown) {
+      setChatError(
+        error instanceof Error
+          ? error.message
+          : "There was an error updating the scenario."
+      );
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const sendChatMessage = async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || !submitted) return;
+
+    setChatLoading(true);
+    setChatError("");
+
+    const nextConversation: ChatMessage[] = [
+      ...conversation,
+      { role: "user", content: trimmed },
+    ];
+
+    setConversation(nextConversation);
+    setChatInput("");
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          stage: "follow_up",
+          routing: {
+            selectedOfficer: activeOfficer,
+            selectedRealtor,
+            borrower: intakeForm,
+            scenario: {
+              ...scenarioForm,
+              estimatedLoanAmount: String(estimatedLoanAmount || ""),
+              estimatedLtv:
+                Number(scenarioForm.homePrice) > 0
+                  ? `${Math.round(estimatedLtv * 100)}%`
+                  : "",
+            },
+            conversation: nextConversation,
+            language,
+            borrowerPath,
+            realtorStatus,
+          },
+          messages: [
+            {
+              role: "user",
+              content: `${buildBorrowerContext()}
+
+Continue the borrower-facing conversation naturally.
+Never disclose exact loan programs, specific terms, or personalized rates.
+Encourage the borrower to start the application when appropriate.
+Advise that the assigned loan officer will personally review the scenario and advise next steps.`,
+            },
+            ...nextConversation,
+          ],
+        }),
+      });
+
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          extractAiText(data) || "The chat request did not complete successfully."
+        );
+      }
+
+      const finalText =
+        extractAiText(data) || "No response was returned from the AI system.";
+
+      setConversation((prev) => [...prev, { role: "assistant", content: finalText }]);
+    } catch (error: unknown) {
+      setChatError(
+        error instanceof Error
+          ? error.message
+          : "There was an error connecting to Finley Beyond."
+      );
+      setConversation((prev) => prev.slice(0, -1));
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  async function notifyAndOpen(
+    trigger: "apply" | "schedule" | "contact" | "call",
+    action: () => void
+  ) {
+    setActionLoading(trigger === "contact" ? "email" : (trigger as "apply" | "schedule" | "call"));
+    setActionMessage("");
+
+    try {
+      await fetch("/api/chat-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...buildSummaryPayload(),
+          trigger,
+        }),
+      });
+
+      setActionMessage(t.summarySent);
+    } catch {
+      setActionMessage(t.actionError);
+    } finally {
+      action();
+      setActionLoading("");
+    }
+  }
+
+  const mailtoHref = `mailto:${activeOfficer.email}?subject=${encodeURIComponent(
+    `Borrower inquiry from ${intakeForm.name || "Beyond Intelligence"}`
+  )}&body=${encodeURIComponent(
+    language === "pt"
+      ? `Olá ${activeOfficer.name}, gostaria de falar sobre meu cenário de financiamento.`
+      : language === "es"
+      ? `Hola ${activeOfficer.name}, me gustaría hablar sobre mi escenario de financiamiento.`
+      : `Hello ${activeOfficer.name}, I would like to discuss my financing scenario.`
+  )}`;
+
+  const assignedEmailLine = activeOfficer.assistantEmail
+    ? `${activeOfficer.email} and ${activeOfficer.assistantEmail}.`
+    : `${activeOfficer.email}.`;
+
+  return (
+    <main style={styles.page}>
+      <style>{responsiveCss}</style>
+
+      <div className="bf-wrap" style={styles.wrap}>
+        <SiteHeader
+          variant="borrower"
+          language={language as SiteLanguage}
+          onLanguageChange={(next) => setLanguage(next as LanguageCode)}
+        />
+
+        <h1 style={styles.pageTitle}>{t.title}</h1>
+        <p style={styles.pageSubtitle}>{t.subtitle}</p>
+
+        <div className="bf-borrower-grid" style={styles.topGrid}>
+          <div style={styles.box}>
+            <h2 style={styles.boxTitle}>{t.disclaimerTitle}</h2>
+            <p style={styles.boxText}>{t.disclaimerText}</p>
+
+            <label style={styles.checkboxRow}>
+              <input
+                type="checkbox"
+                checked={accepted}
+                onChange={(e) => setAccepted(e.target.checked)}
+              />
+              <span>{t.disclaimerAccept}</span>
+            </label>
+          </div>
+
+          <div style={styles.box}>
+            <h2 style={styles.boxTitle}>{t.scenarioDirectionTitle}</h2>
+            <p style={styles.boxText}>{t.scenarioDirectionText}</p>
+          </div>
+
+          <div style={styles.box}>
+            <h2 style={styles.boxTitle}>{t.conversationTitle}</h2>
+
+            {!submitted ? (
+              <div style={styles.placeholderBox}>{t.conversationPlaceholder}</div>
+            ) : (
+              <div style={styles.chatThread}>
+                {conversation.length === 0 ? (
+                  <div style={styles.placeholderBox}>{t.startConversationHint}</div>
+                ) : (
+                  conversation.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}`}
+                      style={{
+                        ...styles.chatBubble,
+                        backgroundColor:
+                          message.role === "user" ? "#E9F6FC" : "#F7F9FD",
+                      }}
+                    >
+                      {message.content}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            <textarea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder={t.chatPlaceholder}
+              rows={4}
+              style={styles.textarea}
+              disabled={!submitted || chatLoading}
+            />
+
+            <button
+              type="button"
+              style={styles.disabledButton}
+              onClick={sendChatMessage}
+              disabled={!submitted || chatLoading || !chatInput.trim()}
+            >
+              {chatLoading ? t.sending : t.sendMessage}
+            </button>
+          </div>
+        </div>
+
+        <div className="bf-borrower-grid" style={styles.mainGrid}>
+          <div style={styles.formCard}>
+            <div style={styles.pathRow}>
+              {(["Purchase", "Refinance", "Investment"] as BorrowerPath[]).map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  style={{
+                    ...styles.pathButton,
+                    backgroundColor: borrowerPath === path ? "#5CB2D8" : "#FFFFFF",
+                    color: borrowerPath === path ? "#FFFFFF" : "#60749B",
+                  }}
+                  onClick={() => setBorrowerPath(path)}
+                >
+                  {path === "Purchase"
+                    ? t.purchase
+                    : path === "Refinance"
+                    ? t.refinance
+                    : t.investment}
+                </button>
+              ))}
+            </div>
+
+            <div className="bf-form-grid" style={styles.formGrid}>
+              <input
+                style={styles.input}
+                placeholder={t.borrowerName}
+                value={intakeForm.name}
+                onChange={(e) => setIntakeField("name", e.target.value)}
+              />
+              <input
+                style={styles.input}
+                placeholder={t.email}
+                value={intakeForm.email}
+                onChange={(e) => setIntakeField("email", e.target.value)}
+              />
+              <input
+                style={styles.input}
+                placeholder={t.phone}
+                value={intakeForm.phone}
+                onChange={(e) => setIntakeField("phone", formatPhoneDisplay(e.target.value))}
+              />
+              <input
+                style={styles.input}
+                placeholder={t.estimatedCreditScore}
+                value={intakeForm.credit}
+                onChange={(e) => setIntakeField("credit", e.target.value)}
+              />
+              <input
+                style={styles.input}
+                placeholder={t.grossMonthlyIncome}
+                value={intakeForm.income}
+                onChange={(e) => setIntakeField("income", e.target.value)}
+              />
+              <input
+                style={styles.input}
+                placeholder={t.monthlyDebt}
+                value={intakeForm.debt}
+                onChange={(e) => setIntakeField("debt", e.target.value)}
+              />
+
+              {/* Phase 5-prep-B: Current State as dropdown */}
+              <select
+                style={styles.input}
+                value={intakeForm.currentState}
+                onChange={(e) => setIntakeField("currentState", e.target.value)}
+                aria-label={t.currentState}
+              >
+                <option value="">
+                  {t.currentState} — {t.selectStateOption}
+                </option>
+                {US_STATES.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </select>
+
+              {/* Phase 5-prep-B: Target State as dropdown — drives state filter */}
+              <select
+                style={styles.input}
+                value={intakeForm.targetState}
+                onChange={(e) => setTargetState(e.target.value)}
+                aria-label={t.targetState}
+              >
+                <option value="">
+                  {t.targetState} — {t.selectStateOption}
+                </option>
+                {US_STATES.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.realtorLabel}>{t.workingWithRealtor}</div>
+            <div style={styles.realtorButtonRow}>
+              {(["yes", "no", "not_sure"] as RealtorStatus[]).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  style={{
+                    ...styles.realtorButton,
+                    backgroundColor: realtorStatus === status ? "#5CB2D8" : "#FFFFFF",
+                    color: realtorStatus === status ? "#FFFFFF" : "#60749B",
+                  }}
+                  onClick={() => {
+                    setRealtorStatus(status);
+                    if (status !== "yes") {
+                      setSelectedRealtor(null);
+                      setIntakeForm((prev) => ({
+                        ...prev,
+                        realtorName: "",
+                        realtorPhone: "",
+                        realtorEmail: "",
+                        realtorMls: "",
+                      }));
+                    }
+                  }}
+                >
+                  {status === "yes" ? t.yes : status === "no" ? t.no : t.notSure}
+                </button>
+              ))}
+            </div>
+
+            {realtorStatus === "yes" && (
+              <>
+                <div className="bf-form-grid" style={{ ...styles.formGrid, marginTop: 14 }}>
+                  <div style={styles.autocompleteWrap}>
+                    <input
+                      style={styles.input}
+                      placeholder={t.realtorName}
+                      value={intakeForm.realtorName}
+                      onChange={(e) => setIntakeField("realtorName", e.target.value)}
+                      disabled={!intakeForm.targetState}
+                    />
+
+                    {realtorSuggestions.length > 0 && (
+                      <div style={styles.suggestionBox}>
+                        {realtorSuggestions.map((realtor) => (
+                          <button
+                            key={realtor.id}
+                            type="button"
+                            onClick={() => selectRealtor(realtor)}
+                            style={styles.suggestionItem}
+                          >
+                            {realtor.name} — MLS {realtor.mls || "—"} · {realtor.phone || "No phone"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <input
+                    style={styles.input}
+                    placeholder={t.realtorPhone}
+                    value={intakeForm.realtorPhone}
+                    onChange={(e) =>
+                      setIntakeField("realtorPhone", formatPhoneDisplay(e.target.value))
+                    }
+                  />
+                  <input
+                    style={styles.input}
+                    placeholder={t.realtorEmail}
+                    value={intakeForm.realtorEmail}
+                    onChange={(e) => setIntakeField("realtorEmail", e.target.value)}
+                  />
+                  <input
+                    style={styles.input}
+                    placeholder={t.realtorMls}
+                    value={intakeForm.realtorMls}
+                    onChange={(e) => setIntakeField("realtorMls", e.target.value)}
+                  />
+                </div>
+
+                <div style={styles.hintText}>{realtorMessage}</div>
+
+                {selectedRealtor ? (
+                  <div style={styles.assignedCard}>
+                    <div style={styles.assignedTitle}>{t.selectedRealtor}</div>
+                    <div style={styles.assignedName}>
+                      {selectedRealtor.name} — MLS {selectedRealtor.mls || "—"}
+                    </div>
+                    <div style={styles.assignedText}>
+                      {selectedRealtor.email}
+                      <br />
+                      {selectedRealtor.phone || "No phone on file"}
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            )}
+
+            <input
+              style={{ ...styles.input, marginTop: 14 }}
+              placeholder={t.loanOfficerSearch}
+              value={loanOfficerQuery}
+              onChange={(e) => {
+                setLoanOfficerQuery(e.target.value);
+                setSelectedOfficer(null);
+              }}
+              disabled={!intakeForm.targetState}
+            />
+
+            {officerSuggestions.length > 0 && (
+              <div style={styles.suggestionBox}>
+                {officerSuggestions.map((officer) => (
+                  <button
+                    key={officer.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedOfficer(officer);
+                      setLoanOfficerQuery(`${officer.name} — NMLS ${officer.nmls}`);
+                    }}
+                    style={styles.suggestionItem}
+                  >
+                    {officer.name} — NMLS {officer.nmls}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={styles.hintText}>{loanOfficerMessage}</div>
+
+            <div style={styles.confirmRow}>
+              <button
+                type="button"
+                style={styles.primaryButton}
+                onClick={confirmOfficerSelection}
+                disabled={!intakeForm.targetState}
+              >
+                {t.confirmLoanOfficer}
+              </button>
+              <button
+                type="button"
+                style={styles.outlineButton}
+                onClick={useDefaultFinley}
+              >
+                {t.unknownLoanOfficer}
+              </button>
+            </div>
+
+            <div style={styles.assignedCard}>
+              <div style={styles.assignedTitle}>{t.assignedRouting}</div>
+              <div style={styles.assignedName}>
+                {activeOfficer.name} — NMLS {activeOfficer.nmls}
+              </div>
+              <div style={styles.assignedText}>
+                {t.routingText}
+                <br />
+                {assignedEmailLine}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              style={styles.primaryButtonWide}
+              onClick={runPreliminaryReview}
+              disabled={!accepted || loading}
+            >
+              {loading ? t.reviewing : t.runReview}
+            </button>
+
+            <div style={styles.propertyCard}>
+              <h2 style={styles.boxTitle}>{t.propertyScenario}</h2>
+
+              <div className="bf-form-grid" style={styles.formGrid}>
+                <input
+                  style={styles.input}
+                  placeholder={t.homePrice}
+                  value={scenarioForm.homePrice}
+                  onChange={(e) => setScenarioField("homePrice", e.target.value)}
+                />
+                <input
+                  style={styles.input}
+                  placeholder={t.downPayment}
+                  value={scenarioForm.downPayment}
+                  onChange={(e) => setScenarioField("downPayment", e.target.value)}
+                />
+              </div>
+
+              <select
+                value={scenarioForm.occupancy}
+                onChange={(e) => setScenarioField("occupancy", e.target.value)}
+                style={{ ...styles.input, marginTop: 14 }}
+              >
+                <option value="primary_residence">{t.occupancyPrimary}</option>
+                <option value="second_home">{t.occupancySecond}</option>
+                <option value="investment_property">{t.occupancyInvestment}</option>
+              </select>
+
+              <div style={styles.metricCard}>
+                <div style={styles.metricLabel}>{t.estimatedLoanAmount}</div>
+                <div style={styles.metricValue}>{formatCurrency(estimatedLoanAmount)}</div>
+                <div style={styles.metricSubtext}>
+                  {t.estimatedLtv}: {Math.round(estimatedLtv * 100)}%
+                </div>
+              </div>
+
+              <button
+                type="button"
+                style={styles.disabledButton}
+                onClick={updateScenarioAndContinue}
+                disabled={chatLoading}
+              >
+                {chatLoading ? t.updatingScenario : t.continueScenario}
+              </button>
+            </div>
+          </div>
+
+          <div style={styles.actionsCard}>
+            <h2 style={styles.boxTitle}>{t.nextActions}</h2>
+
+            <button
+              type="button"
+              style={styles.actionBlue}
+              onClick={() =>
+                void notifyAndOpen("apply", () => {
+                  window.open(activeOfficer.applyUrl, "_blank", "noopener,noreferrer");
+                })
+              }
+              disabled={actionLoading !== ""}
+            >
+              {actionLoading === "apply" ? t.sending : t.applyNow}
+            </button>
+
+            <button
+              type="button"
+              style={styles.actionBlue}
+              onClick={() =>
+                void notifyAndOpen("schedule", () => {
+                  window.open(activeOfficer.scheduleUrl, "_blank", "noopener,noreferrer");
+                })
+              }
+              disabled={actionLoading !== ""}
+            >
+              {actionLoading === "schedule" ? t.sending : t.scheduleLoanOfficer}
+            </button>
+
+            <button
+              type="button"
+              style={styles.actionOutline}
+              onClick={() =>
+                void notifyAndOpen("contact", () => {
+                  window.location.href = mailtoHref;
+                })
+              }
+              disabled={actionLoading !== ""}
+            >
+              {actionLoading === "email" ? t.sending : t.emailLoanOfficer}
+            </button>
+
+            <button
+              type="button"
+              style={styles.actionOutline}
+              onClick={() =>
+                void notifyAndOpen("call", () => {
+                  window.location.href = `tel:${activeOfficer.mobile}`;
+                })
+              }
+              disabled={actionLoading !== ""}
+            >
+              {actionLoading === "call" ? t.sending : t.callLoanOfficer}
+            </button>
+
+            {actionMessage ? <div style={styles.statusBox}>{actionMessage}</div> : null}
+            {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
+            {chatError ? <div style={styles.errorBox}>{chatError}</div> : null}
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+const responsiveCss = `
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+
+  @media (max-width: 1200px) {
+    .bf-borrower-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .bf-form-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .bf-wrap {
+      padding: 18px 12px 32px !important;
+    }
+  }
+`;
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    background:
+      "radial-gradient(circle at top left, #f8fbff 0%, #f3f6fb 45%, #eef2f7 100%)",
+    color: "#1F2937",
+    fontFamily: "Inter, Arial, Helvetica, sans-serif",
+  },
+  wrap: {
+    maxWidth: 1400,
+    margin: "0 auto",
+    padding: "24px 18px 48px",
+  },
+  pageTitle: {
+    margin: 0,
+    color: "#243F7C",
+    fontWeight: 900,
+    fontSize: 34,
+    lineHeight: 1.1,
+  },
+  pageSubtitle: {
+    marginTop: 8,
+    marginBottom: 18,
+    color: "#526581",
+    fontSize: 15,
+    fontWeight: 700,
+  },
+  topGrid: {
+    display: "grid",
+    gridTemplateColumns: "0.95fr 0.95fr 1.6fr",
+    gap: 18,
+    alignItems: "start",
+    marginBottom: 18,
+  },
+  mainGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.2fr 0.95fr",
+    gap: 18,
+    alignItems: "start",
+  },
+  box: {
+    backgroundColor: "#ffffff",
+    borderRadius: 28,
+    padding: 18,
+    border: "1px solid #C8D6EC",
+    boxShadow: "0 12px 28px rgba(15,23,42,0.04)",
+  },
+  boxTitle: {
+    margin: 0,
+    color: "#243F7C",
+    fontWeight: 900,
+    fontSize: 22,
+    lineHeight: 1.15,
+    marginBottom: 14,
+  },
+  boxText: {
+    color: "#61759A",
+    fontSize: 14,
+    lineHeight: 1.8,
+    fontWeight: 700,
+    margin: 0,
+  },
+  checkboxRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 18,
+    color: "#243F7C",
+    fontWeight: 900,
+  },
+  placeholderBox: {
+    borderRadius: 18,
+    border: "1px solid #D5E0F1",
+    backgroundColor: "#F8FAFE",
+    color: "#8A99B9",
+    padding: 16,
+    lineHeight: 1.7,
+    fontSize: 14,
+    fontWeight: 700,
+    marginBottom: 14,
+  },
+  textarea: {
+    width: "100%",
+    borderRadius: 20,
+    border: "1px solid #C8D6EC",
+    backgroundColor: "#ffffff",
+    padding: "16px 16px",
+    outline: "none",
+    resize: "vertical",
+    fontSize: 14,
+    color: "#243F7C",
+    fontWeight: 700,
+    marginBottom: 14,
+  },
+  chatThread: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    marginBottom: 14,
+    maxHeight: 280,
+    overflowY: "auto",
+  },
+  chatBubble: {
+    borderRadius: 16,
+    padding: 14,
+    color: "#243F7C",
+    lineHeight: 1.7,
+    fontSize: 14,
+    fontWeight: 700,
+    border: "1px solid #D5E0F1",
+    whiteSpace: "pre-wrap",
+  },
+  formCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 28,
+    padding: 18,
+    border: "1px solid #C8D6EC",
+    boxShadow: "0 12px 28px rgba(15,23,42,0.04)",
+  },
+  pathRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 10,
+    marginBottom: 18,
+  },
+  pathButton: {
+    minHeight: 46,
+    borderRadius: 18,
+    border: "1px solid #BFD0EA",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  formGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+  },
+  autocompleteWrap: {
+    position: "relative",
+  },
+  input: {
+    width: "100%",
+    minHeight: 46,
+    borderRadius: 18,
+    border: "1px solid #BFD0EA",
+    backgroundColor: "#ffffff",
+    padding: "12px 14px",
+    outline: "none",
+    color: "#243F7C",
+    fontSize: 14,
+    fontWeight: 700,
+  },
+  realtorLabel: {
+    marginTop: 16,
+    marginBottom: 10,
+    color: "#60749B",
+    fontWeight: 900,
+    fontSize: 14,
+  },
+  realtorButtonRow: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  realtorButton: {
+    minHeight: 46,
+    padding: "10px 18px",
+    borderRadius: 18,
+    border: "1px solid #BFD0EA",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  hintText: {
+    marginTop: 10,
+    color: "#8A99B9",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  confirmRow: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 12,
+  },
+  assignedCard: {
+    marginTop: 14,
+    borderRadius: 22,
+    border: "1px solid #C8D6EC",
+    backgroundColor: "#F8FAFE",
+    padding: 18,
+  },
+  assignedTitle: {
+    color: "#8A99B9",
+    fontWeight: 900,
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  assignedName: {
+    color: "#4E6799",
+    fontWeight: 900,
+    fontSize: 18,
+    marginBottom: 8,
+  },
+  assignedText: {
+    color: "#7083A6",
+    fontWeight: 700,
+    lineHeight: 1.7,
+    fontSize: 14,
+  },
+  primaryButton: {
+    minHeight: 46,
+    padding: "10px 18px",
+    borderRadius: 18,
+    backgroundColor: "#5CB2D8",
+    border: "1px solid #5CB2D8",
+    color: "#ffffff",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  outlineButton: {
+    minHeight: 46,
+    padding: "10px 18px",
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    border: "1px solid #AFC5E4",
+    color: "#60749B",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  primaryButtonWide: {
+    marginTop: 16,
+    minHeight: 46,
+    padding: "10px 18px",
+    borderRadius: 18,
+    backgroundColor: "#1EA6E0",
+    border: "1px solid #1EA6E0",
+    color: "#ffffff",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  propertyCard: {
+    marginTop: 18,
+    borderTop: "1px solid #DCE6F3",
+    paddingTop: 18,
+  },
+  metricCard: {
+    marginTop: 14,
+    borderRadius: 22,
+    border: "1px solid #C8D6EC",
+    backgroundColor: "#F8FAFE",
+    padding: 18,
+  },
+  metricLabel: {
+    color: "#8A99B9",
+    fontWeight: 900,
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  metricValue: {
+    color: "#4E6799",
+    fontWeight: 900,
+    fontSize: 34,
+    marginBottom: 8,
+  },
+  metricSubtext: {
+    color: "#5B77AB",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+  disabledButton: {
+    marginTop: 16,
+    width: "100%",
+    minHeight: 46,
+    borderRadius: 18,
+    border: "1px solid #AFB9D1",
+    backgroundColor: "#AEB8D1",
+    color: "#ffffff",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  actionsCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 28,
+    padding: 18,
+    border: "1px solid #C8D6EC",
+    boxShadow: "0 12px 28px rgba(15,23,42,0.04)",
+  },
+  actionBlue: {
+    width: "100%",
+    minHeight: 46,
+    borderRadius: 18,
+    border: "1px solid #5CB2D8",
+    backgroundColor: "#5CB2D8",
+    color: "#ffffff",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+    marginBottom: 12,
+  },
+  actionOutline: {
+    width: "100%",
+    minHeight: 46,
+    borderRadius: 18,
+    border: "1px solid #889DC5",
+    backgroundColor: "#ffffff",
+    color: "#5A71A0",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+    marginBottom: 12,
+  },
+  statusBox: {
+    marginTop: 8,
+    borderRadius: 16,
+    border: "1px solid #D5E0F1",
+    backgroundColor: "#F8FAFE",
+    color: "#5A71A0",
+    padding: 14,
+    lineHeight: 1.6,
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  errorBox: {
+    marginTop: 8,
+    borderRadius: 16,
+    border: "1px solid #F6C8C8",
+    backgroundColor: "#FFF6F6",
+    color: "#B24D4D",
+    padding: 14,
+    lineHeight: 1.6,
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  suggestionBox: {
+    marginTop: 8,
+    borderRadius: 18,
+    border: "1px solid #C8D6EC",
+    backgroundColor: "#ffffff",
+    overflow: "hidden",
+    position: "relative",
+    zIndex: 20,
+    boxShadow: "0 14px 26px rgba(15,23,42,0.08)",
+  },
+  suggestionItem: {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    padding: "12px 14px",
+    border: "none",
+    backgroundColor: "#ffffff",
+    color: "#243F7C",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+};
