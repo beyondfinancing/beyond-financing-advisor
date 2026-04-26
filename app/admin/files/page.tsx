@@ -1,3 +1,21 @@
+// =============================================================================
+// PHASE 7.2 — Add "Extract Programs" button to /admin/files
+//
+// Replace your existing file at:
+//     app/admin/files/page.tsx
+//
+// What changed:
+//   - Each Active Document card gets a new "Extract Programs" button next to
+//     "Archive Now"
+//   - Clicking it calls /api/admin/extract-programs/commit with that doc's id
+//   - Shows in-card status: "Extracting...", success message with N drafts,
+//     or error
+//   - On success, shows a link to /admin/programs?source=extracted to review
+//
+// Everything else (upload form, archive logic, layout) is byte-identical to
+// your existing file.
+// =============================================================================
+
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -27,6 +45,12 @@ type ActiveDocument = {
   is_active: boolean;
   notes: string | null;
   size_bytes: number | null;
+};
+
+type ExtractionStatus = {
+  state: 'idle' | 'extracting' | 'success' | 'error';
+  message?: string;
+  programNames?: string[];
 };
 
 const DOCUMENT_TYPES = [
@@ -63,6 +87,11 @@ export default function ManageLenderFilesPage() {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Per-document extraction status, keyed by document id
+  const [extractionStatus, setExtractionStatus] = useState<
+    Record<string, ExtractionStatus>
+  >({});
 
   const [form, setForm] = useState<UploadFormState>({
     lenderId: "",
@@ -263,6 +292,61 @@ export default function ManageLenderFilesPage() {
     }
   }
 
+  async function handleExtractPrograms(documentId: string) {
+    setExtractionStatus((prev) => ({
+      ...prev,
+      [documentId]: { state: 'extracting' },
+    }));
+
+    try {
+      const response = await fetch(
+        '/api/admin/extract-programs/commit',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId }),
+        }
+      );
+
+      const json = await response.json();
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json?.error || 'Extraction failed.');
+      }
+
+      const count = json.programsCreated || 0;
+      const names = json.programNames || [];
+      const partialErrors = json.insertErrors;
+
+      let msg: string;
+      if (count === 0) {
+        msg = 'Extraction completed but no programs were found in this document.';
+      } else if (partialErrors && partialErrors.length > 0) {
+        msg = `Created ${count} draft program${count === 1 ? '' : 's'}, but with errors. See console.`;
+        console.warn('Extraction partial errors:', partialErrors);
+      } else {
+        msg = `Created ${count} draft program${count === 1 ? '' : 's'}. Review in Programs admin.`;
+      }
+
+      setExtractionStatus((prev) => ({
+        ...prev,
+        [documentId]: {
+          state: 'success',
+          message: msg,
+          programNames: names,
+        },
+      }));
+    } catch (error) {
+      setExtractionStatus((prev) => ({
+        ...prev,
+        [documentId]: {
+          state: 'error',
+          message: error instanceof Error ? error.message : 'Extraction failed.',
+        },
+      }));
+    }
+  }
+
   const groupedDocuments = useMemo(() => {
     return [...activeDocuments].sort((a, b) => {
       const lenderCompare = a.lender_name.localeCompare(b.lender_name);
@@ -285,7 +369,9 @@ export default function ManageLenderFilesPage() {
             <p style={styles.subtitle}>
               Upload lender documents by type and program group. When a new file is uploaded for
               the same lender, document type, and document group, the system keeps the new one active
-              and archives the previous one as backup.
+              and archives the previous one as backup. Click <strong>Extract Programs</strong> on any
+              uploaded matrix or guideline to have AI propose draft program records you can review in
+              the Programs admin.
             </p>
           </div>
 
@@ -398,56 +484,101 @@ export default function ManageLenderFilesPage() {
             ) : groupedDocuments.length === 0 ? (
               <div style={styles.infoBox}>No active documents found.</div>
             ) : (
-              groupedDocuments.map((doc) => (
-                <div key={doc.id} style={styles.docCard}>
-                  <div style={styles.docHeader}>
-                    <div>
-                      <h3 style={styles.docTitle}>{doc.lender_name}</h3>
-                      <div style={styles.badgeRow}>
-                        <span style={styles.badge}>{doc.document_type}</span>
-                        <span style={styles.badgeSecondary}>{doc.document_group || "Master"}</span>
-                        <span style={styles.badgeSecondary}>ACTIVE</span>
-                      </div>
-                    </div>
+              groupedDocuments.map((doc) => {
+                const status = extractionStatus[doc.id];
+                const isExtracting = status?.state === 'extracting';
 
-                    <button
-                      style={styles.archiveButton}
-                      onClick={() => handleArchiveNow(doc.id)}
-                    >
-                      Archive Now
-                    </button>
-                  </div>
-
-                  <div style={styles.docMetaGrid}>
-                    <div>
-                      <strong>Original File:</strong>
-                      <div>{doc.original_filename}</div>
-                    </div>
-
-                    <div>
-                      <strong>Effective Date:</strong>
-                      <div>{doc.effective_date || "—"}</div>
-                    </div>
-
-                    <div>
-                      <strong>Uploaded:</strong>
-                      <div>{new Date(doc.uploaded_at).toLocaleString()}</div>
-                    </div>
-
-                    <div>
-                      <strong>Size:</strong>
+                return (
+                  <div key={doc.id} style={styles.docCard}>
+                    <div style={styles.docHeader}>
                       <div>
-                        {doc.size_bytes ? `${(doc.size_bytes / 1024).toFixed(1)} KB` : "—"}
+                        <h3 style={styles.docTitle}>{doc.lender_name}</h3>
+                        <div style={styles.badgeRow}>
+                          <span style={styles.badge}>{doc.document_type}</span>
+                          <span style={styles.badgeSecondary}>{doc.document_group || "Master"}</span>
+                          <span style={styles.badgeSecondary}>ACTIVE</span>
+                        </div>
+                      </div>
+
+                      <div style={styles.actionStack}>
+                        <button
+                          style={{
+                            ...styles.extractButton,
+                            opacity: isExtracting ? 0.6 : 1,
+                            cursor: isExtracting ? 'wait' : 'pointer',
+                          }}
+                          onClick={() => handleExtractPrograms(doc.id)}
+                          disabled={isExtracting}
+                        >
+                          {isExtracting ? 'Extracting…' : 'Extract Programs'}
+                        </button>
+
+                        <button
+                          style={styles.archiveButton}
+                          onClick={() => handleArchiveNow(doc.id)}
+                          disabled={isExtracting}
+                        >
+                          Archive Now
+                        </button>
                       </div>
                     </div>
-                  </div>
 
-                  <div style={styles.notesBox}>
-                    <strong>Notes:</strong>
-                    <div>{doc.notes || "—"}</div>
+                    <div style={styles.docMetaGrid}>
+                      <div>
+                        <strong>Original File:</strong>
+                        <div>{doc.original_filename}</div>
+                      </div>
+
+                      <div>
+                        <strong>Effective Date:</strong>
+                        <div>{doc.effective_date || "—"}</div>
+                      </div>
+
+                      <div>
+                        <strong>Uploaded:</strong>
+                        <div>{new Date(doc.uploaded_at).toLocaleString()}</div>
+                      </div>
+
+                      <div>
+                        <strong>Size:</strong>
+                        <div>
+                          {doc.size_bytes ? `${(doc.size_bytes / 1024).toFixed(1)} KB` : "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={styles.notesBox}>
+                      <strong>Notes:</strong>
+                      <div>{doc.notes || "—"}</div>
+                    </div>
+
+                    {status?.state === 'success' && (
+                      <div style={styles.extractionSuccessBox}>
+                        <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                          {status.message}
+                        </div>
+                        {status.programNames && status.programNames.length > 0 && (
+                          <div style={{ marginBottom: 8, fontSize: 14 }}>
+                            Created: {status.programNames.join(', ')}
+                          </div>
+                        )}
+                        <a
+                          href="/admin/programs?source=extracted"
+                          style={styles.reviewLink}
+                        >
+                          Review draft programs →
+                        </a>
+                      </div>
+                    )}
+
+                    {status?.state === 'error' && (
+                      <div style={styles.extractionErrorBox}>
+                        <strong>Extraction error:</strong> {status.message}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </section>
         </div>
@@ -623,6 +754,23 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 700,
   },
+  actionStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  extractButton: {
+    backgroundColor: "#263366",
+    color: "#fff",
+    border: "none",
+    borderRadius: 14,
+    padding: "12px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 14,
+    minWidth: 160,
+  },
   archiveButton: {
     backgroundColor: "#0096C7",
     color: "#fff",
@@ -631,6 +779,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px 16px",
     fontWeight: 700,
     cursor: "pointer",
+    fontSize: 14,
+    minWidth: 160,
   },
   docMetaGrid: {
     display: "grid",
@@ -645,5 +795,28 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 14,
     padding: 14,
     lineHeight: 1.6,
+  },
+  extractionSuccessBox: {
+    marginTop: 14,
+    backgroundColor: "#ecfdf3",
+    border: "1px solid #86efac",
+    color: "#166534",
+    borderRadius: 14,
+    padding: 14,
+    lineHeight: 1.6,
+  },
+  extractionErrorBox: {
+    marginTop: 14,
+    backgroundColor: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#991b1b",
+    borderRadius: 14,
+    padding: 14,
+    lineHeight: 1.6,
+  },
+  reviewLink: {
+    color: "#0070b3",
+    fontWeight: 700,
+    textDecoration: 'underline',
   },
 };
