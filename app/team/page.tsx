@@ -5,22 +5,19 @@
 //
 // =============================================================================
 //
-// PHASE 5-PREP — REAL LOGIN FORM + FORGOT PASSWORD
+// PHASE 6 — WIRE THE BEYOND INTELLIGENCE™ CARD TO /finley
 //
-// What this version changes vs. the prior one:
+// Two changes vs. the prior version:
 //
-//   1. The "!activeUser" state now shows a REAL login form: email,
-//      password, Sign In button. Posts to /api/team-auth/login.
+//   1. The third workspace module card ("Professional Thinking Layer") now
+//      contains a real <a> link to /finley instead of an inert <div>. It
+//      keeps the same visual styling so the card looks identical.
 //
-//   2. New "Forgot Password?" link below Sign In. Clicking opens an
-//      inline section that takes an email and POSTs to
-//      /api/team-auth/request-reset.
+//   2. The moduleStaticTag style entry has textDecoration: "none" added
+//      to suppress the default <a> underline.
 //
-//   3. Multilingual COPY for all the new strings, matching the existing
-//      en/pt/es pattern.
-//
-//   4. The "Loading", "Logged-in", and "Sign Out" branches are
-//      unchanged. Only the !activeUser branch was reworked.
+// Everything else is byte-identical to the previous version: login form,
+// forgot-password flow, multilingual COPY, hero, sign-out, all styling.
 //
 // =============================================================================
 
@@ -596,7 +593,9 @@ export default function TeamPage() {
                 <div style={styles.moduleCard}>
                   <div style={styles.moduleTitle}>{t.moduleThreeTitle}</div>
                   <div style={styles.moduleText}>{t.moduleThreeText}</div>
-                  <div style={styles.moduleStaticTag}>Beyond Intelligence™</div>
+                  <a href="/finley" style={styles.moduleStaticTag}>
+                    Beyond Intelligence™
+                  </a>
                 </div>
               </div>
             </section>
@@ -943,6 +942,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "14px 18px",
     fontWeight: 900,
     fontSize: 14,
+    textDecoration: "none",
   },
   quickActionRow: {
     display: "flex",
