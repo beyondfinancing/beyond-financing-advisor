@@ -1,3 +1,37 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace the existing file completely):
+//
+//     app/finley/page.tsx
+//
+// =============================================================================
+//
+// PHASE 6 — RECONNECT THE PROFESSIONAL THINKING LAYER
+//
+// Changes vs. the prior version:
+//
+//   1. Removed the localStorage-based auth scheme (PROFESSIONAL_SESSION_KEY
+//      constant + parseProfessionalSession function). No longer used.
+//
+//   2. The auth useEffect now calls /api/team-auth/me, the same signed-cookie
+//      session source that the rest of the app uses. This brings /finley
+//      onto the same auth system as /team, /team/inbox, and the API routes.
+//
+//   3. Added a role guard: only Loan Officer, Loan Officer Assistant,
+//      Branch Manager, Production Manager, and Processor are allowed.
+//      Real Estate Agent is explicitly excluded — agents should not see
+//      lender/program matching. Unauthorized roles bounce back to /team.
+//
+//   4. logoutProfessional() now POSTs to /api/team-auth/logout to clear the
+//      server-side session, instead of clearing localStorage.
+//
+// Everything else in this file is unchanged: the qualification intake form,
+// /api/match integration, Strong/Conditional/Eliminated buckets, scoring
+// pills, OpenAI enhancement panel, Email My Summary flow, conversation
+// panel powered by /api/qualify/next-question, the entire results UI,
+// and all styling.
+//
+// =============================================================================
+
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -125,7 +159,6 @@ type ChatMessage = {
 
 const PROFESSIONAL_LOGIN_PATH = "/team";
 const BORROWER_MODE_PATH = "/borrower";
-const PROFESSIONAL_SESSION_KEY = "beyond_professional_session";
 const SUMMARY_ROUTE = "/api/chat-summary";
 
 const initialForm: QualificationInput = {
@@ -151,22 +184,6 @@ function safeArray<T>(value: T[] | null | undefined): T[] {
 function labelize(value: string | null | undefined) {
   if (!value) return "—";
   return value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function parseProfessionalSession(): ProfessionalSession {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(PROFESSIONAL_SESSION_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw) as ProfessionalSession;
-    if (!parsed || typeof parsed !== "object") return null;
-
-    return parsed;
-  } catch {
-    return null;
-  }
 }
 
 function toBooleanOrEmpty(value: "" | "yes" | "no"): "" | boolean {
@@ -509,16 +526,58 @@ export default function FinleyPage() {
     useState<MatchResponse["lender_summary"]>(null);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
 
+  // ---------------------------------------------------------------------------
+  // Auth — verify cookie session via /api/team-auth/me, then guard by role.
+  // Real Estate Agents are explicitly excluded from the Professional Thinking
+  // Layer; they should not see lender or program matching.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    const session = parseProfessionalSession();
+    const ALLOWED_ROLES = [
+      "Loan Officer",
+      "Loan Officer Assistant",
+      "Branch Manager",
+      "Production Manager",
+      "Processor",
+    ];
 
-    if (!session?.isAuthenticated) {
-      router.replace(PROFESSIONAL_LOGIN_PATH);
-      return;
-    }
+    const verifySession = async () => {
+      try {
+        const response = await fetch("/api/team-auth/me");
 
-    setProfessionalSession(session);
-    setAuthChecked(true);
+        if (!response.ok) {
+          router.replace(PROFESSIONAL_LOGIN_PATH);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (!data?.authenticated || !data?.user) {
+          router.replace(PROFESSIONAL_LOGIN_PATH);
+          return;
+        }
+
+        if (!ALLOWED_ROLES.includes(data.user.role)) {
+          // Authenticated but role not authorized for this page.
+          // Bounce back to /team — they'll see the team dashboard or
+          // the login form depending on their session state.
+          router.replace(PROFESSIONAL_LOGIN_PATH);
+          return;
+        }
+
+        setProfessionalSession({
+          isAuthenticated: true,
+          role: data.user.role,
+          name: data.user.name,
+          email: data.user.email,
+          nmls: data.user.nmls,
+        });
+        setAuthChecked(true);
+      } catch {
+        router.replace(PROFESSIONAL_LOGIN_PATH);
+      }
+    };
+
+    void verifySession();
   }, [router]);
 
   const hasResults =
@@ -557,9 +616,16 @@ export default function FinleyPage() {
     router.push(BORROWER_MODE_PATH);
   }
 
-  function logoutProfessional() {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(PROFESSIONAL_SESSION_KEY);
+  // ---------------------------------------------------------------------------
+  // Logout — clears the server-side session via /api/team-auth/logout, then
+  // redirects to /team. Proceeds with the redirect even if the server call
+  // fails so the user is never stranded on a page they can no longer use.
+  // ---------------------------------------------------------------------------
+  async function logoutProfessional() {
+    try {
+      await fetch("/api/team-auth/logout", { method: "POST" });
+    } catch {
+      // Proceed with the redirect even if the server-side logout call fails.
     }
     router.replace(PROFESSIONAL_LOGIN_PATH);
   }
