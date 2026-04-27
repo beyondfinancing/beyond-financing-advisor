@@ -167,6 +167,31 @@ export async function POST(req: Request) {
     const notifyResult = await notifySend.json().catch(() => null);
     const receiptResult = await receiptSend.json().catch(() => null);
 
+    // Trigger comprehensive workflow notification (internal team full content + realtor activity ping)
+    let comprehensiveNotifyResult: unknown = null;
+    if (fileId) {
+      try {
+        const url = new URL(req.url);
+        const origin = url.origin;
+        const compNotifyResponse = await fetch(`${origin}/api/workflow-notify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflowFileId: fileId,
+            eventType: "file_change",
+            actorName: changedByName,
+            actorRole: changedByRole,
+            actorEmail: changedByEmail,
+            changeDetails: changeSummary,
+            changedFields,
+          }),
+        });
+        comprehensiveNotifyResult = await compNotifyResponse.json().catch(() => null);
+      } catch (notifyError) {
+        console.error("WORKFLOW FILE CHANGE COMPREHENSIVE NOTIFY ERROR:", notifyError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       activity: data,
@@ -174,6 +199,7 @@ export async function POST(req: Request) {
       receiptEmailSent: receiptSend.ok,
       notifyResult,
       receiptResult,
+      comprehensiveNotifyResult,
     });
   } catch (error) {
     console.error("WORKFLOW FILE CHANGE ROUTE ERROR:", error);
