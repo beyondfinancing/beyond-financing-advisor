@@ -1,24 +1,29 @@
 // =============================================================================
-// PHASE 7.2 — Add "Extract Programs" button to /admin/files
+// PHASE 7.3.5 — REDESIGNED admin/files PAGE
 //
-// Replace your existing file at:
+// Replace the entire contents of:
 //     app/admin/files/page.tsx
 //
-// What changed:
-//   - Each Active Document card gets a new "Extract Programs" button next to
-//     "Archive Now"
-//   - Clicking it calls /api/admin/extract-programs/commit with that doc's id
-//   - Shows in-card status: "Extracting...", success message with N drafts,
-//     or error
-//   - On success, shows a link to /admin/programs?source=extracted to review
+// What's new vs Phase 7.3 flat layout:
+//   • Lenders are the top-level cards (one row per lender, click to expand)
+//   • Each lender row shows: name, doc count, "X extracting" indicator,
+//     "X drafts ready" indicator, last updated timestamp
+//   • Clicking a lender row expands it inline to show compact one-line
+//     document rows for that lender
+//   • Clicking a document row expands it inline to show full details and
+//     all action buttons (Extract / Approve All / Archive Now)
+//   • Status badges still polled every 5 seconds while any doc is
+//     pending/running
+//   • Search box at top filters lenders by name (helpful when you have
+//     hundreds of lenders)
 //
-// Everything else (upload form, archive logic, layout) is byte-identical to
-// your existing file.
+// Phase 7.3 functionality preserved 1:1 — same auto-extract trigger,
+// same approve-all endpoint, same archive flow, same upload form.
 // =============================================================================
 
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type LenderOption = {
   id: string;
@@ -31,6 +36,13 @@ type ProgramOption = {
   name: string;
   slug: string;
 };
+
+type ExtractionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
 
 type ActiveDocument = {
   id: string;
@@ -45,12 +57,27 @@ type ActiveDocument = {
   is_active: boolean;
   notes: string | null;
   size_bytes: number | null;
+  extraction_status?: ExtractionStatus;
+  extraction_started_at?: string | null;
+  extraction_completed_at?: string | null;
+  extraction_error?: string | null;
+  extraction_drafts_count?: number;
 };
 
-type ExtractionStatus = {
-  state: 'idle' | 'extracting' | 'success' | 'error';
+type LenderGroup = {
+  lender_id: string;
+  lender_name: string;
+  docs: ActiveDocument[];
+  pendingOrRunningCount: number;
+  draftsReadyCount: number;
+  failedCount: number;
+  totalDraftsAcrossDocs: number;
+  lastUploadedAt: string | null;
+};
+
+type ActionStatus = {
+  state: "idle" | "busy" | "success" | "error";
   message?: string;
-  programNames?: string[];
 };
 
 const DOCUMENT_TYPES = [
@@ -63,11 +90,7 @@ const DOCUMENT_TYPES = [
   "Other",
 ] as const;
 
-const MASTER_GROUP_OPTIONS = [
-  "Master",
-  "General",
-  "All Programs",
-] as const;
+const MASTER_GROUP_OPTIONS = ["Master", "General", "All Programs"] as const;
 
 type UploadFormState = {
   lenderId: string;
@@ -87,11 +110,18 @@ export default function ManageLenderFilesPage() {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [lenderSearch, setLenderSearch] = useState("");
 
-  // Per-document extraction status, keyed by document id
-  const [extractionStatus, setExtractionStatus] = useState<
-    Record<string, ExtractionStatus>
+  const [expandedLenders, setExpandedLenders] = useState<Set<string>>(
+    new Set()
+  );
+  const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+
+  const [actionStatus, setActionStatus] = useState<
+    Record<string, ActionStatus>
   >({});
+
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [form, setForm] = useState<UploadFormState>({
     lenderId: "",
@@ -105,11 +135,45 @@ export default function ManageLenderFilesPage() {
 
   useEffect(() => {
     void loadPageData();
+
+    return () => {
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
   }, []);
+
+  // Auto-poll while extraction work is in flight.
+  useEffect(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+
+    const hasInFlight = activeDocuments.some(
+      (doc) =>
+        doc.extraction_status === "pending" ||
+        doc.extraction_status === "running"
+    );
+
+    if (hasInFlight) {
+      pollTimerRef.current = setTimeout(() => {
+        void refreshDocsOnly();
+      }, 5000);
+    }
+
+    return () => {
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, [activeDocuments]);
 
   const filteredPrograms = useMemo(() => {
     if (!form.lenderId) return [];
-    return programs.filter((program) => program.lender_id === form.lenderId);
+    return programs.filter((p) => p.lender_id === form.lenderId);
   }, [programs, form.lenderId]);
 
   const groupRequired = useMemo(() => {
@@ -120,6 +184,85 @@ export default function ManageLenderFilesPage() {
       form.documentType === "Overlays"
     );
   }, [form.documentType]);
+
+  // Build lender groups from flat doc list
+  const lenderGroups = useMemo<LenderGroup[]>(() => {
+    const map = new Map<string, LenderGroup>();
+
+    for (const doc of activeDocuments) {
+      const key = doc.lender_id;
+      if (!map.has(key)) {
+        map.set(key, {
+          lender_id: doc.lender_id,
+          lender_name: doc.lender_name,
+          docs: [],
+          pendingOrRunningCount: 0,
+          draftsReadyCount: 0,
+          failedCount: 0,
+          totalDraftsAcrossDocs: 0,
+          lastUploadedAt: null,
+        });
+      }
+      const group = map.get(key)!;
+      group.docs.push(doc);
+
+      const status = doc.extraction_status || "pending";
+      if (status === "pending" || status === "running") {
+        group.pendingOrRunningCount += 1;
+      } else if (status === "failed") {
+        group.failedCount += 1;
+      } else if (
+        status === "completed" &&
+        (doc.extraction_drafts_count || 0) > 0
+      ) {
+        group.draftsReadyCount += 1;
+        group.totalDraftsAcrossDocs += doc.extraction_drafts_count || 0;
+      }
+
+      if (
+        !group.lastUploadedAt ||
+        new Date(doc.uploaded_at) > new Date(group.lastUploadedAt)
+      ) {
+        group.lastUploadedAt = doc.uploaded_at;
+      }
+    }
+
+    // Sort docs within each group by document_type then group
+    for (const g of map.values()) {
+      g.docs.sort((a, b) => {
+        const t = a.document_type.localeCompare(b.document_type);
+        if (t !== 0) return t;
+        return a.document_group.localeCompare(b.document_group);
+      });
+    }
+
+    return [...map.values()].sort((a, b) =>
+      a.lender_name.localeCompare(b.lender_name)
+    );
+  }, [activeDocuments]);
+
+  const filteredLenderGroups = useMemo(() => {
+    const q = lenderSearch.trim().toLowerCase();
+    if (!q) return lenderGroups;
+    return lenderGroups.filter((g) =>
+      g.lender_name.toLowerCase().includes(q)
+    );
+  }, [lenderGroups, lenderSearch]);
+
+  const totalStats = useMemo(() => {
+    const lenderCount = lenderGroups.length;
+    const docCount = activeDocuments.length;
+    const inFlight = activeDocuments.filter(
+      (d) =>
+        d.extraction_status === "pending" || d.extraction_status === "running"
+    ).length;
+    const draftsReady = activeDocuments.filter(
+      (d) =>
+        d.extraction_status === "completed" &&
+        (d.extraction_drafts_count || 0) > 0
+    ).length;
+    return { lenderCount, docCount, inFlight, draftsReady };
+  }, [activeDocuments, lenderGroups]);
 
   async function loadPageData() {
     setLoading(true);
@@ -136,21 +279,49 @@ export default function ManageLenderFilesPage() {
       const programsJson = await programsRes.json();
       const docsJson = await docsRes.json();
 
-      if (!lendersRes.ok) throw new Error(lendersJson?.error || "Failed to load lenders.");
-      if (!programsRes.ok) throw new Error(programsJson?.error || "Failed to load programs.");
-      if (!docsRes.ok) throw new Error(docsJson?.error || "Failed to load active documents.");
+      if (!lendersRes.ok)
+        throw new Error(lendersJson?.error || "Failed to load lenders.");
+      if (!programsRes.ok)
+        throw new Error(programsJson?.error || "Failed to load programs.");
+      if (!docsRes.ok)
+        throw new Error(docsJson?.error || "Failed to load active documents.");
 
-      setLenders(Array.isArray(lendersJson?.lenders) ? lendersJson.lenders : []);
-      setPrograms(Array.isArray(programsJson?.programs) ? programsJson.programs : []);
-      setActiveDocuments(Array.isArray(docsJson?.documents) ? docsJson.documents : []);
+      setLenders(
+        Array.isArray(lendersJson?.lenders) ? lendersJson.lenders : []
+      );
+      setPrograms(
+        Array.isArray(programsJson?.programs) ? programsJson.programs : []
+      );
+      setActiveDocuments(
+        Array.isArray(docsJson?.documents) ? docsJson.documents : []
+      );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load page data.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to load page data."
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  function updateForm<K extends keyof UploadFormState>(key: K, value: UploadFormState[K]) {
+  async function refreshDocsOnly() {
+    try {
+      const res = await fetch("/api/admin/lender-files/active", {
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (res.ok && Array.isArray(json?.documents)) {
+        setActiveDocuments(json.documents);
+      }
+    } catch {
+      // silent
+    }
+  }
+
+  function updateForm<K extends keyof UploadFormState>(
+    key: K,
+    value: UploadFormState[K]
+  ) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -179,13 +350,30 @@ export default function ManageLenderFilesPage() {
   }
 
   function handleProgramGroupChange(value: string) {
-    const matchedProgram = filteredPrograms.find((program) => program.name === value);
-
+    const matched = filteredPrograms.find((p) => p.name === value);
     setForm((prev) => ({
       ...prev,
       documentGroup: value,
-      programId: matchedProgram?.id || "",
+      programId: matched?.id || "",
     }));
+  }
+
+  function toggleLenderExpansion(lenderId: string) {
+    setExpandedLenders((prev) => {
+      const next = new Set(prev);
+      if (next.has(lenderId)) next.delete(lenderId);
+      else next.add(lenderId);
+      return next;
+    });
+  }
+
+  function toggleDocExpansion(docId: string) {
+    setExpandedDocs((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -193,30 +381,14 @@ export default function ManageLenderFilesPage() {
     setMessage("");
     setErrorMessage("");
 
-    if (!form.lenderId) {
-      setErrorMessage("Please select a lender.");
-      return;
-    }
-
-    if (!form.documentType) {
-      setErrorMessage("Please select a document type.");
-      return;
-    }
-
-    if (groupRequired && !form.documentGroup.trim()) {
-      setErrorMessage("Please select or enter a program/document group.");
-      return;
-    }
-
-    if (!groupRequired && !form.documentGroup.trim()) {
-      setErrorMessage("Document group is required.");
-      return;
-    }
-
-    if (!form.file) {
-      setErrorMessage("Please choose a file.");
-      return;
-    }
+    if (!form.lenderId) return setErrorMessage("Please select a lender.");
+    if (!form.documentType)
+      return setErrorMessage("Please select a document type.");
+    if (groupRequired && !form.documentGroup.trim())
+      return setErrorMessage("Please select or enter a program/document group.");
+    if (!groupRequired && !form.documentGroup.trim())
+      return setErrorMessage("Document group is required.");
+    if (!form.file) return setErrorMessage("Please choose a file.");
 
     setUploading(true);
 
@@ -236,13 +408,16 @@ export default function ManageLenderFilesPage() {
       });
 
       const json = await response.json();
+      if (!response.ok) throw new Error(json?.error || "Upload failed.");
 
-      if (!response.ok) {
-        throw new Error(json?.error || "Upload failed.");
-      }
+      const extractionMsg = json?.extractionQueued
+        ? " Extraction queued — status will appear within a minute."
+        : "";
 
       setMessage(
-        `Upload successful. Active slot updated for ${json?.slotLabel || "selected document slot"}.`
+        `Upload successful. Active slot updated for ${
+          json?.slotLabel || "selected document slot"
+        }.${extractionMsg}`
       );
 
       setForm({
@@ -255,12 +430,25 @@ export default function ManageLenderFilesPage() {
         file: null,
       });
 
-      const fileInput = document.getElementById("lender-file-input") as HTMLInputElement | null;
+      const fileInput = document.getElementById(
+        "lender-file-input"
+      ) as HTMLInputElement | null;
       if (fileInput) fileInput.value = "";
+
+      // Auto-expand the lender card the upload went to so user sees status
+      if (form.lenderId) {
+        setExpandedLenders((prev) => {
+          const next = new Set(prev);
+          next.add(form.lenderId);
+          return next;
+        });
+      }
 
       await loadPageData();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Upload failed."
+      );
     } finally {
       setUploading(false);
     }
@@ -273,91 +461,188 @@ export default function ManageLenderFilesPage() {
     try {
       const response = await fetch("/api/admin/lender-files/archive", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documentId }),
       });
 
       const json = await response.json();
-
-      if (!response.ok) {
-        throw new Error(json?.error || "Archive failed.");
-      }
+      if (!response.ok) throw new Error(json?.error || "Archive failed.");
 
       setMessage("Document archived successfully.");
       await loadPageData();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Archive failed.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Archive failed."
+      );
     }
   }
 
-  async function handleExtractPrograms(documentId: string) {
-    setExtractionStatus((prev) => ({
-      ...prev,
-      [documentId]: { state: 'extracting' },
-    }));
+  async function handleReExtract(documentId: string) {
+    setActionStatus((prev) => ({ ...prev, [documentId]: { state: "busy" } }));
 
     try {
-      const response = await fetch(
-        '/api/admin/extract-programs/commit',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ documentId }),
-        }
-      );
+      const res = await fetch("/api/admin/extract-programs/auto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId }),
+      });
 
-      const json = await response.json();
+      const json = await res.json();
+      if (!res.ok || !json.ok)
+        throw new Error(json?.error || "Extraction failed.");
 
-      if (!response.ok || !json.ok) {
-        throw new Error(json?.error || 'Extraction failed.');
-      }
-
-      const count = json.programsCreated || 0;
-      const names = json.programNames || [];
-      const partialErrors = json.insertErrors;
-
-      let msg: string;
-      if (count === 0) {
-        msg = 'Extraction completed but no programs were found in this document.';
-      } else if (partialErrors && partialErrors.length > 0) {
-        msg = `Created ${count} draft program${count === 1 ? '' : 's'}, but with errors. See console.`;
-        console.warn('Extraction partial errors:', partialErrors);
-      } else {
-        msg = `Created ${count} draft program${count === 1 ? '' : 's'}. Review in Programs admin.`;
-      }
-
-      setExtractionStatus((prev) => ({
+      setActionStatus((prev) => ({
         ...prev,
         [documentId]: {
-          state: 'success',
-          message: msg,
-          programNames: names,
+          state: "success",
+          message: `Created ${json.programsCreated} draft${
+            json.programsCreated === 1 ? "" : "s"
+          }.`,
         },
       }));
+      await refreshDocsOnly();
     } catch (error) {
-      setExtractionStatus((prev) => ({
+      setActionStatus((prev) => ({
         ...prev,
         [documentId]: {
-          state: 'error',
-          message: error instanceof Error ? error.message : 'Extraction failed.',
+          state: "error",
+          message:
+            error instanceof Error ? error.message : "Extraction failed.",
         },
       }));
     }
   }
 
-  const groupedDocuments = useMemo(() => {
-    return [...activeDocuments].sort((a, b) => {
-      const lenderCompare = a.lender_name.localeCompare(b.lender_name);
-      if (lenderCompare !== 0) return lenderCompare;
+  async function handleApproveAll(documentId: string) {
+    setActionStatus((prev) => ({ ...prev, [documentId]: { state: "busy" } }));
 
-      const typeCompare = a.document_type.localeCompare(b.document_type);
-      if (typeCompare !== 0) return typeCompare;
+    try {
+      const res = await fetch("/api/admin/extract-programs/approve-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId }),
+      });
 
-      return a.document_group.localeCompare(b.document_group);
-    });
-  }, [activeDocuments]);
+      const json = await res.json();
+      if (!res.ok || !json.ok)
+        throw new Error(json?.error || "Approval failed.");
+
+      setActionStatus((prev) => ({
+        ...prev,
+        [documentId]: {
+          state: "success",
+          message: `Activated ${json.approvedCount} program${
+            json.approvedCount === 1 ? "" : "s"
+          }.`,
+        },
+      }));
+      await refreshDocsOnly();
+    } catch (error) {
+      setActionStatus((prev) => ({
+        ...prev,
+        [documentId]: {
+          state: "error",
+          message: error instanceof Error ? error.message : "Approval failed.",
+        },
+      }));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering helpers
+  // ---------------------------------------------------------------------------
+  function statusBadgeForDoc(doc: ActiveDocument) {
+    const status = doc.extraction_status || "pending";
+    const draftCount = doc.extraction_drafts_count || 0;
+
+    if (status === "pending")
+      return (
+        <span style={{ ...styles.miniBadge, ...styles.miniBadgeNeutral }}>
+          ⏳ Pending
+        </span>
+      );
+    if (status === "running")
+      return (
+        <span style={{ ...styles.miniBadge, ...styles.miniBadgeRunning }}>
+          🔄 Extracting
+        </span>
+      );
+    if (status === "completed") {
+      if (draftCount > 0)
+        return (
+          <span style={{ ...styles.miniBadge, ...styles.miniBadgeSuccess }}>
+            ✓ {draftCount} draft{draftCount === 1 ? "" : "s"}
+          </span>
+        );
+      return (
+        <span style={{ ...styles.miniBadge, ...styles.miniBadgeNeutral }}>
+          ✓ Complete (no programs)
+        </span>
+      );
+    }
+    if (status === "failed")
+      return (
+        <span
+          style={{ ...styles.miniBadge, ...styles.miniBadgeError }}
+          title={doc.extraction_error || "Extraction failed"}
+        >
+          ⚠ Failed
+        </span>
+      );
+    if (status === "skipped")
+      return (
+        <span style={{ ...styles.miniBadge, ...styles.miniBadgeNeutral }}>
+          — Not extracted
+        </span>
+      );
+    return null;
+  }
+
+  function lenderHeaderStatus(group: LenderGroup) {
+    const parts: React.ReactNode[] = [];
+
+    parts.push(
+      <span key="docs" style={styles.lenderStatChip}>
+        {group.docs.length} doc{group.docs.length === 1 ? "" : "s"}
+      </span>
+    );
+
+    if (group.pendingOrRunningCount > 0) {
+      parts.push(
+        <span
+          key="pending"
+          style={{ ...styles.lenderStatChip, ...styles.lenderStatChipBusy }}
+        >
+          🔄 {group.pendingOrRunningCount} extracting
+        </span>
+      );
+    }
+
+    if (group.draftsReadyCount > 0) {
+      parts.push(
+        <span
+          key="ready"
+          style={{ ...styles.lenderStatChip, ...styles.lenderStatChipReady }}
+        >
+          ✓ {group.totalDraftsAcrossDocs} draft
+          {group.totalDraftsAcrossDocs === 1 ? "" : "s"} ready
+        </span>
+      );
+    }
+
+    if (group.failedCount > 0) {
+      parts.push(
+        <span
+          key="failed"
+          style={{ ...styles.lenderStatChip, ...styles.lenderStatChipError }}
+        >
+          ⚠ {group.failedCount} failed
+        </span>
+      );
+    }
+
+    return parts;
+  }
 
   return (
     <main style={styles.page}>
@@ -367,11 +652,9 @@ export default function ManageLenderFilesPage() {
             <div style={styles.eyebrow}>FILE INTAKE</div>
             <h1 style={styles.title}>Manage Lender Files</h1>
             <p style={styles.subtitle}>
-              Upload lender documents by type and program group. When a new file is uploaded for
-              the same lender, document type, and document group, the system keeps the new one active
-              and archives the previous one as backup. Click <strong>Extract Programs</strong> on any
-              uploaded matrix or guideline to have AI propose draft program records you can review in
-              the Programs admin.
+              Upload documents per lender. PDF program matrices and guidelines
+              are auto-extracted into draft programs you review and approve.
+              Click a lender to expand their documents.
             </p>
           </div>
 
@@ -381,14 +664,17 @@ export default function ManageLenderFilesPage() {
         </div>
 
         {message ? <div style={styles.successBox}>{message}</div> : null}
-        {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
+        {errorMessage ? (
+          <div style={styles.errorBox}>{errorMessage}</div>
+        ) : null}
 
         <div style={styles.grid}>
-          <section style={styles.card}>
+          {/* Upload form (unchanged) */}
+          <section style={styles.uploadCard}>
             <h2 style={styles.cardTitle}>Upload New File</h2>
             <p style={styles.cardText}>
-              This upload flow is classification-first. The selected lender, document type,
-              and program/document group determine which active version it replaces.
+              PDF matrices, programs, qualification guides, selling guides, and
+              overlays are auto-extracted in the background after upload.
             </p>
 
             <form onSubmit={handleUpload}>
@@ -399,9 +685,9 @@ export default function ManageLenderFilesPage() {
                 onChange={(e) => handleLenderChange(e.target.value)}
               >
                 <option value="">Select lender</option>
-                {lenders.map((lender) => (
-                  <option key={lender.id} value={lender.id}>
-                    {lender.name}
+                {lenders.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
                   </option>
                 ))}
               </select>
@@ -413,9 +699,9 @@ export default function ManageLenderFilesPage() {
                 onChange={(e) => handleDocumentTypeChange(e.target.value)}
               >
                 <option value="">Select document type</option>
-                {DOCUMENT_TYPES.map((docType) => (
-                  <option key={docType} value={docType}>
-                    {docType}
+                {DOCUMENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
                   </option>
                 ))}
               </select>
@@ -426,19 +712,20 @@ export default function ManageLenderFilesPage() {
                 value={form.documentGroup}
                 onChange={(e) => handleProgramGroupChange(e.target.value)}
               >
-                {!groupRequired && MASTER_GROUP_OPTIONS.map((group) => (
-                  <option key={group} value={group}>
-                    {group}
-                  </option>
-                ))}
+                {!groupRequired &&
+                  MASTER_GROUP_OPTIONS.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
 
                 {groupRequired && (
                   <>
                     <option value="">Select document group</option>
                     <option value="Master">Master</option>
-                    {filteredPrograms.map((program) => (
-                      <option key={program.id} value={program.name}>
-                        {program.name}
+                    {filteredPrograms.map((p) => (
+                      <option key={p.id} value={p.name}>
+                        {p.name}
                       </option>
                     ))}
                   </>
@@ -458,7 +745,7 @@ export default function ManageLenderFilesPage() {
                 style={styles.textarea}
                 value={form.notes}
                 onChange={(e) => updateForm("notes", e.target.value)}
-                placeholder="Optional notes such as lender bulletin date, pricing release note, or admin comments."
+                placeholder="Optional notes such as bulletin date or admin comments."
               />
 
               <label style={styles.label}>File</label>
@@ -466,119 +753,287 @@ export default function ManageLenderFilesPage() {
                 id="lender-file-input"
                 style={styles.input}
                 type="file"
-                onChange={(e) => updateForm("file", e.target.files?.[0] || null)}
+                onChange={(e) =>
+                  updateForm("file", e.target.files?.[0] || null)
+                }
               />
 
-              <button type="submit" style={styles.primaryButton} disabled={uploading}>
-                {uploading ? "Uploading..." : "Upload File"}
+              <button
+                type="submit"
+                style={styles.primaryButton}
+                disabled={uploading}
+              >
+                {uploading ? "Uploading…" : "Upload File"}
               </button>
             </form>
           </section>
 
-          <section style={styles.card}>
-            <h2 style={styles.cardTitle}>Active Documents</h2>
-            <p style={styles.cardText}>Active files: {groupedDocuments.length}</p>
+          {/* Right side: lender groups */}
+          <section style={styles.listCard}>
+            <div style={styles.activeHeader}>
+              <div>
+                <h2 style={styles.cardTitle}>Active Documents by Lender</h2>
+                <div style={styles.statRow}>
+                  <span style={styles.statChip}>
+                    {totalStats.lenderCount} lender
+                    {totalStats.lenderCount === 1 ? "" : "s"}
+                  </span>
+                  <span style={styles.statChip}>
+                    {totalStats.docCount} doc
+                    {totalStats.docCount === 1 ? "" : "s"}
+                  </span>
+                  {totalStats.inFlight > 0 ? (
+                    <span
+                      style={{ ...styles.statChip, ...styles.statChipBusy }}
+                    >
+                      🔄 {totalStats.inFlight} extracting
+                    </span>
+                  ) : null}
+                  {totalStats.draftsReady > 0 ? (
+                    <span
+                      style={{ ...styles.statChip, ...styles.statChipReady }}
+                    >
+                      ✓ {totalStats.draftsReady} ready to review
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={refreshDocsOnly}
+                style={styles.refreshButton}
+                title="Refresh extraction status"
+              >
+                ↻ Refresh
+              </button>
+            </div>
+
+            <input
+              style={styles.searchInput}
+              type="search"
+              placeholder="Search lenders…"
+              value={lenderSearch}
+              onChange={(e) => setLenderSearch(e.target.value)}
+            />
 
             {loading ? (
-              <div style={styles.infoBox}>Loading...</div>
-            ) : groupedDocuments.length === 0 ? (
-              <div style={styles.infoBox}>No active documents found.</div>
+              <div style={styles.infoBox}>Loading…</div>
+            ) : filteredLenderGroups.length === 0 ? (
+              <div style={styles.infoBox}>
+                {lenderSearch.trim()
+                  ? `No lenders match "${lenderSearch}".`
+                  : "No active documents found."}
+              </div>
             ) : (
-              groupedDocuments.map((doc) => {
-                const status = extractionStatus[doc.id];
-                const isExtracting = status?.state === 'extracting';
+              <div style={styles.lenderList}>
+                {filteredLenderGroups.map((group) => {
+                  const isExpanded = expandedLenders.has(group.lender_id);
 
-                return (
-                  <div key={doc.id} style={styles.docCard}>
-                    <div style={styles.docHeader}>
-                      <div>
-                        <h3 style={styles.docTitle}>{doc.lender_name}</h3>
-                        <div style={styles.badgeRow}>
-                          <span style={styles.badge}>{doc.document_type}</span>
-                          <span style={styles.badgeSecondary}>{doc.document_group || "Master"}</span>
-                          <span style={styles.badgeSecondary}>ACTIVE</span>
+                  return (
+                    <div key={group.lender_id} style={styles.lenderCard}>
+                      <button
+                        type="button"
+                        onClick={() => toggleLenderExpansion(group.lender_id)}
+                        style={styles.lenderHeader}
+                      >
+                        <div style={styles.lenderHeaderLeft}>
+                          <span style={styles.chevron}>
+                            {isExpanded ? "▼" : "▶"}
+                          </span>
+                          <span style={styles.lenderName}>
+                            {group.lender_name}
+                          </span>
                         </div>
-                      </div>
-
-                      <div style={styles.actionStack}>
-                        <button
-                          style={{
-                            ...styles.extractButton,
-                            opacity: isExtracting ? 0.6 : 1,
-                            cursor: isExtracting ? 'wait' : 'pointer',
-                          }}
-                          onClick={() => handleExtractPrograms(doc.id)}
-                          disabled={isExtracting}
-                        >
-                          {isExtracting ? 'Extracting…' : 'Extract Programs'}
-                        </button>
-
-                        <button
-                          style={styles.archiveButton}
-                          onClick={() => handleArchiveNow(doc.id)}
-                          disabled={isExtracting}
-                        >
-                          Archive Now
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={styles.docMetaGrid}>
-                      <div>
-                        <strong>Original File:</strong>
-                        <div>{doc.original_filename}</div>
-                      </div>
-
-                      <div>
-                        <strong>Effective Date:</strong>
-                        <div>{doc.effective_date || "—"}</div>
-                      </div>
-
-                      <div>
-                        <strong>Uploaded:</strong>
-                        <div>{new Date(doc.uploaded_at).toLocaleString()}</div>
-                      </div>
-
-                      <div>
-                        <strong>Size:</strong>
-                        <div>
-                          {doc.size_bytes ? `${(doc.size_bytes / 1024).toFixed(1)} KB` : "—"}
+                        <div style={styles.lenderHeaderRight}>
+                          {lenderHeaderStatus(group)}
                         </div>
-                      </div>
-                    </div>
+                      </button>
 
-                    <div style={styles.notesBox}>
-                      <strong>Notes:</strong>
-                      <div>{doc.notes || "—"}</div>
-                    </div>
+                      {isExpanded && (
+                        <div style={styles.docList}>
+                          {group.docs.map((doc) => {
+                            const isDocExpanded = expandedDocs.has(doc.id);
+                            const action = actionStatus[doc.id];
+                            const isBusy = action?.state === "busy";
+                            const status = doc.extraction_status || "pending";
+                            const draftCount = doc.extraction_drafts_count || 0;
 
-                    {status?.state === 'success' && (
-                      <div style={styles.extractionSuccessBox}>
-                        <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                          {status.message}
+                            return (
+                              <div key={doc.id} style={styles.docCardCompact}>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDocExpansion(doc.id)}
+                                  style={styles.docRowCompact}
+                                >
+                                  <div style={styles.docRowLeft}>
+                                    <span style={styles.chevronSmall}>
+                                      {isDocExpanded ? "▼" : "▶"}
+                                    </span>
+                                    <span style={styles.docTypeText}>
+                                      {doc.document_type}
+                                    </span>
+                                    <span style={styles.docGroupText}>
+                                      {doc.document_group || "Master"}
+                                    </span>
+                                  </div>
+                                  <div style={styles.docRowRight}>
+                                    <span style={styles.docDateText}>
+                                      {new Date(
+                                        doc.uploaded_at
+                                      ).toLocaleDateString()}
+                                    </span>
+                                    {statusBadgeForDoc(doc)}
+                                  </div>
+                                </button>
+
+                                {isDocExpanded && (
+                                  <div style={styles.docExpandedBody}>
+                                    <div style={styles.docMetaGrid}>
+                                      <div>
+                                        <strong>Original File:</strong>
+                                        <div style={styles.docMetaValue}>
+                                          {doc.original_filename}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <strong>Effective Date:</strong>
+                                        <div style={styles.docMetaValue}>
+                                          {doc.effective_date || "—"}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <strong>Uploaded:</strong>
+                                        <div style={styles.docMetaValue}>
+                                          {new Date(
+                                            doc.uploaded_at
+                                          ).toLocaleString()}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <strong>Size:</strong>
+                                        <div style={styles.docMetaValue}>
+                                          {doc.size_bytes
+                                            ? `${(
+                                                doc.size_bytes / 1024
+                                              ).toFixed(1)} KB`
+                                            : "—"}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {doc.notes ? (
+                                      <div style={styles.notesBox}>
+                                        <strong>Notes:</strong>
+                                        <div>{doc.notes}</div>
+                                      </div>
+                                    ) : null}
+
+                                    {status === "failed" &&
+                                      doc.extraction_error && (
+                                        <div style={styles.errorInline}>
+                                          <strong>Extraction error:</strong>{" "}
+                                          {doc.extraction_error}
+                                        </div>
+                                      )}
+
+                                    {action?.state === "success" && (
+                                      <div style={styles.successInline}>
+                                        {action.message}
+                                        {status === "completed" &&
+                                        draftCount === 0
+                                          ? null
+                                          : (
+                                            <>
+                                              {" "}
+                                              <a
+                                                href="/admin/programs?tab=extracted"
+                                                style={styles.reviewLink}
+                                              >
+                                                Review →
+                                              </a>
+                                            </>
+                                          )}
+                                      </div>
+                                    )}
+
+                                    {action?.state === "error" && (
+                                      <div style={styles.errorInline}>
+                                        <strong>Action error:</strong>{" "}
+                                        {action.message}
+                                      </div>
+                                    )}
+
+                                    <div style={styles.actionButtonRow}>
+                                      {status === "completed" &&
+                                        draftCount > 0 && (
+                                          <button
+                                            type="button"
+                                            style={{
+                                              ...styles.approveButton,
+                                              opacity: isBusy ? 0.6 : 1,
+                                              cursor: isBusy
+                                                ? "wait"
+                                                : "pointer",
+                                            }}
+                                            onClick={() =>
+                                              handleApproveAll(doc.id)
+                                            }
+                                            disabled={isBusy}
+                                          >
+                                            {isBusy
+                                              ? "Approving…"
+                                              : `Approve All ${draftCount} Draft${
+                                                  draftCount === 1 ? "" : "s"
+                                                }`}
+                                          </button>
+                                        )}
+
+                                      {(status === "failed" ||
+                                        status === "skipped" ||
+                                        (status === "completed" &&
+                                          draftCount === 0)) && (
+                                        <button
+                                          type="button"
+                                          style={{
+                                            ...styles.extractButton,
+                                            opacity: isBusy ? 0.6 : 1,
+                                            cursor: isBusy
+                                              ? "wait"
+                                              : "pointer",
+                                          }}
+                                          onClick={() =>
+                                            handleReExtract(doc.id)
+                                          }
+                                          disabled={isBusy}
+                                        >
+                                          {isBusy
+                                            ? "Extracting…"
+                                            : status === "failed"
+                                            ? "Retry Extraction"
+                                            : "Extract Programs"}
+                                        </button>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        style={styles.archiveButton}
+                                        onClick={() => handleArchiveNow(doc.id)}
+                                        disabled={isBusy}
+                                      >
+                                        Archive Now
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                        {status.programNames && status.programNames.length > 0 && (
-                          <div style={{ marginBottom: 8, fontSize: 14 }}>
-                            Created: {status.programNames.join(', ')}
-                          </div>
-                        )}
-                        <a
-                          href="/admin/programs?source=extracted"
-                          style={styles.reviewLink}
-                        >
-                          Review draft programs →
-                        </a>
-                      </div>
-                    )}
-
-                    {status?.state === 'error' && (
-                      <div style={styles.extractionErrorBox}>
-                        <strong>Extraction error:</strong> {status.message}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </section>
         </div>
@@ -615,14 +1070,14 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 10,
   },
   title: {
-    fontSize: 60,
+    fontSize: 48,
     lineHeight: 1.05,
     margin: 0,
     fontWeight: 400,
   },
   subtitle: {
     maxWidth: 980,
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 1.7,
     color: "#4b628c",
   },
@@ -634,10 +1089,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "420px 1fr",
+    gridTemplateColumns: "380px 1fr",
     gap: 20,
   },
-  card: {
+  uploadCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 20,
+    boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
+    alignSelf: "start",
+    position: "sticky",
+    top: 18,
+  },
+  listCard: {
     backgroundColor: "#fff",
     borderRadius: 24,
     padding: 20,
@@ -653,6 +1117,56 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.6,
     marginTop: 0,
     marginBottom: 14,
+    fontSize: 14,
+  },
+  activeHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
+    marginBottom: 14,
+  },
+  statRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  statChip: {
+    backgroundColor: "#eef4ff",
+    color: "#1e3a8a",
+    borderRadius: 999,
+    padding: "5px 12px",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  statChipBusy: {
+    backgroundColor: "#fef3c7",
+    color: "#92400e",
+  },
+  statChipReady: {
+    backgroundColor: "#dcfce7",
+    color: "#166534",
+  },
+  refreshButton: {
+    background: "#fff",
+    border: "1px solid #c8d5eb",
+    borderRadius: 10,
+    padding: "8px 14px",
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#263366",
+    cursor: "pointer",
+  },
+  searchInput: {
+    width: "100%",
+    border: "1px solid #c8d5eb",
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 14,
+    backgroundColor: "#fff",
+    marginBottom: 16,
   },
   label: {
     display: "block",
@@ -664,18 +1178,18 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     width: "100%",
     border: "1px solid #c8d5eb",
-    borderRadius: 14,
-    padding: "14px 16px",
-    fontSize: 15,
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 14,
     backgroundColor: "#fff",
   },
   textarea: {
     width: "100%",
-    minHeight: 110,
+    minHeight: 90,
     border: "1px solid #c8d5eb",
-    borderRadius: 14,
-    padding: "14px 16px",
-    fontSize: 15,
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 14,
     resize: "vertical",
   },
   primaryButton: {
@@ -684,9 +1198,9 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#263366",
     color: "#fff",
     border: "none",
-    borderRadius: 14,
-    padding: "14px 18px",
-    fontSize: 15,
+    borderRadius: 12,
+    padding: "13px 18px",
+    fontSize: 14,
     fontWeight: 700,
     cursor: "pointer",
   },
@@ -713,110 +1227,235 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 14,
     padding: 14,
   },
-  docCard: {
-    border: "1px solid #d7e2f2",
-    borderRadius: 20,
-    padding: 18,
-    marginTop: 14,
+  lenderList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
   },
-  docHeader: {
+  lenderCard: {
+    border: "1px solid #d7e2f2",
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  lenderHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 14,
+    alignItems: "center",
+    width: "100%",
+    padding: "14px 16px",
+    border: "none",
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    textAlign: "left",
+    fontFamily: "inherit",
+    color: "inherit",
   },
-  docTitle: {
-    margin: 0,
-    fontSize: 20,
-  },
-  badgeRow: {
+  lenderHeaderLeft: {
     display: "flex",
-    gap: 8,
+    alignItems: "center",
+    gap: 10,
+  },
+  lenderHeaderRight: {
+    display: "flex",
     flexWrap: "wrap",
-    marginTop: 10,
+    gap: 6,
+    alignItems: "center",
   },
-  badge: {
+  chevron: {
+    color: "#5b7097",
+    fontSize: 12,
+    width: 14,
     display: "inline-block",
-    backgroundColor: "#eef4ff",
-    color: "#1e3a8a",
-    borderRadius: 999,
-    padding: "6px 10px",
-    fontSize: 13,
+  },
+  chevronSmall: {
+    color: "#5b7097",
+    fontSize: 10,
+    width: 12,
+    display: "inline-block",
+  },
+  lenderName: {
+    fontSize: 16,
     fontWeight: 700,
+    color: "#263366",
   },
-  badgeSecondary: {
-    display: "inline-block",
+  lenderStatChip: {
     backgroundColor: "#f4f6fb",
     color: "#263366",
     borderRadius: 999,
-    padding: "6px 10px",
-    fontSize: 13,
+    padding: "3px 10px",
+    fontSize: 12,
     fontWeight: 700,
   },
-  actionStack: {
-    display: 'flex',
-    flexDirection: 'column',
+  lenderStatChipBusy: {
+    backgroundColor: "#fef3c7",
+    color: "#92400e",
+  },
+  lenderStatChipReady: {
+    backgroundColor: "#dcfce7",
+    color: "#166534",
+  },
+  lenderStatChipError: {
+    backgroundColor: "#fee2e2",
+    color: "#991b1b",
+  },
+  docList: {
+    borderTop: "1px solid #e2e8f0",
+    backgroundColor: "#f9fbff",
+    padding: 8,
+  },
+  docCardCompact: {
+    backgroundColor: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 10,
+    marginBottom: 6,
+    overflow: "hidden",
+  },
+  docRowCompact: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    padding: "10px 14px",
+    border: "none",
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    textAlign: "left",
+    fontFamily: "inherit",
+    color: "inherit",
+    gap: 12,
+  },
+  docRowLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  docRowRight: {
+    display: "flex",
+    alignItems: "center",
     gap: 8,
-    alignItems: 'flex-end',
+    flexShrink: 0,
+  },
+  docTypeText: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#263366",
+  },
+  docGroupText: {
+    fontSize: 13,
+    color: "#5b7097",
+  },
+  docDateText: {
+    fontSize: 12,
+    color: "#5b7097",
+  },
+  miniBadge: {
+    display: "inline-block",
+    borderRadius: 999,
+    padding: "3px 9px",
+    fontSize: 11,
+    fontWeight: 700,
+  },
+  miniBadgeNeutral: {
+    backgroundColor: "#f4f6fb",
+    color: "#263366",
+  },
+  miniBadgeRunning: {
+    backgroundColor: "#fef3c7",
+    color: "#92400e",
+  },
+  miniBadgeSuccess: {
+    backgroundColor: "#dcfce7",
+    color: "#166534",
+  },
+  miniBadgeError: {
+    backgroundColor: "#fee2e2",
+    color: "#991b1b",
+  },
+  docExpandedBody: {
+    padding: 14,
+    borderTop: "1px solid #e2e8f0",
+    backgroundColor: "#fafbfd",
+  },
+  docMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+    gap: 12,
+    marginBottom: 12,
+    lineHeight: 1.5,
+    fontSize: 13,
+  },
+  docMetaValue: {
+    color: "#5b7097",
+    wordBreak: "break-word",
+  },
+  notesBox: {
+    backgroundColor: "#fff",
+    border: "1px solid #d9e6f7",
+    borderRadius: 10,
+    padding: 12,
+    lineHeight: 1.5,
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  errorInline: {
+    backgroundColor: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#991b1b",
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  successInline: {
+    backgroundColor: "#ecfdf3",
+    border: "1px solid #86efac",
+    color: "#166534",
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  actionButtonRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
   },
   extractButton: {
     backgroundColor: "#263366",
     color: "#fff",
     border: "none",
-    borderRadius: 14,
-    padding: "12px 16px",
+    borderRadius: 10,
+    padding: "10px 14px",
     fontWeight: 700,
     cursor: "pointer",
-    fontSize: 14,
-    minWidth: 160,
+    fontSize: 13,
+  },
+  approveButton: {
+    backgroundColor: "#16a34a",
+    color: "#fff",
+    border: "none",
+    borderRadius: 10,
+    padding: "10px 14px",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 13,
   },
   archiveButton: {
     backgroundColor: "#0096C7",
     color: "#fff",
     border: "none",
-    borderRadius: 14,
-    padding: "12px 16px",
+    borderRadius: 10,
+    padding: "10px 14px",
     fontWeight: 700,
     cursor: "pointer",
-    fontSize: 14,
-    minWidth: 160,
-  },
-  docMetaGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 14,
-    marginBottom: 14,
-    lineHeight: 1.6,
-  },
-  notesBox: {
-    backgroundColor: "#f8fbff",
-    border: "1px solid #d9e6f7",
-    borderRadius: 14,
-    padding: 14,
-    lineHeight: 1.6,
-  },
-  extractionSuccessBox: {
-    marginTop: 14,
-    backgroundColor: "#ecfdf3",
-    border: "1px solid #86efac",
-    color: "#166534",
-    borderRadius: 14,
-    padding: 14,
-    lineHeight: 1.6,
-  },
-  extractionErrorBox: {
-    marginTop: 14,
-    backgroundColor: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#991b1b",
-    borderRadius: 14,
-    padding: 14,
-    lineHeight: 1.6,
+    fontSize: 13,
   },
   reviewLink: {
     color: "#0070b3",
     fontWeight: 700,
-    textDecoration: 'underline',
+    textDecoration: "underline",
   },
 };
