@@ -1,21 +1,15 @@
 // =============================================================================
-// PHASE 7.5b — REPLACEMENT for app/admin/agency-guidelines/page.tsx
+// PHASE 7.5d — REPLACEMENT for app/admin/agency-guidelines/page.tsx
 //
-// What's new vs Phase 7.5:
-//   - Duplicate detection: groups records by (agency + product_family +
-//     normalized program_name). When 2+ records share the same key, they
-//     collapse into a "duplicate cluster" with three actions:
+// Changes vs Phase 7.5b:
+//   - Added bulkApproving state variable
+//   - Added handleApproveAllSingletons handler function
+//   - Added "Approve All N Draft Singletons" button at top of Individual
+//     records section
+//   - Added singletonHeaderRow + bulkApproveButton style entries
 //
-//     1. Pick winner — approve one, soft-reject others (sets is_active=false
-//        on losers, keeps them for audit, doesn't delete)
-//     2. Merge — combines fields intelligently into one row, soft-rejects
-//        the originals. Calls /api/admin/agency-guidelines/merge.
-//     3. Approve all — keeps all rows separate, activates each.
-//
-//   - Dedup also surfaces ACTIVE duplicates (e.g. when chunks were uploaded
-//     and approved in separate sessions). You can clean those up too.
-//
-//   - When NOT in a duplicate cluster, single-record cards render as before.
+// Everything else (dedup clusters, merge, pick winner, filters, tabs, badges)
+// is unchanged from Phase 7.5b.
 // =============================================================================
 
 "use client";
@@ -51,7 +45,7 @@ type Cluster = {
   key: string;
   agency: string;
   product_family: string;
-  programName: string; // canonical, from first row
+  programName: string;
   records: AgencyGuideline[];
 };
 
@@ -70,6 +64,7 @@ export default function AgencyGuidelinesPage() {
   const [familyFilter, setFamilyFilter] = useState<FamilyFilter>("all");
 
   const [busyId, setBusyId] = useState("");
+  const [bulkApproving, setBulkApproving] = useState(false);
 
   useEffect(() => {
     void loadGuidelines();
@@ -103,7 +98,6 @@ export default function AgencyGuidelinesPage() {
     return { all, active, drafts };
   }, [guidelines]);
 
-  // Filter the guidelines first
   const visibleGuidelines = useMemo(() => {
     let items = guidelines;
     if (activeTab === "active") items = items.filter((g) => g.is_active);
@@ -115,8 +109,6 @@ export default function AgencyGuidelinesPage() {
     return items;
   }, [guidelines, activeTab, agencyFilter, familyFilter]);
 
-  // Group into clusters. A cluster has 2+ records for the same key.
-  // Singletons are returned as 1-record clusters too, but rendered differently.
   const { clusters, singletons } = useMemo(() => {
     const map = new Map<string, AgencyGuideline[]>();
     for (const g of visibleGuidelines) {
@@ -187,12 +179,10 @@ export default function AgencyGuidelinesPage() {
   }
 
   async function handleSoftReject(id: string) {
-    // For drafts: just delete. For active: deactivate.
     const target = guidelines.find((g) => g.id === id);
     if (!target) return;
 
     if (!target.is_active) {
-      // Draft → confirm delete
       if (!window.confirm("Reject and delete this draft?")) return;
       setBusyId(id);
       try {
@@ -212,7 +202,6 @@ export default function AgencyGuidelinesPage() {
         setBusyId("");
       }
     } else {
-      // Active → deactivate
       if (!window.confirm("Deactivate this active program?")) return;
       setBusyId(id);
       try {
@@ -249,7 +238,6 @@ export default function AgencyGuidelinesPage() {
     setErrorMessage("");
     setStatusMessage("");
     try {
-      // Activate winner
       const winnerRes = await fetch("/api/admin/agency-guidelines", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -260,7 +248,6 @@ export default function AgencyGuidelinesPage() {
         throw new Error(winnerJson?.error || "Failed to activate winner.");
       }
 
-      // Reject others (delete drafts, deactivate active ones)
       const losers = cluster.records.filter((r) => r.id !== winnerId);
       for (const loser of losers) {
         if (!loser.is_active) {
@@ -353,6 +340,52 @@ export default function AgencyGuidelinesPage() {
       );
     } finally {
       setBusyId("");
+    }
+  }
+
+  async function handleApproveAllSingletons() {
+    const draftSingletonsCount = singletons.filter((g) => !g.is_active).length;
+    if (draftSingletonsCount === 0) return;
+    if (
+      !window.confirm(
+        `Approve all ${draftSingletonsCount} singleton draft${
+          draftSingletonsCount === 1 ? "" : "s"
+        } as active program${
+          draftSingletonsCount === 1 ? "" : "s"
+        }? Records that are part of duplicate clusters will be skipped — only true singletons get approved.`
+      )
+    )
+      return;
+    setBulkApproving(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const res = await fetch(
+        "/api/admin/agency-guidelines/approve-singletons",
+        { method: "POST" }
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json?.error || "Bulk approve failed.");
+      }
+      const skipMsg =
+        json.skippedCount > 0
+          ? ` (${json.skippedCount} cluster${
+              json.skippedCount === 1 ? "" : "s"
+            } skipped — needs merge/pick-winner)`
+          : "";
+      setStatusMessage(
+        `Activated ${json.approvedCount} singleton record${
+          json.approvedCount === 1 ? "" : "s"
+        }.${skipMsg}`
+      );
+      await loadGuidelines();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Bulk approve failed."
+      );
+    } finally {
+      setBulkApproving(false);
     }
   }
 
@@ -573,6 +606,8 @@ export default function AgencyGuidelinesPage() {
     );
   };
 
+  const draftSingletonsCount = singletons.filter((g) => !g.is_active).length;
+
   return (
     <main style={styles.page}>
       <div style={styles.wrap}>
@@ -667,9 +702,29 @@ export default function AgencyGuidelinesPage() {
 
             {singletons.length > 0 && (
               <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>
-                  Individual records ({singletons.length})
-                </h3>
+                <div style={styles.singletonHeaderRow}>
+                  <h3 style={styles.sectionTitle}>
+                    Individual records ({singletons.length})
+                  </h3>
+                  {draftSingletonsCount > 0 && (
+                    <button
+                      type="button"
+                      style={{
+                        ...styles.bulkApproveButton,
+                        opacity: bulkApproving ? 0.6 : 1,
+                        cursor: bulkApproving ? "wait" : "pointer",
+                      }}
+                      onClick={handleApproveAllSingletons}
+                      disabled={bulkApproving}
+                    >
+                      {bulkApproving
+                        ? "Approving…"
+                        : `Approve All ${draftSingletonsCount} Draft Singleton${
+                            draftSingletonsCount === 1 ? "" : "s"
+                          }`}
+                    </button>
+                  )}
+                </div>
                 <div style={styles.list}>
                   {singletons.map((g) => renderRecordCard(g, false))}
                 </div>
@@ -788,6 +843,23 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "0 0 12px 0",
     color: "#263366",
     fontWeight: 700,
+  },
+  singletonHeaderRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 12,
+  },
+  bulkApproveButton: {
+    backgroundColor: "#16a34a",
+    color: "#fff",
+    border: "none",
+    borderRadius: 12,
+    padding: "10px 18px",
+    fontWeight: 700,
+    fontSize: 14,
   },
   list: { display: "flex", flexDirection: "column", gap: 14 },
   card: {
