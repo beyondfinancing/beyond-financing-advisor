@@ -1,887 +1,910 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace existing entirely):
+//
+//     app/api/match/route.ts
+//
+// =============================================================================
+//
+// PHASE 1 SUPABASE-BACKED MATCHER
+//
+// Reads from: programs + program_guidelines + lenders + lender_state_eligibility
+//
+// Returns the contract expected by app/finley/page.tsx:
+//   strong_matches, conditional_matches, eliminated_paths,
+//   next_question, top_recommendation, lender_summary, summary
+//
+// NOT in this phase (planned for Phase 2):
+//   - global_guidelines (Fannie/Freddie agency programs)
+//   - lender_overlays
+//   - openai_enhancement
+//   - lender_product_assignments cross-check
+//
+// =============================================================================
+
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
-type OccupancyType =
-  | "primary_residence"
-  | "second_home"
-  | "investment_property"
-  | "";
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
 
-type TransactionType =
-  | "purchase"
-  | "rate_term_refinance"
-  | "cash_out_refinance"
-  | "second_lien"
-  | "";
-
-type CitizenshipType =
-  | "citizen"
-  | "permanent_resident"
-  | "non_permanent_resident"
-  | "itin_borrower"
-  | "daca"
-  | "foreign_national"
-  | "";
-
-type IncomeType =
-  | "full_doc"
-  | "express_doc"
-  | "bank_statements"
-  | "1099"
-  | "p_and_l"
-  | "asset_utilization"
-  | "dscr"
-  | "";
-
-type PropertyType =
-  | "single_family"
-  | "condo"
-  | "two_to_four_unit"
-  | "mixed_use"
-  | "manufactured"
-  | "";
-
-type MatchRequestPayload = {
-  borrowerName?: string;
-  loanOfficerName?: string;
-  language?: "en" | "pt" | "es";
-  creditScore?: number | string;
-  monthlyIncome?: number | string;
-  monthlyDebt?: number | string;
-  liquidAssets?: number | string;
-  reservesMonths?: number | string;
-  homePrice?: number | string;
-  downPayment?: number | string;
-  loanAmount?: number | string;
-  occupancy?: OccupancyType;
-  transactionType?: TransactionType;
-  propertyType?: PropertyType;
-  citizenshipStatus?: CitizenshipType;
-  incomeType?: IncomeType;
-  selfEmployedYears?: number | string;
-  firstTimeHomebuyer?: boolean;
-  bankruptcySeasoningMonths?: number | string;
-  foreclosureSeasoningMonths?: number | string;
-  lateMortgagePayments12m?: number | string;
-  lateMortgagePayments24m?: number | string;
-  hasPrepaymentPenaltyTolerance?: boolean;
-  interestOnlyPreference?: boolean;
-  dscrRatio?: number | string;
-  estimatedRentalIncome?: number | string;
-  monthlyHousingPayment?: number | string;
-  wantsAffordableProgramReview?: boolean;
-  wantsNonQmReview?: boolean;
-  wantsInvestorReview?: boolean;
+type FormPayload = {
+  subject_state?: string;
+  borrower_status?: string;
+  occupancy_type?: string;
+  transaction_type?: string;
+  income_type?: string;
+  property_type?: string;
+  credit_score?: string | number;
+  ltv?: string | number;
+  dti?: string | number;
+  loan_amount?: string | number;
+  units?: string | number;
+  first_time_homebuyer?: boolean | string;
+  available_reserves_months?: string | number;
 };
 
-type MatchFit = "Strong" | "Possible" | "Caution" | "Ineligible";
-
-type LenderProgram = {
-  id: string;
-  lender: string;
-  programName: string;
-  category:
-    | "Agency"
-    | "Government"
-    | "Non-QM"
-    | "Investor"
-    | "Specialty"
-    | "HELOC";
-  priority: number;
-  states?: string[];
-  occupancyAllowed: OccupancyType[];
-  transactionTypes: TransactionType[];
-  propertyTypes: PropertyType[];
-  citizenshipAllowed: CitizenshipType[];
-  incomeTypes: IncomeType[];
-  minCreditScore?: number;
-  maxLtv?: number;
-  maxDti?: number;
-  minDownPaymentPct?: number;
-  minReservesMonths?: number;
-  minSelfEmployedYears?: number;
-  minDscr?: number;
-  allowFirstTimeHomebuyer?: boolean;
-  allowInterestOnly?: boolean;
-  allowPrepaymentPenalty?: boolean;
+type MatchBucket = {
+  lender_name: string;
+  lender_id: string;
+  program_name: string;
+  program_slug: string | null;
+  loan_category: string | null;
+  guideline_id: string;
   notes: string[];
-  docPriorities: string[];
-  cautionRules?: string[];
-};
-
-type ProgramMatchResult = {
-  id: string;
-  lender: string;
-  programName: string;
-  category: LenderProgram["category"];
-  fit: MatchFit;
+  missing_items: string[];
+  blockers: string[];
+  strengths: string[];
+  concerns: string[];
+  explanation: string;
   score: number;
-  headline: string;
-  reasons: string[];
-  cautions: string[];
-  missingItems: string[];
-  docChecklist: string[];
+  required_reserves_months: number | null;
 };
 
-type MatchResponse = {
-  success: true;
-  borrowerSummary: {
-    borrowerName: string;
-    loanOfficerName: string;
-    language: string;
-    estimatedLoanAmount: number;
-    estimatedLtvPct: number;
-    estimatedDtiPct: number | null;
-    dscrRatio: number | null;
-  };
-  executiveSummary: string;
-  topMatches: ProgramMatchResult[];
-  otherMatches: ProgramMatchResult[];
-  cautionFlags: string[];
-  missingDocuments: string[];
-  nextQuestions: string[];
+type ProgramRow = {
+  id: string;
+  name: string | null;
+  slug: string | null;
+  loan_category: string | null;
+  is_active: boolean;
+  lender_id: string;
+  lenders: {
+    id: string;
+    name: string | null;
+    states: string[] | null;
+  } | null;
+  program_guidelines: GuidelineRow[];
 };
+
+type GuidelineRow = {
+  id: string;
+  program_id: string;
+  borrower_statuses: unknown;
+  occupancy_types: unknown;
+  transaction_types: unknown;
+  income_types: unknown;
+  property_types: unknown;
+  min_credit_score: number | null;
+  max_ltv: number | null;
+  max_dti: number | null;
+  min_loan_amount: number | null;
+  max_loan_amount: number | null;
+  max_units: number | null;
+  min_units: number | null;
+  reserves_required_months: number | null;
+  first_time_homebuyer_allowed: boolean | null;
+  allows_itin: boolean | null;
+  allows_daca: boolean | null;
+  allows_foreign_national: boolean | null;
+  allows_non_permanent_resident: boolean | null;
+  guideline_summary: string | null;
+  guideline_notes: string | null;
+  is_active: boolean;
+};
+
+type StateEligibilityRow = {
+  lender_id: string;
+  state_code: string;
+  owner_occupied_allowed: boolean;
+  non_owner_occupied_allowed: boolean;
+  second_home_allowed: boolean;
+  heloc_allowed: boolean;
+  is_active: boolean;
+};
+
+// -----------------------------------------------------------------------------
+// Normalization helpers
+// -----------------------------------------------------------------------------
 
 function toNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
-    const cleaned = value.replace(/[$,%\s,]/g, "").trim();
+    const cleaned = value.replace(/[$,%\s]/g, "").trim();
+    if (!cleaned) return 0;
     const parsed = Number(cleaned);
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
 }
 
-function round(value: number, decimals = 2) {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
+function toStringArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v).trim()).filter(Boolean);
+  }
+  return [];
 }
 
-function uniqueStrings(values: string[]) {
-  return Array.from(new Set(values.map((item) => item.trim()).filter(Boolean)));
+// Normalizes a single token to lowercase snake_case for comparison.
+// Handles "Primary" -> "primary", "Second Home" -> "second_home", etc.
+function normalizeToken(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
 }
 
-function clampScore(value: number) {
-  if (value < 0) return 0;
-  if (value > 100) return 100;
-  return Math.round(value);
+// Checks if a normalized input value matches any of the array values
+// after normalizing both sides. Handles snake_case + capitalized variants.
+//
+// Special case: occupancy. "primary_residence" should match "Primary",
+// "second_home" should match "Second Home", "investment_property"
+// should match "Investment".
+function arrayContainsNormalized(
+  arr: string[],
+  inputValue: string,
+  fieldType: "occupancy" | "default" = "default"
+): boolean {
+  if (arr.length === 0) return true; // Empty array = no restriction stated
+  const normalizedInput = normalizeToken(inputValue);
+
+  for (const item of arr) {
+    const normalizedItem = normalizeToken(item);
+
+    if (normalizedItem === normalizedInput) return true;
+
+    if (fieldType === "occupancy") {
+      // Map shorthand DB values to form enum values
+      if (normalizedInput === "primary_residence" && normalizedItem === "primary") return true;
+      if (normalizedInput === "second_home" && normalizedItem === "second_home") return true;
+      if (normalizedInput === "investment_property" && normalizedItem === "investment") return true;
+      // And reverse
+      if (normalizedItem === "primary_residence" && normalizedInput === "primary") return true;
+      if (normalizedItem === "investment" && normalizedInput === "investment_property") return true;
+    }
+  }
+
+  return false;
 }
 
-const PROGRAMS: LenderProgram[] = [
-  {
-    id: "fannie-conventional-primary",
-    lender: "Agency / Fannie Mae",
-    programName: "Conventional Primary Residence Review",
-    category: "Agency",
-    priority: 100,
-    occupancyAllowed: ["primary_residence", "second_home"],
-    transactionTypes: ["purchase", "rate_term_refinance", "cash_out_refinance"],
-    propertyTypes: ["single_family", "condo", "two_to_four_unit"],
-    citizenshipAllowed: [
-      "citizen",
-      "permanent_resident",
-      "non_permanent_resident",
-    ],
-    incomeTypes: ["full_doc", "express_doc"],
-    minCreditScore: 620,
-    maxLtv: 0.97,
-    maxDti: 0.5,
-    minDownPaymentPct: 0.03,
-    allowFirstTimeHomebuyer: true,
-    allowInterestOnly: false,
-    allowPrepaymentPenalty: false,
-    notes: [
-      "Best used for fully documented wage-earner or standard income scenarios.",
-      "AUS findings, reserves, and property review still control final eligibility.",
-    ],
-    docPriorities: [
-      "1003 / loan application",
-      "Income documentation",
-      "Asset documentation",
-      "Credit review",
-      "Property details",
-    ],
-  },
-  {
-    id: "freddie-home-possible-review",
-    lender: "Agency / Freddie Mac",
-    programName: "Home Possible / Affordable Review",
-    category: "Agency",
-    priority: 92,
-    occupancyAllowed: ["primary_residence"],
-    transactionTypes: ["purchase", "rate_term_refinance"],
-    propertyTypes: ["single_family", "condo", "two_to_four_unit"],
-    citizenshipAllowed: [
-      "citizen",
-      "permanent_resident",
-      "non_permanent_resident",
-    ],
-    incomeTypes: ["full_doc", "express_doc"],
-    minCreditScore: 620,
-    maxLtv: 0.97,
-    maxDti: 0.5,
-    minDownPaymentPct: 0.03,
-    allowFirstTimeHomebuyer: true,
-    allowInterestOnly: false,
-    allowPrepaymentPenalty: false,
-    notes: [
-      "Affordable-style review may be appropriate when structure and income support it.",
-      "Final eligibility depends on AMI, AUS, and current guideline overlays.",
-    ],
-    docPriorities: [
-      "1003 / loan application",
-      "Income documentation",
-      "Asset documentation",
-      "Homebuyer status review",
-      "Property details",
-    ],
-  },
-  {
-    id: "fha-primary-review",
-    lender: "Government / FHA",
-    programName: "FHA Primary Residence Review",
-    category: "Government",
-    priority: 95,
-    occupancyAllowed: ["primary_residence"],
-    transactionTypes: ["purchase", "rate_term_refinance", "cash_out_refinance"],
-    propertyTypes: ["single_family", "condo", "two_to_four_unit"],
-    citizenshipAllowed: [
-      "citizen",
-      "permanent_resident",
-      "non_permanent_resident",
-      "daca",
-    ],
-    incomeTypes: ["full_doc", "express_doc"],
-    minCreditScore: 580,
-    maxLtv: 0.965,
-    maxDti: 0.57,
-    minDownPaymentPct: 0.035,
-    allowFirstTimeHomebuyer: true,
-    allowInterestOnly: false,
-    allowPrepaymentPenalty: false,
-    notes: [
-      "Useful fallback path where agency conventional is weaker.",
-      "Manual downgrade and payment history issues still require careful review.",
-    ],
-    docPriorities: [
-      "1003 / loan application",
-      "Income documentation",
-      "Asset documentation",
-      "Housing history",
-      "Credit review",
-    ],
-  },
-  {
-    id: "fnba-bank-statement-review",
-    lender: "FNBA",
-    programName: "12-24 Month Bank Statement Review",
-    category: "Non-QM",
-    priority: 97,
-    occupancyAllowed: ["primary_residence", "second_home", "investment_property"],
-    transactionTypes: ["purchase", "rate_term_refinance", "cash_out_refinance"],
-    propertyTypes: ["single_family", "condo", "two_to_four_unit", "mixed_use"],
-    citizenshipAllowed: [
-      "citizen",
-      "permanent_resident",
-      "non_permanent_resident",
-      "itin_borrower",
-      "foreign_national",
-      "daca",
-    ],
-    incomeTypes: ["bank_statements", "1099", "p_and_l"],
-    minCreditScore: 620,
-    maxLtv: 0.9,
-    maxDti: 0.55,
-    minReservesMonths: 3,
-    minSelfEmployedYears: 1,
-    allowFirstTimeHomebuyer: true,
-    allowInterestOnly: true,
-    allowPrepaymentPenalty: true,
-    notes: [
-      "Good directional fit for self-employed borrowers using alternative income methods.",
-      "Final review depends on business stability, expense factor, and reserves.",
-    ],
-    docPriorities: [
-      "12 or 24 months bank statements",
-      "Business existence documentation",
-      "CPA / tax preparer support if applicable",
-      "Asset / reserve documentation",
-      "Letter of explanation if needed",
-    ],
-    cautionRules: [
-      "Large undocumented deposits may require additional review.",
-      "Short self-employment history may narrow options.",
-    ],
-  },
-  {
-    id: "fnba-p-and-l-review",
-    lender: "FNBA",
-    programName: "1-2 Year P&L Review",
-    category: "Non-QM",
-    priority: 94,
-    occupancyAllowed: ["primary_residence", "second_home", "investment_property"],
-    transactionTypes: ["purchase", "rate_term_refinance", "cash_out_refinance"],
-    propertyTypes: ["single_family", "condo", "two_to_four_unit", "mixed_use"],
-    citizenshipAllowed: [
-      "citizen",
-      "permanent_resident",
-      "non_permanent_resident",
-      "itin_borrower",
-      "foreign_national",
-      "daca",
-    ],
-    incomeTypes: ["p_and_l", "1099"],
-    minCreditScore: 620,
-    maxLtv: 0.8,
-    maxDti: 0.55,
-    minReservesMonths: 3,
-    minSelfEmployedYears: 1,
-    allowFirstTimeHomebuyer: true,
-    allowInterestOnly: true,
-    allowPrepaymentPenalty: true,
-    notes: [
-      "Can be useful where tax returns do not reflect true cash flow.",
-      "Prepared P&L support and consistency review remain critical.",
-    ],
-    docPriorities: [
-      "Prepared year-to-date or annual P&L",
-      "Business existence documentation",
-      "Supporting bank activity if required",
-      "Asset / reserve documentation",
-      "LOE for variances",
-    ],
-  },
-  {
-    id: "clearedge-dscr-review",
-    lender: "ClearEdge Lending",
-    programName: "DSCR Investor Review",
-    category: "Investor",
-    priority: 96,
-    occupancyAllowed: ["investment_property"],
-    transactionTypes: ["purchase", "rate_term_refinance", "cash_out_refinance"],
-    propertyTypes: ["single_family", "condo", "two_to_four_unit", "mixed_use"],
-    citizenshipAllowed: [
-      "citizen",
-      "permanent_resident",
-      "non_permanent_resident",
-      "foreign_national",
-      "itin_borrower",
-    ],
-    incomeTypes: ["dscr", "asset_utilization", "bank_statements", "full_doc"],
-    minCreditScore: 660,
-    maxLtv: 0.8,
-    minDscr: 0.75,
-    minReservesMonths: 6,
-    allowFirstTimeHomebuyer: false,
-    allowInterestOnly: true,
-    allowPrepaymentPenalty: true,
-    notes: [
-      "Primarily useful where rental cash flow is central to qualification.",
-      "Lease, market rent, and property condition still matter materially.",
-    ],
-    docPriorities: [
-      "Lease agreement or market rent support",
-      "DSCR calculation inputs",
-      "Asset / reserve documentation",
-      "Entity documentation if applicable",
-      "Property insurance / tax estimate",
-    ],
-  },
-  {
-    id: "foreign-national-review",
-    lender: "Specialty Foreign National",
-    programName: "Foreign National Directional Review",
-    category: "Specialty",
-    priority: 85,
-    occupancyAllowed: ["second_home", "investment_property"],
-    transactionTypes: ["purchase", "rate_term_refinance"],
-    propertyTypes: ["single_family", "condo"],
-    citizenshipAllowed: ["foreign_national"],
-    incomeTypes: ["bank_statements", "asset_utilization", "full_doc"],
-    minCreditScore: 680,
-    maxLtv: 0.75,
-    minReservesMonths: 12,
-    allowFirstTimeHomebuyer: false,
-    allowInterestOnly: true,
-    allowPrepaymentPenalty: true,
-    notes: [
-      "Useful only for foreign-national-specific review paths.",
-      "Documentation source, U.S. credit availability, and reserve strength remain important.",
-    ],
-    docPriorities: [
-      "Passport / visa documents",
-      "Foreign bank statements or assets",
-      "Credit alternatives if required",
-      "Source of funds review",
-      "Property and occupancy support",
-    ],
-  },
-  {
-    id: "heloc-equity-review",
-    lender: "Specialty Equity",
-    programName: "HELOC / Closed-End Second Review",
-    category: "HELOC",
-    priority: 70,
-    occupancyAllowed: ["primary_residence", "second_home", "investment_property"],
-    transactionTypes: ["second_lien"],
-    propertyTypes: ["single_family", "condo", "two_to_four_unit"],
-    citizenshipAllowed: [
-      "citizen",
-      "permanent_resident",
-      "non_permanent_resident",
-    ],
-    incomeTypes: ["full_doc", "express_doc", "bank_statements", "1099"],
-    minCreditScore: 660,
-    maxLtv: 0.9,
-    maxDti: 0.5,
-    minReservesMonths: 2,
-    allowFirstTimeHomebuyer: false,
-    allowInterestOnly: true,
-    allowPrepaymentPenalty: false,
-    notes: [
-      "Useful for second-lien or equity-access scenarios.",
-      "Combined lien position and current first mortgage terms remain key.",
-    ],
-    docPriorities: [
-      "Current mortgage statement",
-      "Property value support",
-      "Income documentation",
-      "Asset documentation",
-      "Title / lien review",
-    ],
-  },
-];
-const ALL_PROGRAMS = [...PROGRAMS];
+// Borrower status check with the allows_* boolean fallbacks.
+function borrowerStatusMatches(
+  borrowerStatuses: string[],
+  inputStatus: string,
+  guideline: GuidelineRow
+): boolean {
+  if (!inputStatus) return true;
 
-function evaluateProgram(
-  payload: Required<MatchRequestPayload>,
-  program: LenderProgram
-): ProgramMatchResult {
-  const reasons: string[] = [];
-  const cautions: string[] = [];
-  const missingItems: string[] = [];
+  const normalizedInput = normalizeToken(inputStatus);
 
-  let score = program.priority * 0.5;
-
-  const creditScore = toNumber(payload.creditScore);
-  const monthlyIncome = toNumber(payload.monthlyIncome);
-  const monthlyDebt = toNumber(payload.monthlyDebt);
-  const homePrice = toNumber(payload.homePrice);
-  const downPayment = toNumber(payload.downPayment);
-  const providedLoanAmount = toNumber(payload.loanAmount);
-  const loanAmount =
-    providedLoanAmount > 0 ? providedLoanAmount : Math.max(homePrice - downPayment, 0);
-
-  const ltv = homePrice > 0 ? loanAmount / homePrice : 0;
-  const dti = monthlyIncome > 0 ? monthlyDebt / monthlyIncome : 0;
-  const reservesMonths = toNumber(payload.reservesMonths);
-  const selfEmployedYears = toNumber(payload.selfEmployedYears);
-  const dscrRatio = toNumber(payload.dscrRatio);
-
-  if (!program.occupancyAllowed.includes(payload.occupancy)) {
-    return {
-      id: program.id,
-      lender: program.lender,
-      programName: program.programName,
-      category: program.category,
-      fit: "Ineligible",
-      score: 0,
-      headline: "Occupancy does not align with this program.",
-      reasons: [],
-      cautions: ["Occupancy mismatch."],
-      missingItems: [],
-      docChecklist: program.docPriorities,
-    };
-  }
-
-  if (!program.transactionTypes.includes(payload.transactionType)) {
-    return {
-      id: program.id,
-      lender: program.lender,
-      programName: program.programName,
-      category: program.category,
-      fit: "Ineligible",
-      score: 0,
-      headline: "Transaction type does not align with this program.",
-      reasons: [],
-      cautions: ["Transaction type mismatch."],
-      missingItems: [],
-      docChecklist: program.docPriorities,
-    };
-  }
-
-  if (!program.propertyTypes.includes(payload.propertyType)) {
-    return {
-      id: program.id,
-      lender: program.lender,
-      programName: program.programName,
-      category: program.category,
-      fit: "Ineligible",
-      score: 0,
-      headline: "Property type does not align with this program.",
-      reasons: [],
-      cautions: ["Property type mismatch."],
-      missingItems: [],
-      docChecklist: program.docPriorities,
-    };
-  }
-
-  if (!program.citizenshipAllowed.includes(payload.citizenshipStatus)) {
-    return {
-      id: program.id,
-      lender: program.lender,
-      programName: program.programName,
-      category: program.category,
-      fit: "Ineligible",
-      score: 0,
-      headline: "Citizenship or residency profile does not align with this review path.",
-      reasons: [],
-      cautions: ["Citizenship / residency mismatch."],
-      missingItems: [],
-      docChecklist: program.docPriorities,
-    };
-  }
-
-  if (!program.incomeTypes.includes(payload.incomeType)) {
-    return {
-      id: program.id,
-      lender: program.lender,
-      programName: program.programName,
-      category: program.category,
-      fit: "Ineligible",
-      score: 0,
-      headline: "Income type does not align with this program.",
-      reasons: [],
-      cautions: ["Income documentation method mismatch."],
-      missingItems: [],
-      docChecklist: program.docPriorities,
-    };
-  }
-
-  if (creditScore <= 0) {
-    missingItems.push("Estimated credit score");
-  } else if (program.minCreditScore && creditScore >= program.minCreditScore) {
-    score += 18;
-    reasons.push(
-      `Credit score appears to meet the directional minimum threshold of ${program.minCreditScore}.`
-    );
-  } else if (program.minCreditScore) {
-    score -= 30;
-    cautions.push(
-      `Estimated credit score appears below the directional minimum of ${program.minCreditScore}.`
-    );
-  }
-
-  if (homePrice > 0 && loanAmount > 0) {
-    if (program.maxLtv !== undefined && ltv <= program.maxLtv) {
-      score += 16;
-      reasons.push(
-        `Estimated LTV of ${round(ltv * 100)}% appears within the directional cap of ${round(
-          program.maxLtv * 100
-        )}%.`
-      );
-    } else if (program.maxLtv !== undefined) {
-      score -= 22;
-      cautions.push(
-        `Estimated LTV of ${round(ltv * 100)}% appears above the directional cap of ${round(
-          program.maxLtv * 100
-        )}%.`
-      );
+  // Direct array membership
+  if (borrowerStatuses.length > 0) {
+    for (const item of borrowerStatuses) {
+      if (normalizeToken(item) === normalizedInput) return true;
     }
   } else {
-    missingItems.push("Home price and down payment / loan amount");
+    // Empty array means no restriction stated — fall through to allows_* booleans
   }
 
-  if (monthlyIncome > 0 && monthlyDebt >= 0) {
-    if (program.maxDti !== undefined && dti <= program.maxDti) {
+  // Boolean fallbacks
+  if (normalizedInput === "itin_borrower" && guideline.allows_itin === true) return true;
+  if (normalizedInput === "daca" && guideline.allows_daca === true) return true;
+  if (normalizedInput === "foreign_national" && guideline.allows_foreign_national === true) return true;
+  if (normalizedInput === "non_permanent_resident" && guideline.allows_non_permanent_resident === true) return true;
+
+  // If the array is non-empty AND the input wasn't found AND no boolean override applies, no match.
+  // If the array is empty AND no boolean override applies, treat as no restriction stated.
+  if (borrowerStatuses.length === 0) {
+    // No data at all on this dimension — pass-through (will be flagged as soft)
+    return true;
+  }
+
+  return false;
+}
+
+// -----------------------------------------------------------------------------
+// Guideline completeness check (option b: skip if insufficient)
+// -----------------------------------------------------------------------------
+
+function hasSufficientGuidelineData(g: GuidelineRow): boolean {
+  const borrowerStatuses = toStringArray(g.borrower_statuses);
+  const occupancyTypes = toStringArray(g.occupancy_types);
+  const incomeTypes = toStringArray(g.income_types);
+  const propertyTypes = toStringArray(g.property_types);
+  const transactionTypes = toStringArray(g.transaction_types);
+
+  // Has at least SOME structural data: at least one populated array OR some allows_* boolean
+  // OR a credit/ltv threshold.
+  const hasArrayData =
+    borrowerStatuses.length > 0 ||
+    occupancyTypes.length > 0 ||
+    incomeTypes.length > 0 ||
+    propertyTypes.length > 0 ||
+    transactionTypes.length > 0;
+
+  const hasAllowsBoolean =
+    g.allows_itin === true ||
+    g.allows_daca === true ||
+    g.allows_foreign_national === true ||
+    g.allows_non_permanent_resident === true;
+
+  const hasNumericThreshold =
+    g.min_credit_score !== null ||
+    g.max_ltv !== null ||
+    g.max_dti !== null ||
+    g.max_loan_amount !== null;
+
+  return hasArrayData || hasAllowsBoolean || hasNumericThreshold;
+}
+
+// -----------------------------------------------------------------------------
+// Per-program evaluation
+// -----------------------------------------------------------------------------
+
+type EvaluationResult = {
+  bucket: "strong" | "conditional" | "eliminated";
+  score: number;
+  blockers: string[];
+  concerns: string[];
+  strengths: string[];
+  missingItems: string[];
+  explanation: string;
+};
+
+function evaluateProgram(
+  guideline: GuidelineRow,
+  payload: FormPayload,
+  stateEligibility: StateEligibilityRow | null,
+  lenderName: string,
+  programName: string
+): EvaluationResult {
+  const blockers: string[] = [];
+  const concerns: string[] = [];
+  const strengths: string[] = [];
+  const missingItems: string[] = [];
+
+  let score = 50;
+
+  const subjectState = String(payload.subject_state || "").trim().toUpperCase();
+  const borrowerStatus = String(payload.borrower_status || "").trim();
+  const occupancyType = String(payload.occupancy_type || "").trim();
+  const transactionType = String(payload.transaction_type || "").trim();
+  const incomeType = String(payload.income_type || "").trim();
+  const propertyType = String(payload.property_type || "").trim();
+  const creditScore = toNumber(payload.credit_score);
+  const ltv = toNumber(payload.ltv);
+  const dti = toNumber(payload.dti);
+  const loanAmount = toNumber(payload.loan_amount);
+  const units = toNumber(payload.units);
+  const reservesMonths = toNumber(payload.available_reserves_months);
+  const firstTimeHomebuyer =
+    payload.first_time_homebuyer === true || payload.first_time_homebuyer === "yes";
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 1: State eligibility
+  // -------------------------------------------------------------------------
+  if (subjectState) {
+    if (!stateEligibility || !stateEligibility.is_active) {
+      blockers.push(
+        `${lenderName} has no active state eligibility entry for ${subjectState}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${lenderName} is not currently eligible to lend in ${subjectState} per state eligibility data.`,
+      };
+    }
+
+    const isOwnerOccupiedScenario =
+      occupancyType === "primary_residence" || occupancyType === "second_home";
+    const isInvestmentScenario = occupancyType === "investment_property";
+
+    if (isOwnerOccupiedScenario && !stateEligibility.owner_occupied_allowed) {
+      blockers.push(
+        `${lenderName} is not licensed for owner-occupied loans in ${subjectState}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${lenderName} does not allow owner-occupied lending in ${subjectState}.`,
+      };
+    }
+
+    if (isInvestmentScenario && !stateEligibility.non_owner_occupied_allowed) {
+      blockers.push(
+        `${lenderName} is not licensed for non-owner-occupied loans in ${subjectState}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${lenderName} does not allow investment-property lending in ${subjectState}.`,
+      };
+    }
+
+    strengths.push(`${lenderName} is licensed in ${subjectState} for this occupancy.`);
+  } else {
+    missingItems.push("Subject state");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 2: Borrower status
+  // -------------------------------------------------------------------------
+  if (borrowerStatus) {
+    const borrowerStatuses = toStringArray(guideline.borrower_statuses);
+    if (!borrowerStatusMatches(borrowerStatuses, borrowerStatus, guideline)) {
+      blockers.push(
+        `${programName} does not allow borrower status: ${borrowerStatus.replace(/_/g, " ")}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Borrower status (${borrowerStatus.replace(/_/g, " ")}) is not permitted under ${programName}.`,
+      };
+    }
+    strengths.push(`Borrower status (${borrowerStatus.replace(/_/g, " ")}) is permitted.`);
+  } else {
+    missingItems.push("Borrower status");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 3: Occupancy type
+  // -------------------------------------------------------------------------
+  if (occupancyType) {
+    const occupancyTypes = toStringArray(guideline.occupancy_types);
+    if (!arrayContainsNormalized(occupancyTypes, occupancyType, "occupancy")) {
+      blockers.push(
+        `${programName} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Occupancy (${occupancyType.replace(/_/g, " ")}) is not permitted under ${programName}.`,
+      };
+    }
+    if (occupancyTypes.length > 0) {
+      strengths.push(`Occupancy (${occupancyType.replace(/_/g, " ")}) is permitted.`);
+    }
+  } else {
+    missingItems.push("Occupancy type");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 4: Transaction type
+  // -------------------------------------------------------------------------
+  if (transactionType) {
+    const transactionTypes = toStringArray(guideline.transaction_types);
+    if (!arrayContainsNormalized(transactionTypes, transactionType)) {
+      blockers.push(
+        `${programName} does not allow transaction type: ${transactionType.replace(/_/g, " ")}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Transaction type (${transactionType.replace(/_/g, " ")}) is not permitted under ${programName}.`,
+      };
+    }
+    if (transactionTypes.length > 0) {
+      strengths.push(`Transaction type (${transactionType.replace(/_/g, " ")}) is permitted.`);
+    }
+  } else {
+    missingItems.push("Transaction type");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 5: Income type
+  // -------------------------------------------------------------------------
+  if (incomeType) {
+    const incomeTypes = toStringArray(guideline.income_types);
+    if (!arrayContainsNormalized(incomeTypes, incomeType)) {
+      blockers.push(
+        `${programName} does not accept income type: ${incomeType.replace(/_/g, " ")}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Income type (${incomeType.replace(/_/g, " ")}) is not accepted under ${programName}.`,
+      };
+    }
+    if (incomeTypes.length > 0) {
+      strengths.push(`Income type (${incomeType.replace(/_/g, " ")}) is accepted.`);
+    }
+  } else {
+    missingItems.push("Income type");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 6: Property type
+  // -------------------------------------------------------------------------
+  if (propertyType) {
+    const propertyTypes = toStringArray(guideline.property_types);
+    if (!arrayContainsNormalized(propertyTypes, propertyType)) {
+      blockers.push(
+        `${programName} does not allow property type: ${propertyType.replace(/_/g, " ")}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Property type (${propertyType.replace(/_/g, " ")}) is not permitted under ${programName}.`,
+      };
+    }
+    if (propertyTypes.length > 0) {
+      strengths.push(`Property type (${propertyType.replace(/_/g, " ")}) is permitted.`);
+    }
+  } else {
+    missingItems.push("Property type");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 7: Credit score
+  // -------------------------------------------------------------------------
+  if (creditScore > 0 && guideline.min_credit_score !== null) {
+    if (creditScore < guideline.min_credit_score) {
+      blockers.push(
+        `Credit score ${creditScore} is below program minimum of ${guideline.min_credit_score}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Credit score ${creditScore} does not meet minimum of ${guideline.min_credit_score} for ${programName}.`,
+      };
+    }
+    const margin = creditScore - guideline.min_credit_score;
+    if (margin >= 60) {
       score += 12;
-      reasons.push(
-        `Estimated DTI of ${round(dti * 100)}% appears within the directional tolerance.`
-      );
-    } else if (program.maxDti !== undefined) {
-      score -= 18;
-      cautions.push(
-        `Estimated DTI of ${round(dti * 100)}% may be above the directional tolerance.`
-      );
-    }
-  } else if (program.maxDti !== undefined) {
-    missingItems.push("Monthly income and debt for DTI review");
-  }
-
-  if (program.minReservesMonths !== undefined) {
-    if (reservesMonths >= program.minReservesMonths) {
+      strengths.push(`Credit score (${creditScore}) is well above the program minimum of ${guideline.min_credit_score}.`);
+    } else if (margin >= 30) {
       score += 8;
-      reasons.push(
-        `Reported reserves appear supportive relative to a ${program.minReservesMonths}-month directional target.`
-      );
-    } else if (reservesMonths > 0) {
-      score -= 8;
-      cautions.push(
-        `Reported reserves may be lighter than the directional target of ${program.minReservesMonths} months.`
-      );
-    } else {
-      missingItems.push("Reserve months / liquid asset strength");
-    }
-  }
-
-  if (program.minSelfEmployedYears !== undefined) {
-    if (selfEmployedYears >= program.minSelfEmployedYears) {
-      score += 7;
-      reasons.push(
-        `Self-employment history appears supportive for alternative-income review.`
-      );
-    } else if (selfEmployedYears > 0) {
-      score -= 9;
-      cautions.push(
-        `Self-employment history may be short for this directional path.`
-      );
-    } else if (
-      payload.incomeType === "bank_statements" ||
-      payload.incomeType === "1099" ||
-      payload.incomeType === "p_and_l"
-    ) {
-      missingItems.push("Self-employment history");
-    }
-  }
-
-  if (program.minDscr !== undefined) {
-    if (dscrRatio >= program.minDscr) {
-      score += 14;
-      reasons.push(
-        `Estimated DSCR of ${round(dscrRatio, 2)} appears supportive for investor review.`
-      );
-    } else if (dscrRatio > 0) {
-      score -= 15;
-      cautions.push(
-        `Estimated DSCR of ${round(dscrRatio, 2)} may be below the directional target of ${program.minDscr}.`
-      );
-    } else {
-      missingItems.push("Estimated DSCR ratio");
-    }
-  }
-
-  if (payload.firstTimeHomebuyer) {
-    if (program.allowFirstTimeHomebuyer === false) {
-      score -= 10;
-      cautions.push("First-time-homebuyer profile may not align with this path.");
-    } else {
+      strengths.push(`Credit score (${creditScore}) clears the program minimum of ${guideline.min_credit_score} comfortably.`);
+    } else if (margin >= 10) {
       score += 4;
-      reasons.push("First-time-homebuyer status does not appear to block this path.");
-    }
-  }
-
-  if (payload.interestOnlyPreference) {
-    if (program.allowInterestOnly) {
-      score += 3;
-      reasons.push("Interest-only preference may be available within this review lane.");
+      strengths.push(`Credit score (${creditScore}) meets the program minimum of ${guideline.min_credit_score}.`);
     } else {
-      cautions.push("Interest-only preference may not align with this lane.");
+      concerns.push(`Credit score (${creditScore}) only narrowly clears the program minimum of ${guideline.min_credit_score}.`);
+    }
+  } else if (creditScore <= 0) {
+    missingItems.push("Credit score");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 8: LTV
+  // -------------------------------------------------------------------------
+  if (ltv > 0 && guideline.max_ltv !== null) {
+    if (ltv > Number(guideline.max_ltv)) {
+      blockers.push(
+        `LTV ${ltv}% exceeds program maximum of ${guideline.max_ltv}%.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `LTV ${ltv}% exceeds the maximum LTV of ${guideline.max_ltv}% for ${programName}.`,
+      };
+    }
+    const margin = Number(guideline.max_ltv) - ltv;
+    if (margin >= 15) {
+      score += 10;
+      strengths.push(`LTV (${ltv}%) is comfortably below the program maximum of ${guideline.max_ltv}%.`);
+    } else if (margin >= 5) {
+      score += 5;
+      strengths.push(`LTV (${ltv}%) is within the program maximum of ${guideline.max_ltv}%.`);
+    } else {
+      concerns.push(`LTV (${ltv}%) is close to the program maximum of ${guideline.max_ltv}%.`);
+    }
+  } else if (ltv <= 0) {
+    missingItems.push("LTV");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 9: DTI
+  // -------------------------------------------------------------------------
+  if (dti > 0 && guideline.max_dti !== null) {
+    if (dti > Number(guideline.max_dti)) {
+      blockers.push(
+        `DTI ${dti}% exceeds program maximum of ${guideline.max_dti}%.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `DTI ${dti}% exceeds the maximum DTI of ${guideline.max_dti}% for ${programName}.`,
+      };
+    }
+    const margin = Number(guideline.max_dti) - dti;
+    if (margin >= 20) {
+      score += 8;
+      strengths.push(`DTI (${dti}%) is comfortably below the program maximum of ${guideline.max_dti}%.`);
+    } else if (margin >= 5) {
+      score += 4;
+      strengths.push(`DTI (${dti}%) is within the program maximum of ${guideline.max_dti}%.`);
+    } else {
+      concerns.push(`DTI (${dti}%) is close to the program maximum of ${guideline.max_dti}%.`);
+    }
+  } else if (dti <= 0) {
+    missingItems.push("DTI");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 10: Loan amount
+  // -------------------------------------------------------------------------
+  if (loanAmount > 0) {
+    if (guideline.min_loan_amount !== null && loanAmount < Number(guideline.min_loan_amount)) {
+      blockers.push(
+        `Loan amount $${loanAmount.toLocaleString()} is below program minimum of $${Number(guideline.min_loan_amount).toLocaleString()}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Loan amount $${loanAmount.toLocaleString()} is below the minimum of $${Number(guideline.min_loan_amount).toLocaleString()} for ${programName}.`,
+      };
+    }
+    if (guideline.max_loan_amount !== null && loanAmount > Number(guideline.max_loan_amount)) {
+      blockers.push(
+        `Loan amount $${loanAmount.toLocaleString()} exceeds program maximum of $${Number(guideline.max_loan_amount).toLocaleString()}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Loan amount $${loanAmount.toLocaleString()} exceeds the maximum of $${Number(guideline.max_loan_amount).toLocaleString()} for ${programName}.`,
+      };
+    }
+    if (guideline.min_loan_amount !== null || guideline.max_loan_amount !== null) {
+      strengths.push(`Loan amount $${loanAmount.toLocaleString()} is within program limits.`);
+    }
+  } else {
+    missingItems.push("Loan amount");
+  }
+
+  // -------------------------------------------------------------------------
+  // HARD CHECK 11: Units
+  // -------------------------------------------------------------------------
+  if (units > 0) {
+    if (guideline.min_units !== null && units < guideline.min_units) {
+      blockers.push(`Units (${units}) below program minimum of ${guideline.min_units}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Units count below program minimum for ${programName}.`,
+      };
+    }
+    if (guideline.max_units !== null && units > guideline.max_units) {
+      blockers.push(`Units (${units}) exceed program maximum of ${guideline.max_units}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Units count exceeds program maximum for ${programName}.`,
+      };
+    }
+  } else {
+    missingItems.push("Units");
+  }
+
+  // -------------------------------------------------------------------------
+  // SOFT CHECK: First-time homebuyer
+  // -------------------------------------------------------------------------
+  if (firstTimeHomebuyer && guideline.first_time_homebuyer_allowed === false) {
+    concerns.push(`Program does not allow first-time homebuyers.`);
+    score -= 8;
+  } else if (firstTimeHomebuyer && guideline.first_time_homebuyer_allowed === true) {
+    strengths.push(`First-time homebuyer is permitted.`);
+    score += 3;
+  }
+
+  // -------------------------------------------------------------------------
+  // SOFT CHECK: Reserves
+  // -------------------------------------------------------------------------
+  if (guideline.reserves_required_months !== null) {
+    if (reservesMonths === 0) {
+      missingItems.push("Available reserves (months of PITIA)");
+    } else if (reservesMonths >= guideline.reserves_required_months) {
+      score += 5;
+      strengths.push(`Reserves (${reservesMonths} months) meet program requirement of ${guideline.reserves_required_months} months.`);
+    } else {
+      concerns.push(
+        `Reserves (${reservesMonths} months) are below program requirement of ${guideline.reserves_required_months} months.`
+      );
+      score -= 6;
     }
   }
 
-  if (payload.hasPrepaymentPenaltyTolerance) {
-    if (program.allowPrepaymentPenalty) {
-      reasons.push("Prepayment-penalty tolerance may expand optionality here.");
-      score += 2;
-    }
+  // -------------------------------------------------------------------------
+  // BUCKET DECISION
+  // -------------------------------------------------------------------------
+  let bucket: "strong" | "conditional" = "conditional";
+  if (score >= 75 && concerns.length === 0 && missingItems.length <= 1) {
+    bucket = "strong";
+  } else if (score >= 60 && concerns.length <= 1) {
+    bucket = "strong";
+  } else {
+    bucket = "conditional";
   }
 
-  if (toNumber(payload.lateMortgagePayments12m) > 0) {
-    cautions.push("Recent mortgage lates may require layered review.");
-    score -= 10;
-  }
-
-  if (toNumber(payload.bankruptcySeasoningMonths) > 0) {
-    cautions.push("Bankruptcy seasoning should be reviewed against current program rules.");
-  }
-
-  if (toNumber(payload.foreclosureSeasoningMonths) > 0) {
-    cautions.push("Foreclosure seasoning should be reviewed against current program rules.");
-  }
-
-  if (program.cautionRules?.length) {
-    cautions.push(...program.cautionRules);
-  }
-
-  const finalScore = clampScore(score);
-
-  let fit: MatchFit = "Possible";
-  if (finalScore >= 78) fit = "Strong";
-  else if (finalScore >= 55) fit = "Possible";
-  else if (finalScore >= 30) fit = "Caution";
-  else fit = "Ineligible";
-
-  const headline =
-    fit === "Strong"
-      ? "This appears to be a strong directional fit for review."
-      : fit === "Possible"
-      ? "This appears workable but needs file-specific confirmation."
-      : fit === "Caution"
-      ? "This path may be possible, but there are material issues to review."
-      : "This path does not appear directionally aligned based on current inputs.";
+  const explanation =
+    bucket === "strong"
+      ? `${programName} aligns well with the borrower scenario across the documented qualification dimensions.`
+      : `${programName} appears workable but has some open items, soft concerns, or missing details to confirm before final placement.`;
 
   return {
-    id: program.id,
-    lender: program.lender,
-    programName: program.programName,
-    category: program.category,
-    fit,
-    score: finalScore,
-    headline,
-    reasons: uniqueStrings(reasons),
-    cautions: uniqueStrings(cautions),
-    missingItems: uniqueStrings(missingItems),
-    docChecklist: uniqueStrings(program.docPriorities),
+    bucket,
+    score,
+    blockers,
+    concerns,
+    strengths,
+    missingItems,
+    explanation,
   };
 }
 
-function buildExecutiveSummary(topMatches: ProgramMatchResult[]) {
-  if (topMatches.length === 0) {
-    return "No strong directional lender-program match was identified from the current intake. Additional borrower detail or a different structure may be needed.";
+// -----------------------------------------------------------------------------
+// Build next question
+// -----------------------------------------------------------------------------
+
+function buildNextQuestion(
+  payload: FormPayload,
+  strongCount: number,
+  conditionalCount: number,
+  eliminatedCount: number
+): string {
+  const orderedFieldChecks: { field: keyof FormPayload; question: string }[] = [
+    { field: "subject_state", question: "What is the subject state for this scenario?" },
+    { field: "borrower_status", question: "What is the borrower's current immigration or citizenship status?" },
+    { field: "occupancy_type", question: "Will this be a primary residence, second home, or investment property?" },
+    { field: "transaction_type", question: "Is this a purchase, rate-term refinance, cash-out refinance, or second lien?" },
+    { field: "income_type", question: "What documentation type will the borrower use — full doc, bank statements, 1099, P&L, asset utilization, or DSCR?" },
+    { field: "property_type", question: "What is the property type — single family, condo, townhouse, multi-unit, or mixed use?" },
+    { field: "credit_score", question: "What is the borrower's qualifying middle credit score?" },
+    { field: "ltv", question: "What is the target LTV?" },
+    { field: "loan_amount", question: "What is the requested loan amount?" },
+    { field: "dti", question: "What is the borrower's projected DTI?" },
+    { field: "available_reserves_months", question: "How many months of PITIA reserves are available after closing?" },
+  ];
+
+  for (const check of orderedFieldChecks) {
+    const value = payload[check.field];
+    const isEmpty = value === undefined || value === null || value === "" || value === "0";
+    if (isEmpty) return check.question;
   }
 
-  const best = topMatches[0];
-  return `Top directional fit currently appears to be ${best.programName} with ${best.lender}. Final eligibility remains subject to full file review, current overlays, documentation quality, and investor guidelines.`;
+  if (strongCount > 0) {
+    return "Please review the visible strong matches and confirm any remaining documentation or compensating factors.";
+  }
+  if (conditionalCount > 0) {
+    return "Please review the conditional matches and confirm the items flagged for closer review.";
+  }
+  if (eliminatedCount > 0) {
+    return "All currently loaded paths have been eliminated. Please review the eliminated paths and adjust the scenario or check whether additional lender programs need to be loaded.";
+  }
+  return "No visible paths were identified yet. Please confirm the next qualification detail.";
 }
 
-function buildNextQuestions(payload: Required<MatchRequestPayload>) {
-  const questions: string[] = [];
-
-  if (!toNumber(payload.creditScore)) {
-    questions.push("What is the borrower’s current estimated middle credit score?");
-  }
-
-  if (!toNumber(payload.monthlyIncome)) {
-    questions.push("What is the borrower’s current gross monthly qualifying income?");
-  }
-
-  if (!toNumber(payload.homePrice)) {
-    questions.push("What is the target purchase price or current property value?");
-  }
-
-  if (!toNumber(payload.downPayment) && !toNumber(payload.loanAmount)) {
-    questions.push("How much is available for down payment or what is the requested loan amount?");
-  }
-
-  if (
-    payload.incomeType === "bank_statements" ||
-    payload.incomeType === "1099" ||
-    payload.incomeType === "p_and_l"
-  ) {
-    if (!toNumber(payload.selfEmployedYears)) {
-      questions.push("How long has the borrower been self-employed in the same line of work?");
-    }
-  }
-
-  if (payload.occupancy === "investment_property" && !toNumber(payload.dscrRatio)) {
-    questions.push("What is the estimated DSCR or expected monthly rent versus payment?");
-  }
-
-  if (!toNumber(payload.reservesMonths) && payload.transactionType !== "purchase") {
-    questions.push("How many months of reserves are available after closing?");
-  }
-
-  return uniqueStrings(questions).slice(0, 8);
-}
+// -----------------------------------------------------------------------------
+// POST handler
+// -----------------------------------------------------------------------------
 
 export async function POST(req: Request) {
   try {
-    const raw = (await req.json()) as MatchRequestPayload;
+    const payload = (await req.json()) as FormPayload;
 
-    const payload: Required<MatchRequestPayload> = {
-      borrowerName: String(raw.borrowerName || "").trim(),
-      loanOfficerName: String(raw.loanOfficerName || "").trim(),
-      language: raw.language || "en",
-      creditScore: raw.creditScore ?? "",
-      monthlyIncome: raw.monthlyIncome ?? "",
-      monthlyDebt: raw.monthlyDebt ?? "",
-      liquidAssets: raw.liquidAssets ?? "",
-      reservesMonths: raw.reservesMonths ?? "",
-      homePrice: raw.homePrice ?? "",
-      downPayment: raw.downPayment ?? "",
-      loanAmount: raw.loanAmount ?? "",
-      occupancy: raw.occupancy || "",
-      transactionType: raw.transactionType || "",
-      propertyType: raw.propertyType || "",
-      citizenshipStatus: raw.citizenshipStatus || "",
-      incomeType: raw.incomeType || "",
-      selfEmployedYears: raw.selfEmployedYears ?? "",
-      firstTimeHomebuyer: Boolean(raw.firstTimeHomebuyer),
-      bankruptcySeasoningMonths: raw.bankruptcySeasoningMonths ?? "",
-      foreclosureSeasoningMonths: raw.foreclosureSeasoningMonths ?? "",
-      lateMortgagePayments12m: raw.lateMortgagePayments12m ?? "",
-      lateMortgagePayments24m: raw.lateMortgagePayments24m ?? "",
-      hasPrepaymentPenaltyTolerance: Boolean(raw.hasPrepaymentPenaltyTolerance),
-      interestOnlyPreference: Boolean(raw.interestOnlyPreference),
-      dscrRatio: raw.dscrRatio ?? "",
-      estimatedRentalIncome: raw.estimatedRentalIncome ?? "",
-      monthlyHousingPayment: raw.monthlyHousingPayment ?? "",
-      wantsAffordableProgramReview: Boolean(raw.wantsAffordableProgramReview),
-      wantsNonQmReview: Boolean(raw.wantsNonQmReview),
-      wantsInvestorReview: Boolean(raw.wantsInvestorReview),
-    };
+    const supabase = createClient();
 
-    const homePrice = toNumber(payload.homePrice);
-    const downPayment = toNumber(payload.downPayment);
-    const requestedLoanAmount = toNumber(payload.loanAmount);
-    const estimatedLoanAmount =
-      requestedLoanAmount > 0
-        ? requestedLoanAmount
-        : Math.max(homePrice - downPayment, 0);
+    // Pull all active programs + their active guidelines + lender info
+    const { data: programs, error: programsError } = await supabase
+      .from("programs")
+      .select(`
+        id,
+        name,
+        slug,
+        loan_category,
+        is_active,
+        lender_id,
+        lenders ( id, name, states ),
+        program_guidelines ( * )
+      `)
+      .eq("is_active", true);
 
-    const estimatedLtvPct =
-      homePrice > 0 ? round((estimatedLoanAmount / homePrice) * 100, 2) : 0;
+    if (programsError) {
+      return NextResponse.json(
+        { success: false, error: `Failed to load programs: ${programsError.message}` },
+        { status: 500 }
+      );
+    }
 
-    const monthlyIncome = toNumber(payload.monthlyIncome);
-    const monthlyDebt = toNumber(payload.monthlyDebt);
-    const estimatedDtiPct =
-      monthlyIncome > 0 ? round((monthlyDebt / monthlyIncome) * 100, 2) : null;
+    // Pull state eligibility once
+    const subjectState = String(payload.subject_state || "").trim().toUpperCase();
+    let stateEligibilityRows: StateEligibilityRow[] = [];
+    if (subjectState) {
+      const { data: stateRows, error: stateError } = await supabase
+        .from("lender_state_eligibility")
+        .select("*")
+        .eq("state_code", subjectState);
+      if (stateError) {
+        return NextResponse.json(
+          { success: false, error: `Failed to load state eligibility: ${stateError.message}` },
+          { status: 500 }
+        );
+      }
+      stateEligibilityRows = (stateRows || []) as StateEligibilityRow[];
+    }
+    const stateByLender = new Map<string, StateEligibilityRow>();
+    for (const row of stateEligibilityRows) {
+      stateByLender.set(row.lender_id, row);
+    }
 
-    const dscrRatio = toNumber(payload.dscrRatio) || null;
+    const allRows = (programs || []) as ProgramRow[];
 
-    const results = ALL_PROGRAMS.map((program) => evaluateProgram(payload, program))
-      .filter((item) => item.fit !== "Ineligible")
-      .sort((a, b) => b.score - a.score);
+    const strongMatches: MatchBucket[] = [];
+    const conditionalMatches: MatchBucket[] = [];
+    const eliminatedPaths: MatchBucket[] = [];
 
-    const topMatches = results.slice(0, 5);
-    const otherMatches = results.slice(5, 12);
+    const activeLenderNames = new Set<string>();
+    const matchedLenderNames = new Set<string>();
 
-    const cautionFlags = uniqueStrings(
-      results.flatMap((item) => item.cautions).slice(0, 30)
+    for (const program of allRows) {
+      const lenderName = program.lenders?.name || "Unknown Lender";
+      const lenderId = program.lender_id;
+      const programName = program.name || "Unknown Program";
+
+      activeLenderNames.add(lenderName);
+
+      const activeGuidelines = (program.program_guidelines || []).filter((g) => g.is_active);
+
+      // No active guidelines at all → skip (option b)
+      if (activeGuidelines.length === 0) continue;
+
+      // Pick the first active guideline that has sufficient data
+      const guideline = activeGuidelines.find(hasSufficientGuidelineData);
+      if (!guideline) continue;
+
+      const stateEligibility = stateByLender.get(lenderId) || null;
+
+      const evaluation = evaluateProgram(
+        guideline,
+        payload,
+        stateEligibility,
+        lenderName,
+        programName
+      );
+
+      const bucketEntry: MatchBucket = {
+        lender_name: lenderName,
+        lender_id: lenderId,
+        program_name: programName,
+        program_slug: program.slug,
+        loan_category: program.loan_category,
+        guideline_id: guideline.id,
+        notes: guideline.guideline_notes ? [guideline.guideline_notes] : [],
+        missing_items: evaluation.missingItems,
+        blockers: evaluation.blockers,
+        strengths: evaluation.strengths,
+        concerns: evaluation.concerns,
+        explanation: evaluation.explanation,
+        score: evaluation.score,
+        required_reserves_months: guideline.reserves_required_months,
+      };
+
+      if (evaluation.bucket === "strong") {
+        strongMatches.push(bucketEntry);
+        matchedLenderNames.add(lenderName);
+      } else if (evaluation.bucket === "conditional") {
+        conditionalMatches.push(bucketEntry);
+        matchedLenderNames.add(lenderName);
+      } else {
+        eliminatedPaths.push(bucketEntry);
+      }
+    }
+
+    // Sort by score descending
+    strongMatches.sort((a, b) => b.score - a.score);
+    conditionalMatches.sort((a, b) => b.score - a.score);
+    eliminatedPaths.sort((a, b) => b.score - a.score);
+
+    // Top recommendation
+    let topRecommendation = "";
+    if (strongMatches.length > 0) {
+      const top = strongMatches[0];
+      topRecommendation = `${top.program_name} with ${top.lender_name} appears to be the leading direction based on the documented qualification facts.`;
+    } else if (conditionalMatches.length > 0) {
+      const top = conditionalMatches[0];
+      topRecommendation = `${top.program_name} with ${top.lender_name} is the closest conditional path; confirm open items before placement.`;
+    } else if (eliminatedPaths.length > 0) {
+      topRecommendation = `No path currently survives the documented constraints. Review eliminated paths to identify which constraint to revisit or which lender programs may need to be added.`;
+    }
+
+    const nextQuestion = buildNextQuestion(
+      payload,
+      strongMatches.length,
+      conditionalMatches.length,
+      eliminatedPaths.length
     );
 
-    const missingDocuments = uniqueStrings(
-      results.flatMap((item) => item.missingItems).slice(0, 30)
-    );
-
-    const nextQuestions = buildNextQuestions(payload);
-
-    const response: MatchResponse = {
+    return NextResponse.json({
       success: true,
-      borrowerSummary: {
-        borrowerName: payload.borrowerName || "Not provided",
-        loanOfficerName: payload.loanOfficerName || "Not provided",
-        language: payload.language || "en",
-        estimatedLoanAmount,
-        estimatedLtvPct,
-        estimatedDtiPct,
-        dscrRatio,
+      next_question: nextQuestion,
+      top_recommendation: topRecommendation,
+      openai_enhancement: null,
+      strong_matches: strongMatches,
+      conditional_matches: conditionalMatches,
+      eliminated_paths: eliminatedPaths,
+      lender_summary: {
+        active_lender_count: activeLenderNames.size,
+        active_lenders_checked: Array.from(activeLenderNames).sort(),
+        matched_lenders_in_results: Array.from(matchedLenderNames).sort(),
       },
-      executiveSummary: buildExecutiveSummary(topMatches),
-      topMatches,
-      otherMatches,
-      cautionFlags,
-      missingDocuments,
-      nextQuestions,
-    };
-
-    return NextResponse.json(response);
-  } catch (error) {
+      summary: {
+        total_guidelines_checked: allRows.length,
+        strong_count: strongMatches.length,
+        conditional_count: conditionalMatches.length,
+        eliminated_count: eliminatedPaths.length,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown matcher error.";
     return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Unable to evaluate match request.",
-      },
+      { success: false, error: message },
       { status: 500 }
     );
   }
