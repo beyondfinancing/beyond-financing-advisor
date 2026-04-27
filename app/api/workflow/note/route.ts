@@ -1,3 +1,27 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace the existing file completely):
+//
+//     app/api/workflow/note/route.ts
+//
+// =============================================================================
+//
+// CHANGES FROM PRIOR VERSION
+//
+// 1. Added a "Do Not Reply" disclaimer block to the footer of both legacy
+//    emails (the recipient notification and the sender receipt). Same
+//    visual style as the dispatcher emails for consistency.
+//
+// 2. Removed the `reply_to` headers from both Resend sends. Since we are
+//    explicitly telling people not to reply, we no longer pre-fill a reply
+//    address that would invite them to do so.
+//
+// Everything else — Supabase audit insert, two legacy emails, the
+// fan-out call to /api/workflow-notify with eventType=internal_update —
+// is byte-identical to the prior working version that just passed
+// Phase 1 testing.
+//
+// =============================================================================
+
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
@@ -28,6 +52,19 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function buildDoNotReplyHtml(): string {
+  return `
+    <div style="margin-top:22px;padding:14px 16px;border:1px solid #FCD34D;background:#FFFBEB;border-radius:14px;font-family:Arial,Helvetica,sans-serif;">
+      <div style="font-size:13px;font-weight:700;color:#92400E;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">
+        Do Not Reply
+      </div>
+      <div style="font-size:13px;line-height:1.6;color:#78350F;">
+        This is an automated notification from an unmonitored inbox. Please do not reply to this email. To respond or take action, use Workflow Intelligence or contact the assigned loan officer directly.
+      </div>
+    </div>
+  `;
 }
 
 export async function POST(req: Request) {
@@ -94,6 +131,8 @@ export async function POST(req: Request) {
         <div style="margin-top:18px;padding:16px;border:1px solid #d9e1ec;border-radius:14px;background:#f8fafc;">
           ${escapeHtml(message).replace(/\n/g, "<br />")}
         </div>
+
+        ${buildDoNotReplyHtml()}
       </div>
     `;
 
@@ -107,6 +146,8 @@ export async function POST(req: Request) {
         <div style="margin-top:18px;padding:16px;border:1px solid #d9e1ec;border-radius:14px;background:#f8fafc;">
           ${escapeHtml(message).replace(/\n/g, "<br />")}
         </div>
+
+        ${buildDoNotReplyHtml()}
       </div>
     `;
 
@@ -129,7 +170,6 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         from: "Beyond Intelligence <finley@beyondfinancing.com>",
         to: [toEmail],
-        reply_to: fromEmail,
         subject: subjectToRecipient,
         html: recipientHtml,
       }),
@@ -141,7 +181,6 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         from: "Beyond Intelligence <finley@beyondfinancing.com>",
         to: [fromEmail],
-        reply_to: toEmail,
         subject: subjectReceipt,
         html: receiptHtml,
       }),
