@@ -1,26 +1,18 @@
 // =============================================================================
-// PHASE 7.3 — REPLACEMENT for app/api/admin/lender-files/upload/route.ts
+// REPLACEMENT for app/api/admin/lender-files/upload/route.ts
 //
-// Drop-in replacement for your existing upload route.
+// FIX vs Phase 7.3 v1:
+//   The previous version used process.env.VERCEL_URL to build the URL for
+//   the background auto-extract call. VERCEL_URL points to the deployment
+//   URL like "beyond-financing-advisor-xyz.vercel.app", not the production
+//   domain "beyondintelligence.io". The admin session cookie is scoped to
+//   beyondintelligence.io, so the background call hit a different domain
+//   without a valid cookie and was rejected as unauthorized — silently.
 //
-// What changed from your original:
-//   1. After a successful upload + insert, the route fires off an extraction
-//      call in the background using waitUntil() so the user gets their
-//      response immediately.
-//   2. Sets extraction_status='pending' on insert so the UI can show a
-//      "queued" badge before extraction kicks in.
-//   3. Calls the new internal extract endpoint with the new document's id.
-//      That endpoint handles status updates, replace strategy, and inserts.
+// This version uses the URL from the incoming request itself, so the
+// background fetch goes back to the same domain the user is actually on.
 //
-// What is unchanged:
-//   - All your validation logic, file storage, archive-existing-active flow,
-//     version_number bump, slot label response — byte-identical.
-//
-// Why fire-and-forget instead of awaiting:
-//   Extraction takes 20-60 seconds. We don't want the user's upload UI to
-//   sit on a spinner that long. waitUntil() lets the function continue
-//   running after the response is sent, up to maxDuration (we set it to
-//   300s on the extract endpoint to be safe).
+// Everything else in the route is unchanged.
 // =============================================================================
 
 import { NextResponse } from 'next/server'
@@ -35,15 +27,6 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-function getBaseUrl(): string {
-  const vercelUrl = process.env.VERCEL_URL
-  if (vercelUrl) return `https://${vercelUrl}`
-  return process.env.NEXT_PUBLIC_SITE_URL || 'https://beyondintelligence.io'
-}
-
-// PDF document types that should be auto-extracted.
-// Pricing sheets and rate sheets typically don't define program parameters,
-// so we skip them by default. Other types are worth extracting.
 const AUTO_EXTRACT_DOCUMENT_TYPES = new Set([
   'Program Matrix',
   'Programs',
@@ -86,7 +69,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing file.' }, { status: 400 })
     }
 
-    // Verify lender exists.
     const { data: lender, error: lenderError } = await supabase
       .from('lenders')
       .select('id, name')
@@ -97,7 +79,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Lender not found.' }, { status: 404 })
     }
 
-    // Find the existing active doc in this slot, if any.
     const { data: existingActive, error: activeError } = await supabase
       .from('lender_documents')
       .select('id, version_number')
@@ -116,7 +97,6 @@ export async function POST(req: Request) {
 
     const previousActiveDocumentId = existingActive?.id || null
 
-    // Upload bytes to storage.
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
@@ -143,7 +123,6 @@ export async function POST(req: Request) {
       )
     }
 
-    // Archive the old active row.
     if (previousActiveDocumentId) {
       const { error: archiveExistingError } = await supabase
         .from('lender_documents')
@@ -170,13 +149,10 @@ export async function POST(req: Request) {
         ? existingActive.version_number + 1
         : 1
 
-    // Decide whether to auto-extract this document type.
     const shouldExtract =
       file.type === 'application/pdf' &&
       AUTO_EXTRACT_DOCUMENT_TYPES.has(documentType)
 
-    // Insert the new active row, marked pending (or skipped if not a PDF
-    // we should extract).
     const { data: insertedDoc, error: insertError } = await supabase
       .from('lender_documents')
       .insert({
@@ -211,12 +187,12 @@ export async function POST(req: Request) {
     }
 
     // Fire-and-forget: trigger extraction in the background.
-    // The user gets their upload-success response immediately.
+    // CRITICAL: use the incoming request's URL so the background call goes
+    // back to the same domain where the admin session cookie is valid.
     if (shouldExtract) {
       const newDocumentId = insertedDoc.id
-      const baseUrl = getBaseUrl()
-
-      // Forward the admin session cookie so the internal call passes auth.
+      const reqUrl = new URL(req.url)
+      const baseUrl = `${reqUrl.protocol}//${reqUrl.host}`
       const cookieHeader = req.headers.get('cookie') || ''
 
       after(async () => {
@@ -239,7 +215,7 @@ export async function POST(req: Request) {
           if (!response.ok) {
             const errText = await response.text()
             console.warn(
-              `[upload->auto-extract] Extraction trigger failed for ${newDocumentId}:`,
+              `[upload->auto-extract] Trigger failed for ${newDocumentId} (status ${response.status}):`,
               errText
             )
           }
