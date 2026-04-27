@@ -150,6 +150,30 @@ export async function POST(req: Request) {
     const recipientResult = await recipientSend.json().catch(() => null);
     const receiptResult = await receiptSend.json().catch(() => null);
 
+    // Trigger comprehensive workflow notification (internal team full content + realtor activity ping)
+    let comprehensiveNotifyResult: unknown = null;
+    if (fileId) {
+      try {
+        const url = new URL(req.url);
+        const origin = url.origin;
+        const notifyResponse = await fetch(`${origin}/api/workflow-notify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflowFileId: fileId,
+            eventType: "internal_update",
+            actorName: fromName,
+            actorRole: fromRole,
+            actorEmail: fromEmail,
+            noteText: message,
+          }),
+        });
+        comprehensiveNotifyResult = await notifyResponse.json().catch(() => null);
+      } catch (notifyError) {
+        console.error("WORKFLOW NOTE COMPREHENSIVE NOTIFY ERROR:", notifyError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       activity: data,
@@ -157,6 +181,7 @@ export async function POST(req: Request) {
       senderReceiptSent: receiptSend.ok,
       recipientResult,
       receiptResult,
+      comprehensiveNotifyResult,
     });
   } catch (error) {
     console.error("WORKFLOW NOTE ROUTE ERROR:", error);
