@@ -18,7 +18,7 @@ export default function PrivacyPage() {
         </p>
 
         <p>
-          Beyond Intelligence™, operated by Beyond Financing, Inc.
+          Beyond Intelligence™, operated by Beyond Intelligence, LLC.
           (&ldquo;Beyond Intelligence,&rdquo; &ldquo;we,&rdquo; &ldquo;us&rdquo;),
           is committed to protecting your privacy. This policy explains how we
           collect, use, store, and safeguard your information when you interact
@@ -93,7 +93,7 @@ export default function PrivacyPage() {
             assist with your loan inquiry
           </li>
           <li>
-            Internal Beyond Financing, Inc. team members directly involved in
+            Internal Beyond Intelligence, LLC. team members directly involved in
             servicing your inquiry (such as a processor or assistant assigned
             to your file)
           </li>
