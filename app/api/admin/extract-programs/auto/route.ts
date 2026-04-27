@@ -1,26 +1,16 @@
 // =============================================================================
-// PHASE 7.3 — AUTO-EXTRACT ENDPOINT
+// PHASE 7.5 — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
 //
-// Paste this file at:
-//     app/api/admin/extract-programs/auto/route.ts
-//
-// What it does:
-//   POST { documentId, previousActiveDocumentId? }
-//
-//   1. Marks the doc as extraction_status='running'
-//   2. Runs the same Claude extraction as Phase 7.1/7.2
-//   3. Inserts proposed programs as drafts (is_active=false, source='extracted',
-//      source_document_id=documentId)
-//   4. If previousActiveDocumentId was given, archives any active programs
-//      that came from that old document (replace strategy)
-//   5. Marks the doc extraction_status='completed' (or 'failed' on error) and
-//      writes extraction_drafts_count
-//
-// Auth:
-//   This endpoint is called by the upload route in the background, AND by
-//   the manual "Extract Now" button in the file card. Both paths forward
-//   the admin session cookie so isAdminSignedIn() passes.
-//
+// What changed vs Phase 7.3:
+//   - Detects when the document belongs to "Fannie Mae" or "Freddie Mac"
+//     AND the document_type is "Selling Guide". In that case it routes to
+//     a different prompt tuned for agency mega-docs and writes results to
+//     global_guidelines instead of programs.
+//   - Everything else (regular lender extraction → programs table) is
+//     unchanged from Phase 7.3.
+//   - The replace strategy still works: when a new Selling Guide upload
+//     supersedes an old one, old global_guidelines rows from the old doc
+//     are deactivated.
 // =============================================================================
 
 import { NextResponse } from 'next/server'
@@ -31,9 +21,9 @@ import { supabaseAdmin } from '@/lib/supabase'
 export const maxDuration = 300
 export const runtime = 'nodejs'
 
-// -----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 // Types
-// -----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 type ProposedProgram = {
   programName: string
   loanCategory: string | null
@@ -54,16 +44,39 @@ type ProposedProgram = {
   sourceQuote: string | null
 }
 
-type ExtractionResponse = {
+type ProgramExtractionResponse = {
   programs: ProposedProgram[]
   documentSummary: string
   warnings: string[]
 }
 
-// -----------------------------------------------------------------------------
-// System prompt — same as Phase 7.1 (proven on real ITIN matrix)
-// -----------------------------------------------------------------------------
-const SYSTEM_PROMPT = `You are an expert mortgage operations analyst working for Beyond Intelligence, a mortgage decision-support platform. Your job is to read lender guideline PDFs, rate sheets, and program matrices, and extract structured program data that loan officers can use to match borrower scenarios to lender programs.
+type ProposedAgencyGuideline = {
+  agency: 'Fannie Mae' | 'Freddie Mac'
+  productFamily: 'Single-Family' | 'Multi-Family'
+  programName: string
+  occupancy: string[] | null
+  incomeTypes: string[] | null
+  minCredit: number | null
+  maxLtv: number | null
+  maxDti: number | null
+  maxUnits: number | null
+  notes: string | null
+  guidelineSummary: string | null
+  effectiveDate: string | null
+  confidence: 'high' | 'medium' | 'low'
+  sourceQuote: string | null
+}
+
+type AgencyExtractionResponse = {
+  guidelines: ProposedAgencyGuideline[]
+  documentSummary: string
+  warnings: string[]
+}
+
+// ----------------------------------------------------------------------------
+// PROMPT 1 — regular lender programs (Phase 7.3 prompt, unchanged)
+// ----------------------------------------------------------------------------
+const PROGRAM_SYSTEM_PROMPT = `You are an expert mortgage operations analyst working for Beyond Intelligence, a mortgage decision-support platform. Your job is to read lender guideline PDFs, rate sheets, and program matrices, and extract structured program data that loan officers can use to match borrower scenarios to lender programs.
 
 You are reading documents like:
 - Lender program matrices (e.g. "Plus Connect Product Matrix", "Investor Connect Matrix")
@@ -121,24 +134,103 @@ Each ProposedProgram has these fields:
 
 Return ONLY the JSON object. No prose before or after.`
 
-// -----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// PROMPT 2 — agency Selling Guide extraction (NEW for Phase 7.5)
+// ----------------------------------------------------------------------------
+const AGENCY_SYSTEM_PROMPT = `You are an expert mortgage operations analyst working for Beyond Intelligence, a mortgage decision-support platform. Your task is to read agency Selling Guides from Fannie Mae or Freddie Mac and extract structured program data for residential and multifamily lending.
+
+These documents are large and define MANY distinct named programs. Each program has its own eligibility rules and underwriting criteria. Your job is to extract one record per distinct named program.
+
+For Fannie Mae Single-Family expect to find programs like:
+- Standard Conforming
+- HomeReady
+- HomeStyle Renovation
+- High-Balance / High Balance Conforming
+- Manufactured Housing
+- Condo / PUD financing variants if presented as their own programs
+- Construction-to-Permanent
+
+For Fannie Mae Multi-Family expect:
+- DUS (Delegated Underwriting and Servicing) Standard
+- Small Loan
+- Affordable / MAH (Multifamily Affordable Housing)
+- Green Financing / Green Rewards
+- Manufactured Housing Communities
+- Seniors Housing / Healthcare
+
+For Freddie Mac Single-Family expect:
+- Standard Conforming (Mortgages)
+- Home Possible
+- HomeOne
+- CHOICERenovation
+- CHOICEHome (manufactured housing)
+- Super Conforming
+- Construction Conversion / Renovation
+
+For Freddie Mac Multi-Family (Optigo) expect:
+- Conventional Multifamily
+- Targeted Affordable Housing (TAH)
+- Small Balance Loan (SBL)
+- Seniors Housing
+- Manufactured Housing Communities
+- Green Advantage
+
+Note: actual programs found may differ from this list. Extract what the document describes, not what you expect.
+
+CRITICAL RULES:
+1. Only extract data that is EXPLICITLY stated. Do not infer or guess. If unstated, return null.
+2. Each distinct named program gets its own record. Do NOT collapse multiple programs into one.
+3. The "agency" field MUST be exactly "Fannie Mae" or "Freddie Mac" — match the value provided in the document context.
+4. The "productFamily" field MUST be exactly "Single-Family" or "Multi-Family" — match the value provided in the document context.
+5. The "programName" should be the canonical name as written in the document (e.g. "HomeReady" not "Home Ready" or "homeready").
+6. For numerical fields, return the most permissive value when conditional rules apply (e.g. if max LTV is 95% for first-time homebuyers but 90% otherwise, return 95 and note the FTHB condition in notes).
+7. If a program has multiple FICO/LTV combinations (e.g. matrices), capture the most permissive minimums (lowest required FICO, highest allowed LTV/DTI) and describe the matrix in notes.
+8. Skip non-program content: servicing rules, rep & warranty chapters, master agreement boilerplate, glossary, table of contents.
+9. For "confidence", use "high" only when explicitly stated in tables/matrices, "medium" for clear prose, "low" if you had to interpret.
+10. "sourceQuote" must be a 1-2 sentence verbatim excerpt that supports the extraction.
+
+OCCUPANCY VALUES (array):
+"Primary", "Second Home", "Investment"
+For multi-family programs, occupancy is typically just "Investment" or null if not specified.
+
+INCOME TYPES (array, use any combination):
+"W-2", "Self-Employed", "1099", "Asset-Based", "Rental", "Pension", "Social Security", "Other"
+
+OUTPUT FORMAT:
+Return ONLY a single JSON object matching this exact shape:
+{
+  "guidelines": [ProposedAgencyGuideline, ...],
+  "documentSummary": "1-2 sentence description of what this document is",
+  "warnings": ["strings flagging things the reviewer should double-check"]
+}
+
+Each ProposedAgencyGuideline has these fields:
+- agency: "Fannie Mae" | "Freddie Mac"
+- productFamily: "Single-Family" | "Multi-Family"
+- programName: string (required)
+- occupancy: string[] or null
+- incomeTypes: string[] or null
+- minCredit: number or null
+- maxLtv: number or null (as percentage, e.g. 95 not 0.95)
+- maxDti: number or null (as percentage, e.g. 50 not 0.50)
+- maxUnits: number or null (1-4 for single-family, 5+ for multi-family)
+- notes: string or null
+- guidelineSummary: string or null (2-3 sentence plain-English summary)
+- effectiveDate: string or null (YYYY-MM-DD if stated)
+- confidence: "high" | "medium" | "low"
+- sourceQuote: string or null
+
+Return ONLY the JSON object. No prose before or after.`
+
+// ----------------------------------------------------------------------------
 // Helpers
-// -----------------------------------------------------------------------------
-function parseJsonFromResponse(text: string): ExtractionResponse | null {
+// ----------------------------------------------------------------------------
+function parseJsonFromResponse<T>(text: string): T | null {
   let cleaned = text.trim()
   const fenceMatch = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
   if (fenceMatch) cleaned = fenceMatch[1].trim()
-
   try {
-    const parsed = JSON.parse(cleaned)
-    if (
-      parsed &&
-      Array.isArray(parsed.programs) &&
-      typeof parsed.documentSummary === 'string'
-    ) {
-      return parsed as ExtractionResponse
-    }
-    return null
+    return JSON.parse(cleaned) as T
   } catch {
     return null
   }
@@ -158,7 +250,6 @@ async function setDocStatus(
     .from('lender_documents')
     .update(patch)
     .eq('id', documentId)
-
   if (error) {
     console.warn(
       `[auto-extract] Failed to update doc ${documentId}:`,
@@ -171,46 +262,64 @@ async function archivePreviousExtractedPrograms(
   previousDocumentId: string | null
 ): Promise<number> {
   if (!previousDocumentId) return 0
-
-  // Archive any active programs that were extracted from the old doc.
   const { data: archived, error } = await supabaseAdmin
     .from('programs')
     .update({ is_active: false })
     .eq('source_document_id', previousDocumentId)
     .eq('is_active', true)
     .select('id')
-
   if (error) {
     console.warn(
-      `[auto-extract] Failed to archive programs from old doc ${previousDocumentId}:`,
+      `[auto-extract] Failed to archive programs from ${previousDocumentId}:`,
       error.message
     )
     return 0
   }
-
   const programIds = (archived || []).map((row) => row.id)
-
-  // Also deactivate their guideline rows.
   if (programIds.length > 0) {
-    const { error: guidelineError } = await supabaseAdmin
+    await supabaseAdmin
       .from('program_guidelines')
       .update({ is_active: false })
       .in('program_id', programIds)
-
-    if (guidelineError) {
-      console.warn(
-        `[auto-extract] Archived programs but failed to deactivate guidelines:`,
-        guidelineError.message
-      )
-    }
   }
-
   return programIds.length
 }
 
-// -----------------------------------------------------------------------------
+async function archivePreviousAgencyGuidelines(
+  previousDocumentId: string | null
+): Promise<number> {
+  if (!previousDocumentId) return 0
+  const { data: archived, error } = await supabaseAdmin
+    .from('global_guidelines')
+    .update({ is_active: false })
+    .eq('source_document_id', previousDocumentId)
+    .eq('is_active', true)
+    .select('id')
+  if (error) {
+    console.warn(
+      `[auto-extract] Failed to archive global_guidelines from ${previousDocumentId}:`,
+      error.message
+    )
+    return 0
+  }
+  return (archived || []).length
+}
+
+function isAgencyExtraction(
+  lenderName: string | null,
+  documentType: string | null
+): boolean {
+  const lenderLower = (lenderName || '').toLowerCase()
+  const docTypeLower = (documentType || '').toLowerCase()
+  return (
+    (lenderLower === 'fannie mae' || lenderLower === 'freddie mac') &&
+    docTypeLower === 'selling guide'
+  )
+}
+
+// ----------------------------------------------------------------------------
 // Route
-// -----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 export async function POST(req: Request) {
   if (!(await isAdminSignedIn())) {
     return NextResponse.json(
@@ -251,14 +360,12 @@ export async function POST(req: Request) {
     )
   }
 
-  // Mark running.
   await setDocStatus(documentId, {
     extraction_status: 'running',
     extraction_started_at: new Date().toISOString(),
     extraction_error: null,
   })
 
-  // Look up doc + lender.
   const { data: doc, error: docError } = await supabaseAdmin
     .from('lender_documents')
     .select(
@@ -307,10 +414,35 @@ export async function POST(req: Request) {
     ? (doc.lenders[0] as { name: string | null } | undefined)?.name || null
     : (doc.lenders as { name: string | null } | null)?.name || null
 
-  // Download PDF.
+  // ---------- Branch on agency vs lender ----------
+  const useAgencyPrompt = isAgencyExtraction(lenderName, doc.document_type)
+
+  // Determine product family from document_group ("Single-Family" or "Multi-Family")
+  const groupLower = (doc.document_group || '').toLowerCase()
+  let productFamily: 'Single-Family' | 'Multi-Family' | null = null
+  if (useAgencyPrompt) {
+    if (groupLower === 'single-family' || groupLower === 'single family') {
+      productFamily = 'Single-Family'
+    } else if (
+      groupLower === 'multi-family' ||
+      groupLower === 'multifamily' ||
+      groupLower === 'multi family'
+    ) {
+      productFamily = 'Multi-Family'
+    } else {
+      // Default: try to guess from filename
+      const fnLower = (doc.original_filename || '').toLowerCase()
+      if (fnLower.includes('multi') || fnLower.includes('mf')) {
+        productFamily = 'Multi-Family'
+      } else {
+        productFamily = 'Single-Family'
+      }
+    }
+  }
+
+  // Download PDF
   const bucket = doc.storage_bucket || 'lender-documents'
   const path = doc.storage_path
-
   if (!path) {
     await setDocStatus(documentId, {
       extraction_status: 'failed',
@@ -341,7 +473,6 @@ export async function POST(req: Request) {
 
   const arrayBuffer = await fileData.arrayBuffer()
   const sizeBytes = arrayBuffer.byteLength
-
   if (sizeBytes / (1024 * 1024) > 32) {
     const errMessage = 'PDF exceeds 32MB Anthropic input limit.'
     await setDocStatus(documentId, {
@@ -354,9 +485,193 @@ export async function POST(req: Request) {
 
   const base64Pdf = Buffer.from(arrayBuffer).toString('base64')
 
-  // Call Claude.
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+  // ============================================================
+  // PATH A — agency Selling Guide → global_guidelines
+  // ============================================================
+  if (useAgencyPrompt && productFamily) {
+    const userPrompt = `Document context:
+- Agency: ${lenderName}
+- Product Family: ${productFamily}
+- Document type: Selling Guide
+- Filename: ${doc.original_filename}
+
+Extract every distinct named program defined in this Selling Guide. Return ONE record per program. Use exactly "${lenderName}" as the agency value and exactly "${productFamily}" as the productFamily value for every record.
+
+Return only the JSON object as instructed.`
+
+    let claudeResponseText = ''
+    let claudeUsage: { input_tokens: number; output_tokens: number } | null =
+      null
+
+    try {
+      const message = await anthropic.messages.create({
+        model: 'claude-opus-4-7',
+        max_tokens: 8000,
+        system: AGENCY_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: {
+                  type: 'base64',
+                  media_type: 'application/pdf',
+                  data: base64Pdf,
+                },
+              },
+              { type: 'text', text: userPrompt },
+            ],
+          },
+        ],
+      })
+
+      const textBlocks = message.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as { type: 'text'; text: string }).text)
+      claudeResponseText = textBlocks.join('\n').trim()
+      claudeUsage = {
+        input_tokens: message.usage.input_tokens,
+        output_tokens: message.usage.output_tokens,
+      }
+    } catch (error) {
+      const errMessage = `Claude API error: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+      await setDocStatus(documentId, {
+        extraction_status: 'failed',
+        extraction_error: errMessage,
+        extraction_completed_at: new Date().toISOString(),
+      })
+      return NextResponse.json({ ok: false, error: errMessage }, { status: 500 })
+    }
+
+    const parsed = parseJsonFromResponse<AgencyExtractionResponse>(
+      claudeResponseText
+    )
+    if (!parsed) {
+      const errMessage = 'Could not parse Claude response as JSON.'
+      await setDocStatus(documentId, {
+        extraction_status: 'failed',
+        extraction_error: errMessage,
+        extraction_completed_at: new Date().toISOString(),
+      })
+      return NextResponse.json(
+        { ok: false, error: errMessage, rawResponse: claudeResponseText },
+        { status: 500 }
+      )
+    }
+
+    if (parsed.guidelines.length === 0) {
+      await setDocStatus(documentId, {
+        extraction_status: 'completed',
+        extraction_drafts_count: 0,
+        extraction_completed_at: new Date().toISOString(),
+        extraction_error: null,
+      })
+      return NextResponse.json({
+        ok: true,
+        message: 'Extraction completed but no programs found.',
+        documentSummary: parsed.documentSummary,
+        warnings: parsed.warnings,
+        programsCreated: 0,
+        usage: claudeUsage,
+      })
+    }
+
+    const insertedGuidelines: { id: string; programName: string }[] = []
+    const insertErrors: string[] = []
+
+    for (const g of parsed.guidelines) {
+      const insertPayload = {
+        agency: g.agency,
+        product_family: g.productFamily,
+        program_name: g.programName,
+        document_type: 'selling_guide',
+        occupancy: g.occupancy || [],
+        income_types: g.incomeTypes || [],
+        min_credit: g.minCredit,
+        max_ltv: g.maxLtv,
+        max_dti: g.maxDti,
+        max_units: g.maxUnits,
+        notes: [g.guidelineSummary, g.notes].filter(Boolean).join('\n\n') || null,
+        source_name: doc.original_filename,
+        effective_date: g.effectiveDate,
+        is_active: false,
+        source: 'extracted',
+        source_document_id: doc.id,
+        extraction_metadata: {
+          documentId: doc.id,
+          documentFilename: doc.original_filename,
+          documentType: doc.document_type,
+          documentGroup: doc.document_group,
+          extractedAt: new Date().toISOString(),
+          confidence: g.confidence,
+          sourceQuote: g.sourceQuote,
+          documentSummary: parsed.documentSummary,
+          documentWarnings: parsed.warnings,
+          rawProposed: g,
+          usage: claudeUsage,
+        },
+      }
+
+      const { data: row, error: insertError } = await supabaseAdmin
+        .from('global_guidelines')
+        .insert(insertPayload)
+        .select('id, program_name')
+        .single()
+
+      if (insertError || !row) {
+        insertErrors.push(
+          `${g.programName}: ${insertError?.message || 'insert failed'}`
+        )
+        continue
+      }
+
+      insertedGuidelines.push({ id: row.id, programName: row.program_name })
+    }
+
+    await setDocStatus(documentId, {
+      extraction_status: 'completed',
+      extraction_drafts_count: insertedGuidelines.length,
+      extraction_completed_at: new Date().toISOString(),
+      extraction_error: insertErrors.length > 0 ? insertErrors.join('; ') : null,
+    })
+
+    let archivedCount = 0
+    if (previousActiveDocumentId) {
+      archivedCount = await archivePreviousAgencyGuidelines(
+        previousActiveDocumentId
+      )
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mode: 'agency',
+      lender: { id: doc.lender_id, name: lenderName },
+      productFamily,
+      document: {
+        id: doc.id,
+        filename: doc.original_filename,
+        documentType: doc.document_type,
+        documentGroup: doc.document_group,
+      },
+      documentSummary: parsed.documentSummary,
+      documentWarnings: parsed.warnings,
+      programsCreated: insertedGuidelines.length,
+      programIds: insertedGuidelines.map((p) => p.id),
+      programNames: insertedGuidelines.map((p) => p.programName),
+      insertErrors: insertErrors.length > 0 ? insertErrors : undefined,
+      archivedFromPreviousDoc: archivedCount,
+      usage: claudeUsage,
+    })
+  }
+
+  // ============================================================
+  // PATH B — regular lender → programs (unchanged from Phase 7.3)
+  // ============================================================
   let claudeResponseText = ''
   let claudeUsage: { input_tokens: number; output_tokens: number } | null = null
 
@@ -364,7 +679,7 @@ export async function POST(req: Request) {
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 8000,
-      system: SYSTEM_PROMPT,
+      system: PROGRAM_SYSTEM_PROMPT,
       messages: [
         {
           role: 'user',
@@ -395,7 +710,6 @@ Extract all distinct loan programs. Return only the JSON object as instructed.`,
     const textBlocks = message.content
       .filter((b) => b.type === 'text')
       .map((b) => (b as { type: 'text'; text: string }).text)
-
     claudeResponseText = textBlocks.join('\n').trim()
     claudeUsage = {
       input_tokens: message.usage.input_tokens,
@@ -413,8 +727,9 @@ Extract all distinct loan programs. Return only the JSON object as instructed.`,
     return NextResponse.json({ ok: false, error: errMessage }, { status: 500 })
   }
 
-  const parsed = parseJsonFromResponse(claudeResponseText)
-
+  const parsed = parseJsonFromResponse<ProgramExtractionResponse>(
+    claudeResponseText
+  )
   if (!parsed) {
     const errMessage = 'Could not parse Claude response as JSON.'
     await setDocStatus(documentId, {
@@ -423,16 +738,11 @@ Extract all distinct loan programs. Return only the JSON object as instructed.`,
       extraction_completed_at: new Date().toISOString(),
     })
     return NextResponse.json(
-      {
-        ok: false,
-        error: errMessage,
-        rawResponse: claudeResponseText,
-      },
+      { ok: false, error: errMessage, rawResponse: claudeResponseText },
       { status: 500 }
     )
   }
 
-  // No programs found — mark completed with 0 drafts.
   if (parsed.programs.length === 0) {
     await setDocStatus(documentId, {
       extraction_status: 'completed',
@@ -450,7 +760,6 @@ Extract all distinct loan programs. Return only the JSON object as instructed.`,
     })
   }
 
-  // Insert each program as a draft.
   const insertedPrograms: { id: string; name: string }[] = []
   const insertErrors: string[] = []
 
@@ -536,16 +845,13 @@ Extract all distinct loan programs. Return only the JSON object as instructed.`,
     }
   }
 
-  // Mark completed.
   await setDocStatus(documentId, {
     extraction_status: 'completed',
     extraction_drafts_count: insertedPrograms.length,
     extraction_completed_at: new Date().toISOString(),
-    extraction_error:
-      insertErrors.length > 0 ? insertErrors.join('; ') : null,
+    extraction_error: insertErrors.length > 0 ? insertErrors.join('; ') : null,
   })
 
-  // Archive any active programs from the previous doc (replace strategy).
   let archivedCount = 0
   if (previousActiveDocumentId) {
     archivedCount = await archivePreviousExtractedPrograms(
@@ -555,6 +861,7 @@ Extract all distinct loan programs. Return only the JSON object as instructed.`,
 
   return NextResponse.json({
     ok: true,
+    mode: 'lender',
     lender: { id: doc.lender_id, name: lenderName },
     document: {
       id: doc.id,
