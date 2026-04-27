@@ -39,6 +39,10 @@ type Props = {
   initialNotes?: string;
   initialProductAssignments?: ProductAssignmentInput[];
   initialCustomProductTypes?: ExclusiveProductInput[];
+  initialDoesConventional?: boolean;
+  initialDoesFha?: boolean;
+  initialDoesVa?: boolean;
+  initialDoesUsda?: boolean;
 };
 
 const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
@@ -123,6 +127,10 @@ export default function LenderDetailClient({
   initialNotes = "",
   initialProductAssignments = [],
   initialCustomProductTypes = [],
+  initialDoesConventional = false,
+  initialDoesFha = false,
+  initialDoesVa = false,
+  initialDoesUsda = false,
 }: Props) {
   const [name, setName] = useState(initialName);
   const [channels, setChannels] = useState<string[]>(
@@ -141,6 +149,12 @@ export default function LenderDetailClient({
     normalizeStateArray(initialHelocStates)
   );
   const [notes, setNotes] = useState(initialNotes);
+
+  // Agency / government capability flags
+  const [doesConventional, setDoesConventional] = useState<boolean>(initialDoesConventional);
+  const [doesFha, setDoesFha] = useState<boolean>(initialDoesFha);
+  const [doesVa, setDoesVa] = useState<boolean>(initialDoesVa);
+  const [doesUsda, setDoesUsda] = useState<boolean>(initialDoesUsda);
 
   const [exclusiveProducts, setExclusiveProducts] = useState<ExclusiveProductInput[]>(
     (initialCustomProductTypes || []).map((item) => ({
@@ -385,6 +399,10 @@ export default function LenderDetailClient({
           name: item.name,
           category: item.category || "non_qm",
         })),
+        doesConventional,
+        doesFha,
+        doesVa,
+        doesUsda,
       };
 
       const response = await fetch(`/api/admin/lenders/${lenderId}`, {
@@ -549,6 +567,66 @@ export default function LenderDetailClient({
             />
           </div>
         </div>
+      </div>
+
+      {/* Agency & Government capability flags */}
+      <div
+        style={{
+          border: "1px solid #D9E1EC",
+          borderRadius: 22,
+          padding: 18,
+          display: "grid",
+          gap: 14,
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 16, color: "#263366" }}>
+          Agency & Government Capabilities
+        </h3>
+        <div style={helperStyle}>
+          Check the agency and government program categories this lender places.
+          When borrower scenarios match agency programs (e.g., Fannie HomeReady,
+          FHA Standard) and the lender has the matching capability flag, that
+          program will appear in the matcher results for this lender in eligible
+          states.
+        </div>
+
+        <label style={productRowStyle}>
+          <input
+            type="checkbox"
+            checked={doesConventional}
+            onChange={(e) => setDoesConventional(e.target.checked)}
+          />
+          <span style={{ fontWeight: 800, color: "#263366" }}>
+            Does Conventional (Fannie Mae &amp; Freddie Mac)
+          </span>
+        </label>
+
+        <label style={productRowStyle}>
+          <input
+            type="checkbox"
+            checked={doesFha}
+            onChange={(e) => setDoesFha(e.target.checked)}
+          />
+          <span style={{ fontWeight: 800, color: "#263366" }}>Does FHA</span>
+        </label>
+
+        <label style={productRowStyle}>
+          <input
+            type="checkbox"
+            checked={doesVa}
+            onChange={(e) => setDoesVa(e.target.checked)}
+          />
+          <span style={{ fontWeight: 800, color: "#263366" }}>Does VA</span>
+        </label>
+
+        <label style={productRowStyle}>
+          <input
+            type="checkbox"
+            checked={doesUsda}
+            onChange={(e) => setDoesUsda(e.target.checked)}
+          />
+          <span style={{ fontWeight: 800, color: "#263366" }}>Does USDA</span>
+        </label>
       </div>
 
       <div style={{ display: "grid", gap: 18 }}>
