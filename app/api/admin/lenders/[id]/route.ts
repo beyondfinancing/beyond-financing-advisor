@@ -26,9 +26,15 @@ type JsonPayload = {
   states?: unknown;
   ownerOccupiedStates?: unknown;
   nonOwnerOccupiedStates?: unknown;
+  secondHomeStates?: unknown;
+  helocStates?: unknown;
   notes?: unknown;
   productAssignments?: unknown;
   customProductTypes?: unknown;
+  doesConventional?: unknown;
+  doesFha?: unknown;
+  doesVa?: unknown;
+  doesUsda?: unknown;
 };
 
 type EligibilityExistingRow = {
@@ -58,6 +64,16 @@ function normalizeString(value: unknown): string {
 function normalizeNullableString(value: unknown): string | null {
   const normalized = String(value ?? "").trim();
   return normalized ? normalized : null;
+}
+
+function normalizeBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    return v === "true" || v === "yes" || v === "1" || v === "on";
+  }
+  if (typeof value === "number") return value !== 0;
+  return false;
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -108,7 +124,7 @@ function normalizeProductAssignments(value: unknown) {
             },
           ] as const;
         })
-        .filter(Boolean) as Array<
+        .filter(Boolean) as Array
         readonly [
           string,
           {
@@ -146,7 +162,7 @@ function normalizeCustomProductTypes(value: unknown) {
             },
           ] as const;
         })
-        .filter(Boolean) as Array<
+        .filter(Boolean) as Array
         readonly [
           string,
           {
@@ -195,9 +211,16 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
     const legacyStates = normalizeStateArray(body.states);
     const ownerOccupiedStates = normalizeStateArray(body.ownerOccupiedStates);
     const nonOwnerOccupiedStates = normalizeStateArray(body.nonOwnerOccupiedStates);
+    const secondHomeStates = normalizeStateArray(body.secondHomeStates);
+    const helocStates = normalizeStateArray(body.helocStates);
     const notes = normalizeNullableString(body.notes);
     const productAssignments = normalizeProductAssignments(body.productAssignments);
     const customProductTypes = normalizeCustomProductTypes(body.customProductTypes);
+
+    const doesConventional = normalizeBoolean(body.doesConventional);
+    const doesFha = normalizeBoolean(body.doesFha);
+    const doesVa = normalizeBoolean(body.doesVa);
+    const doesUsda = normalizeBoolean(body.doesUsda);
 
     if (!name) {
       return NextResponse.json(
@@ -207,7 +230,13 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
     }
 
     const mergedLegacyStates = Array.from(
-      new Set([...legacyStates, ...ownerOccupiedStates, ...nonOwnerOccupiedStates])
+      new Set([
+        ...legacyStates,
+        ...ownerOccupiedStates,
+        ...nonOwnerOccupiedStates,
+        ...secondHomeStates,
+        ...helocStates,
+      ])
     ).sort();
 
     const { error: lenderUpdateError } = await supabaseAdmin
@@ -219,6 +248,10 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
         notes,
         product_assignments: productAssignments,
         custom_product_types: customProductTypes,
+        does_conventional: doesConventional,
+        does_fha: doesFha,
+        does_va: doesVa,
+        does_usda: doesUsda,
       })
       .eq("id", id);
 
@@ -250,7 +283,7 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
       existingMap.set(normalizeString(row.state_code).toUpperCase(), row);
     }
 
-    const stateMap = new Map<
+    const stateMap = new Map
       string,
       {
         owner_occupied_allowed: boolean;
@@ -262,7 +295,12 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
     >();
 
     const allStates = Array.from(
-      new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
+      new Set([
+        ...ownerOccupiedStates,
+        ...nonOwnerOccupiedStates,
+        ...secondHomeStates,
+        ...helocStates,
+      ])
     ).sort();
 
     for (const stateCode of allStates) {
@@ -271,8 +309,8 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
       stateMap.set(stateCode, {
         owner_occupied_allowed: ownerOccupiedStates.includes(stateCode),
         non_owner_occupied_allowed: nonOwnerOccupiedStates.includes(stateCode),
-        second_home_allowed: existing?.second_home_allowed ?? false,
-        heloc_allowed: existing?.heloc_allowed ?? false,
+        second_home_allowed: secondHomeStates.includes(stateCode),
+        heloc_allowed: helocStates.includes(stateCode),
         notes: existing?.notes ?? null,
       });
     }
@@ -323,9 +361,15 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
         states: mergedLegacyStates,
         ownerOccupiedStates,
         nonOwnerOccupiedStates,
+        secondHomeStates,
+        helocStates,
         notes,
         productAssignments,
         customProductTypes,
+        doesConventional,
+        doesFha,
+        doesVa,
+        doesUsda,
       },
     });
   } catch (error) {
