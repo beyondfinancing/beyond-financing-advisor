@@ -1,17 +1,21 @@
 // =============================================================================
-// PHASE 7.5 — NEW FILE: app/admin/agency-guidelines/page.tsx
+// PHASE 7.5b — REPLACEMENT for app/admin/agency-guidelines/page.tsx
 //
-// Why a separate page instead of jamming a tab onto /admin/programs:
-//   The schema for global_guidelines is genuinely different from programs
-//   (agency, product_family, program_name vs lender_id, name, loan_category).
-//   A dedicated page is cleaner and lets us show agency-appropriate columns.
+// What's new vs Phase 7.5:
+//   - Duplicate detection: groups records by (agency + product_family +
+//     normalized program_name). When 2+ records share the same key, they
+//     collapse into a "duplicate cluster" with three actions:
 //
-// Functionality:
-//   - View All / Active / Drafts tabs
-//   - Filter by agency (Fannie Mae / Freddie Mac / All)
-//   - Filter by product family (Single-Family / Multi-Family / All)
-//   - Approve & Activate / Reject Draft / Delete buttons per row
-//   - Shows extraction source, confidence, source document filename
+//     1. Pick winner — approve one, soft-reject others (sets is_active=false
+//        on losers, keeps them for audit, doesn't delete)
+//     2. Merge — combines fields intelligently into one row, soft-rejects
+//        the originals. Calls /api/admin/agency-guidelines/merge.
+//     3. Approve all — keeps all rows separate, activates each.
+//
+//   - Dedup also surfaces ACTIVE duplicates (e.g. when chunks were uploaded
+//     and approved in separate sessions). You can clean those up too.
+//
+//   - When NOT in a duplicate cluster, single-record cards render as before.
 // =============================================================================
 
 "use client";
@@ -42,6 +46,18 @@ type AgencyGuideline = {
 type Tab = "all" | "active" | "drafts";
 type AgencyFilter = "all" | "Fannie Mae" | "Freddie Mac";
 type FamilyFilter = "all" | "Single-Family" | "Multi-Family";
+
+type Cluster = {
+  key: string;
+  agency: string;
+  product_family: string;
+  programName: string; // canonical, from first row
+  records: AgencyGuideline[];
+};
+
+function normalizeProgramName(name: string): string {
+  return name.toLowerCase().trim().replace(/\s+/g, " ");
+}
 
 export default function AgencyGuidelinesPage() {
   const [guidelines, setGuidelines] = useState<AgencyGuideline[]>([]);
@@ -87,7 +103,8 @@ export default function AgencyGuidelinesPage() {
     return { all, active, drafts };
   }, [guidelines]);
 
-  const filtered = useMemo(() => {
+  // Filter the guidelines first
+  const visibleGuidelines = useMemo(() => {
     let items = guidelines;
     if (activeTab === "active") items = items.filter((g) => g.is_active);
     if (activeTab === "drafts") items = items.filter((g) => !g.is_active);
@@ -95,14 +112,55 @@ export default function AgencyGuidelinesPage() {
       items = items.filter((g) => g.agency === agencyFilter);
     if (familyFilter !== "all")
       items = items.filter((g) => g.product_family === familyFilter);
-    return items.sort((a, b) => {
+    return items;
+  }, [guidelines, activeTab, agencyFilter, familyFilter]);
+
+  // Group into clusters. A cluster has 2+ records for the same key.
+  // Singletons are returned as 1-record clusters too, but rendered differently.
+  const { clusters, singletons } = useMemo(() => {
+    const map = new Map<string, AgencyGuideline[]>();
+    for (const g of visibleGuidelines) {
+      const key = `${g.agency}::${g.product_family}::${normalizeProgramName(
+        g.program_name
+      )}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(g);
+    }
+    const clusters: Cluster[] = [];
+    const singletons: AgencyGuideline[] = [];
+    for (const [key, records] of map.entries()) {
+      if (records.length >= 2) {
+        clusters.push({
+          key,
+          agency: records[0].agency,
+          product_family: records[0].product_family,
+          programName: records[0].program_name,
+          records: records.sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+          ),
+        });
+      } else {
+        singletons.push(records[0]);
+      }
+    }
+    clusters.sort((a, b) => {
+      const ag = a.agency.localeCompare(b.agency);
+      if (ag !== 0) return ag;
+      const pf = a.product_family.localeCompare(b.product_family);
+      if (pf !== 0) return pf;
+      return a.programName.localeCompare(b.programName);
+    });
+    singletons.sort((a, b) => {
       const ag = a.agency.localeCompare(b.agency);
       if (ag !== 0) return ag;
       const pf = a.product_family.localeCompare(b.product_family);
       if (pf !== 0) return pf;
       return a.program_name.localeCompare(b.program_name);
     });
-  }, [guidelines, activeTab, agencyFilter, familyFilter]);
+    return { clusters, singletons };
+  }, [visibleGuidelines]);
 
   async function handleActivate(id: string) {
     setBusyId(id);
@@ -115,10 +173,9 @@ export default function AgencyGuidelinesPage() {
         body: JSON.stringify({ id, is_active: true }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) {
+      if (!res.ok || !json.success)
         throw new Error(json?.error || "Failed to activate.");
-      }
-      setStatusMessage("Agency guideline activated.");
+      setStatusMessage("Activated.");
       await loadGuidelines();
     } catch (error) {
       setErrorMessage(
@@ -129,29 +186,392 @@ export default function AgencyGuidelinesPage() {
     }
   }
 
-  async function handleReject(id: string) {
-    if (!window.confirm("Reject and delete this draft?")) return;
-    setBusyId(id);
+  async function handleSoftReject(id: string) {
+    // For drafts: just delete. For active: deactivate.
+    const target = guidelines.find((g) => g.id === id);
+    if (!target) return;
+
+    if (!target.is_active) {
+      // Draft → confirm delete
+      if (!window.confirm("Reject and delete this draft?")) return;
+      setBusyId(id);
+      try {
+        const res = await fetch(`/api/admin/agency-guidelines?id=${id}`, {
+          method: "DELETE",
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success)
+          throw new Error(json?.error || "Failed to delete.");
+        setStatusMessage("Draft deleted.");
+        await loadGuidelines();
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Delete failed."
+        );
+      } finally {
+        setBusyId("");
+      }
+    } else {
+      // Active → deactivate
+      if (!window.confirm("Deactivate this active program?")) return;
+      setBusyId(id);
+      try {
+        const res = await fetch("/api/admin/agency-guidelines", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, is_active: false }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success)
+          throw new Error(json?.error || "Failed to deactivate.");
+        setStatusMessage("Deactivated.");
+        await loadGuidelines();
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Deactivate failed."
+        );
+      } finally {
+        setBusyId("");
+      }
+    }
+  }
+
+  async function handlePickWinner(cluster: Cluster, winnerId: string) {
+    if (
+      !window.confirm(
+        `Approve "${cluster.programName}" from one source and reject the other ${
+          cluster.records.length - 1
+        } draft${cluster.records.length === 1 ? "" : "s"}?`
+      )
+    )
+      return;
+    setBusyId(`cluster:${cluster.key}`);
     setErrorMessage("");
     setStatusMessage("");
     try {
-      const res = await fetch(`/api/admin/agency-guidelines?id=${id}`, {
-        method: "DELETE",
+      // Activate winner
+      const winnerRes = await fetch("/api/admin/agency-guidelines", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: winnerId, is_active: true }),
       });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json?.error || "Failed to delete.");
+      const winnerJson = await winnerRes.json();
+      if (!winnerRes.ok || !winnerJson.success) {
+        throw new Error(winnerJson?.error || "Failed to activate winner.");
       }
-      setStatusMessage("Agency guideline deleted.");
+
+      // Reject others (delete drafts, deactivate active ones)
+      const losers = cluster.records.filter((r) => r.id !== winnerId);
+      for (const loser of losers) {
+        if (!loser.is_active) {
+          await fetch(`/api/admin/agency-guidelines?id=${loser.id}`, {
+            method: "DELETE",
+          });
+        } else {
+          await fetch("/api/admin/agency-guidelines", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: loser.id, is_active: false }),
+          });
+        }
+      }
+
+      setStatusMessage(
+        `Activated "${cluster.programName}" and rejected ${losers.length} duplicate${
+          losers.length === 1 ? "" : "s"
+        }.`
+      );
       await loadGuidelines();
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Delete failed."
+        error instanceof Error ? error.message : "Operation failed."
       );
     } finally {
       setBusyId("");
     }
   }
+
+  async function handleMerge(cluster: Cluster) {
+    if (
+      !window.confirm(
+        `Merge ${cluster.records.length} drafts of "${cluster.programName}" into one activated record? The other drafts will be deleted.`
+      )
+    )
+      return;
+    setBusyId(`cluster:${cluster.key}`);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const res = await fetch("/api/admin/agency-guidelines/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: cluster.records.map((r) => r.id),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json?.error || "Merge failed.");
+      }
+      setStatusMessage(
+        `Merged ${cluster.records.length} drafts into one activated "${cluster.programName}" record.`
+      );
+      await loadGuidelines();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Merge failed."
+      );
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function handleApproveAllInCluster(cluster: Cluster) {
+    if (
+      !window.confirm(
+        `Approve all ${cluster.records.length} drafts of "${cluster.programName}" as separate records?`
+      )
+    )
+      return;
+    setBusyId(`cluster:${cluster.key}`);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      for (const record of cluster.records) {
+        if (record.is_active) continue;
+        await fetch("/api/admin/agency-guidelines", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: record.id, is_active: true }),
+        });
+      }
+      setStatusMessage(`Activated ${cluster.records.length} records.`);
+      await loadGuidelines();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Operation failed."
+      );
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------
+  const renderRecordCard = (g: AgencyGuideline, isInCluster = false) => {
+    const meta = g.extraction_metadata || {};
+    const confidence = (meta as { confidence?: string }).confidence;
+    const sourceQuote = (meta as { sourceQuote?: string }).sourceQuote;
+    const isBusy = busyId === g.id;
+
+    return (
+      <div
+        key={g.id}
+        style={{
+          ...styles.card,
+          borderColor: g.is_active ? "#d7e2f2" : "#facc15",
+          backgroundColor: g.is_active ? "#fff" : "#fffbeb",
+          marginLeft: isInCluster ? 16 : 0,
+        }}
+      >
+        <div style={styles.badgeRow}>
+          <span
+            style={{
+              ...styles.badge,
+              ...(g.is_active ? styles.badgeActive : styles.badgeDraft),
+            }}
+          >
+            {g.is_active ? "ACTIVE" : "DRAFT"}
+          </span>
+          <span style={{ ...styles.badge, ...styles.badgePrimary }}>
+            {g.agency}
+          </span>
+          <span style={{ ...styles.badge, ...styles.badgeNeutral }}>
+            {g.product_family}
+          </span>
+          {g.source === "extracted" && (
+            <span style={{ ...styles.badge, ...styles.badgeNeutral }}>
+              EXTRACTED
+            </span>
+          )}
+          {confidence && (
+            <span
+              style={{
+                ...styles.badge,
+                ...(confidence === "high"
+                  ? styles.badgeSuccess
+                  : confidence === "medium"
+                  ? styles.badgeNeutral
+                  : styles.badgeError),
+              }}
+            >
+              Confidence: {confidence}
+            </span>
+          )}
+        </div>
+
+        {!isInCluster && <h2 style={styles.programName}>{g.program_name}</h2>}
+
+        <div style={styles.statsGrid}>
+          <div>
+            <strong>Min Credit:</strong>
+            <div>{g.min_credit ?? "—"}</div>
+          </div>
+          <div>
+            <strong>Max LTV:</strong>
+            <div>{g.max_ltv != null ? `${g.max_ltv}%` : "—"}</div>
+          </div>
+          <div>
+            <strong>Max DTI:</strong>
+            <div>{g.max_dti != null ? `${g.max_dti}%` : "—"}</div>
+          </div>
+          <div>
+            <strong>Max Units:</strong>
+            <div>{g.max_units ?? "—"}</div>
+          </div>
+          <div>
+            <strong>Occupancy:</strong>
+            <div>
+              {g.occupancy && g.occupancy.length > 0
+                ? g.occupancy.join(", ")
+                : "—"}
+            </div>
+          </div>
+          <div>
+            <strong>Income Types:</strong>
+            <div>
+              {g.income_types && g.income_types.length > 0
+                ? g.income_types.join(", ")
+                : "—"}
+            </div>
+          </div>
+          <div>
+            <strong>Effective Date:</strong>
+            <div>{g.effective_date || "—"}</div>
+          </div>
+          <div>
+            <strong>Source:</strong>
+            <div style={styles.sourceText}>{g.source_name || "—"}</div>
+          </div>
+        </div>
+
+        {g.notes && (
+          <div style={styles.notesBox}>
+            <strong>Notes:</strong>
+            <div style={styles.notesText}>{g.notes}</div>
+          </div>
+        )}
+
+        {sourceQuote && (
+          <div style={styles.quoteBox}>
+            <strong>Source quote:</strong>
+            <div style={styles.quoteText}>{`"${sourceQuote}"`}</div>
+          </div>
+        )}
+
+        <div style={styles.actionRow}>
+          {!g.is_active && (
+            <button
+              type="button"
+              style={{
+                ...styles.approveButton,
+                opacity: isBusy ? 0.6 : 1,
+                cursor: isBusy ? "wait" : "pointer",
+              }}
+              onClick={() => handleActivate(g.id)}
+              disabled={isBusy}
+            >
+              {isBusy ? "Activating…" : "Approve & Activate"}
+            </button>
+          )}
+          <button
+            type="button"
+            style={{
+              ...styles.rejectButton,
+              opacity: isBusy ? 0.6 : 1,
+              cursor: isBusy ? "wait" : "pointer",
+            }}
+            onClick={() => handleSoftReject(g.id)}
+            disabled={isBusy}
+          >
+            {g.is_active ? "Deactivate" : "Reject Draft"}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCluster = (cluster: Cluster) => {
+    const isBusy = busyId === `cluster:${cluster.key}`;
+    return (
+      <div key={cluster.key} style={styles.clusterCard}>
+        <div style={styles.clusterHeader}>
+          <div>
+            <div style={styles.clusterTitle}>
+              ⚠ {cluster.records.length} duplicate
+              {cluster.records.length === 1 ? "" : "s"}: {cluster.programName}
+            </div>
+            <div style={styles.clusterMeta}>
+              {cluster.agency} · {cluster.product_family}
+            </div>
+          </div>
+          <div style={styles.clusterActions}>
+            <button
+              type="button"
+              style={{
+                ...styles.mergeButton,
+                opacity: isBusy ? 0.6 : 1,
+                cursor: isBusy ? "wait" : "pointer",
+              }}
+              onClick={() => handleMerge(cluster)}
+              disabled={isBusy}
+            >
+              {isBusy ? "Working…" : "Merge into one"}
+            </button>
+            <button
+              type="button"
+              style={{
+                ...styles.approveAllButton,
+                opacity: isBusy ? 0.6 : 1,
+                cursor: isBusy ? "wait" : "pointer",
+              }}
+              onClick={() => handleApproveAllInCluster(cluster)}
+              disabled={isBusy}
+            >
+              Approve all separately
+            </button>
+          </div>
+        </div>
+
+        <div style={styles.clusterHelp}>
+          These records share the same agency, product family, and program name.
+          Pick one as the winner (other(s) get rejected), merge them all into one,
+          or approve them all as separate entries.
+        </div>
+
+        <div style={styles.clusterChildren}>
+          {cluster.records.map((record) => (
+            <div key={record.id} style={styles.clusterChild}>
+              {renderRecordCard(record, true)}
+              <button
+                type="button"
+                style={{
+                  ...styles.pickWinnerButton,
+                  opacity: isBusy ? 0.6 : 1,
+                  cursor: isBusy ? "wait" : "pointer",
+                }}
+                onClick={() => handlePickWinner(cluster, record.id)}
+                disabled={isBusy}
+              >
+                Pick this as winner
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <main style={styles.page}>
@@ -162,8 +582,9 @@ export default function AgencyGuidelinesPage() {
             <h1 style={styles.title}>Manage Agency Guidelines</h1>
             <p style={styles.subtitle}>
               Fannie Mae and Freddie Mac selling guide programs. Drafts come
-              from AI extraction of the official Selling Guides — review and
-              approve them here to make them live and queryable by the matcher.
+              from AI extraction. When the same program is extracted from
+              multiple parts of a Selling Guide, duplicate clusters surface
+              here for review — pick a winner, merge, or keep separate.
             </p>
           </div>
           <a href="/admin" style={styles.backLink}>
@@ -171,8 +592,12 @@ export default function AgencyGuidelinesPage() {
           </a>
         </div>
 
-        {statusMessage ? <div style={styles.successBox}>{statusMessage}</div> : null}
-        {errorMessage ? <div style={styles.errorBox}>{errorMessage}</div> : null}
+        {statusMessage ? (
+          <div style={styles.successBox}>{statusMessage}</div>
+        ) : null}
+        {errorMessage ? (
+          <div style={styles.errorBox}>{errorMessage}</div>
+        ) : null}
 
         <div style={styles.tabRow}>
           <button
@@ -225,158 +650,32 @@ export default function AgencyGuidelinesPage() {
 
         {loading ? (
           <div style={styles.infoBox}>Loading…</div>
-        ) : filtered.length === 0 ? (
+        ) : clusters.length === 0 && singletons.length === 0 ? (
           <div style={styles.infoBox}>
             No agency guidelines match the current filters.
           </div>
         ) : (
-          <div style={styles.list}>
-            {filtered.map((g) => {
-              const meta = g.extraction_metadata || {};
-              const confidence = (meta as { confidence?: string }).confidence;
-              const sourceQuote = (meta as { sourceQuote?: string }).sourceQuote;
-              const isBusy = busyId === g.id;
+          <>
+            {clusters.length > 0 && (
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>
+                  Duplicate clusters ({clusters.length})
+                </h3>
+                {clusters.map(renderCluster)}
+              </div>
+            )}
 
-              return (
-                <div
-                  key={g.id}
-                  style={{
-                    ...styles.card,
-                    borderColor: g.is_active ? "#d7e2f2" : "#facc15",
-                    backgroundColor: g.is_active ? "#fff" : "#fffbeb",
-                  }}
-                >
-                  <div style={styles.badgeRow}>
-                    <span
-                      style={{
-                        ...styles.badge,
-                        ...(g.is_active
-                          ? styles.badgeActive
-                          : styles.badgeDraft),
-                      }}
-                    >
-                      {g.is_active ? "ACTIVE" : "DRAFT"}
-                    </span>
-                    <span style={{ ...styles.badge, ...styles.badgePrimary }}>
-                      {g.agency}
-                    </span>
-                    <span style={{ ...styles.badge, ...styles.badgeNeutral }}>
-                      {g.product_family}
-                    </span>
-                    {g.source === "extracted" && (
-                      <span style={{ ...styles.badge, ...styles.badgeNeutral }}>
-                        EXTRACTED
-                      </span>
-                    )}
-                    {confidence && (
-                      <span
-                        style={{
-                          ...styles.badge,
-                          ...(confidence === "high"
-                            ? styles.badgeSuccess
-                            : confidence === "medium"
-                            ? styles.badgeNeutral
-                            : styles.badgeError),
-                        }}
-                      >
-                        Confidence: {confidence}
-                      </span>
-                    )}
-                  </div>
-
-                  <h2 style={styles.programName}>{g.program_name}</h2>
-
-                  <div style={styles.statsGrid}>
-                    <div>
-                      <strong>Min Credit:</strong>
-                      <div>{g.min_credit ?? "—"}</div>
-                    </div>
-                    <div>
-                      <strong>Max LTV:</strong>
-                      <div>{g.max_ltv != null ? `${g.max_ltv}%` : "—"}</div>
-                    </div>
-                    <div>
-                      <strong>Max DTI:</strong>
-                      <div>{g.max_dti != null ? `${g.max_dti}%` : "—"}</div>
-                    </div>
-                    <div>
-                      <strong>Max Units:</strong>
-                      <div>{g.max_units ?? "—"}</div>
-                    </div>
-                    <div>
-                      <strong>Occupancy:</strong>
-                      <div>
-                        {g.occupancy && g.occupancy.length > 0
-                          ? g.occupancy.join(", ")
-                          : "—"}
-                      </div>
-                    </div>
-                    <div>
-                      <strong>Income Types:</strong>
-                      <div>
-                        {g.income_types && g.income_types.length > 0
-                          ? g.income_types.join(", ")
-                          : "—"}
-                      </div>
-                    </div>
-                    <div>
-                      <strong>Effective Date:</strong>
-                      <div>{g.effective_date || "—"}</div>
-                    </div>
-                    <div>
-                      <strong>Source:</strong>
-                      <div style={styles.sourceText}>
-                        {g.source_name || "—"}
-                      </div>
-                    </div>
-                  </div>
-
-                  {g.notes && (
-                    <div style={styles.notesBox}>
-                      <strong>Notes:</strong>
-                      <div style={styles.notesText}>{g.notes}</div>
-                    </div>
-                  )}
-
-                  {sourceQuote && (
-                    <div style={styles.quoteBox}>
-                      <strong>Source quote:</strong>
-                      <div style={styles.quoteText}>{`"${sourceQuote}"`}</div>
-                    </div>
-                  )}
-
-                  <div style={styles.actionRow}>
-                    {!g.is_active && (
-                      <button
-                        type="button"
-                        style={{
-                          ...styles.approveButton,
-                          opacity: isBusy ? 0.6 : 1,
-                          cursor: isBusy ? "wait" : "pointer",
-                        }}
-                        onClick={() => handleActivate(g.id)}
-                        disabled={isBusy}
-                      >
-                        {isBusy ? "Activating…" : "Approve & Activate"}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      style={{
-                        ...styles.rejectButton,
-                        opacity: isBusy ? 0.6 : 1,
-                        cursor: isBusy ? "wait" : "pointer",
-                      }}
-                      onClick={() => handleReject(g.id)}
-                      disabled={isBusy}
-                    >
-                      {g.is_active ? "Delete" : "Reject Draft"}
-                    </button>
-                  </div>
+            {singletons.length > 0 && (
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>
+                  Individual records ({singletons.length})
+                </h3>
+                <div style={styles.list}>
+                  {singletons.map((g) => renderRecordCard(g, false))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </main>
@@ -483,11 +782,63 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 14,
     padding: 14,
   },
+  section: { marginBottom: 22 },
+  sectionTitle: {
+    fontSize: 18,
+    margin: "0 0 12px 0",
+    color: "#263366",
+    fontWeight: 700,
+  },
   list: { display: "flex", flexDirection: "column", gap: 14 },
   card: {
     border: "1px solid",
     borderRadius: 18,
     padding: 18,
+  },
+  clusterCard: {
+    border: "2px solid #f59e0b",
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    backgroundColor: "#fffbeb",
+  },
+  clusterHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 8,
+  },
+  clusterTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#92400e",
+  },
+  clusterMeta: {
+    fontSize: 13,
+    color: "#92400e",
+    marginTop: 2,
+  },
+  clusterActions: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  clusterHelp: {
+    fontSize: 13,
+    color: "#92400e",
+    marginBottom: 14,
+    lineHeight: 1.6,
+    fontStyle: "italic",
+  },
+  clusterChildren: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  clusterChild: {
+    position: "relative",
   },
   badgeRow: {
     display: "flex",
@@ -539,7 +890,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
   },
   quoteText: { marginTop: 6, fontStyle: "italic", color: "#4b628c" },
-  sourceText: { fontSize: 13, color: "#5b7097", wordBreak: "break-word" },
+  sourceText: {
+    fontSize: 13,
+    color: "#5b7097",
+    wordBreak: "break-word",
+  },
   actionRow: { display: "flex", gap: 10, flexWrap: "wrap" },
   approveButton: {
     backgroundColor: "#16a34a",
@@ -559,5 +914,33 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     fontSize: 14,
   },
+  mergeButton: {
+    backgroundColor: "#7c3aed",
+    color: "#fff",
+    border: "none",
+    borderRadius: 12,
+    padding: "10px 16px",
+    fontWeight: 700,
+    fontSize: 13,
+  },
+  approveAllButton: {
+    backgroundColor: "#0096C7",
+    color: "#fff",
+    border: "none",
+    borderRadius: 12,
+    padding: "10px 16px",
+    fontWeight: 700,
+    fontSize: 13,
+  },
+  pickWinnerButton: {
+    backgroundColor: "#16a34a",
+    color: "#fff",
+    border: "none",
+    borderRadius: 10,
+    padding: "8px 14px",
+    fontWeight: 700,
+    fontSize: 12,
+    marginTop: 6,
+    marginLeft: 16,
+  },
 };
-
