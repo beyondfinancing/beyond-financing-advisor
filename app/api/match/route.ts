@@ -5,19 +5,13 @@
 //
 // =============================================================================
 //
-// PHASE 1 SUPABASE-BACKED MATCHER
+// PHASE 1 SUPABASE-BACKED MATCHER (TypeScript-safe relations version)
 //
 // Reads from: programs + program_guidelines + lenders + lender_state_eligibility
 //
 // Returns the contract expected by app/finley/page.tsx:
 //   strong_matches, conditional_matches, eliminated_paths,
 //   next_question, top_recommendation, lender_summary, summary
-//
-// NOT in this phase (planned for Phase 2):
-//   - global_guidelines (Fannie/Freddie agency programs)
-//   - lender_overlays
-//   - openai_enhancement
-//   - lender_product_assignments cross-check
 //
 // =============================================================================
 
@@ -68,12 +62,14 @@ type ProgramRow = {
   loan_category: string | null;
   is_active: boolean;
   lender_id: string;
-  lenders: {
-    id: string;
-    name: string | null;
-    states: string[] | null;
-  } | null;
-  program_guidelines: GuidelineRow[];
+  lenders: unknown;
+  program_guidelines: unknown;
+};
+
+type LenderJoin = {
+  id: string;
+  name: string | null;
+  states: string[] | null;
 };
 
 type GuidelineRow = {
@@ -135,24 +131,16 @@ function toStringArray(value: unknown): string[] {
   return [];
 }
 
-// Normalizes a single token to lowercase snake_case for comparison.
-// Handles "Primary" -> "primary", "Second Home" -> "second_home", etc.
 function normalizeToken(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
 }
 
-// Checks if a normalized input value matches any of the array values
-// after normalizing both sides. Handles snake_case + capitalized variants.
-//
-// Special case: occupancy. "primary_residence" should match "Primary",
-// "second_home" should match "Second Home", "investment_property"
-// should match "Investment".
 function arrayContainsNormalized(
   arr: string[],
   inputValue: string,
   fieldType: "occupancy" | "default" = "default"
 ): boolean {
-  if (arr.length === 0) return true; // Empty array = no restriction stated
+  if (arr.length === 0) return true;
   const normalizedInput = normalizeToken(inputValue);
 
   for (const item of arr) {
@@ -161,11 +149,9 @@ function arrayContainsNormalized(
     if (normalizedItem === normalizedInput) return true;
 
     if (fieldType === "occupancy") {
-      // Map shorthand DB values to form enum values
       if (normalizedInput === "primary_residence" && normalizedItem === "primary") return true;
       if (normalizedInput === "second_home" && normalizedItem === "second_home") return true;
       if (normalizedInput === "investment_property" && normalizedItem === "investment") return true;
-      // And reverse
       if (normalizedItem === "primary_residence" && normalizedInput === "primary") return true;
       if (normalizedItem === "investment" && normalizedInput === "investment_property") return true;
     }
@@ -174,7 +160,6 @@ function arrayContainsNormalized(
   return false;
 }
 
-// Borrower status check with the allows_* boolean fallbacks.
 function borrowerStatusMatches(
   borrowerStatuses: string[],
   inputStatus: string,
@@ -184,25 +169,18 @@ function borrowerStatusMatches(
 
   const normalizedInput = normalizeToken(inputStatus);
 
-  // Direct array membership
   if (borrowerStatuses.length > 0) {
     for (const item of borrowerStatuses) {
       if (normalizeToken(item) === normalizedInput) return true;
     }
-  } else {
-    // Empty array means no restriction stated — fall through to allows_* booleans
   }
 
-  // Boolean fallbacks
   if (normalizedInput === "itin_borrower" && guideline.allows_itin === true) return true;
   if (normalizedInput === "daca" && guideline.allows_daca === true) return true;
   if (normalizedInput === "foreign_national" && guideline.allows_foreign_national === true) return true;
   if (normalizedInput === "non_permanent_resident" && guideline.allows_non_permanent_resident === true) return true;
 
-  // If the array is non-empty AND the input wasn't found AND no boolean override applies, no match.
-  // If the array is empty AND no boolean override applies, treat as no restriction stated.
   if (borrowerStatuses.length === 0) {
-    // No data at all on this dimension — pass-through (will be flagged as soft)
     return true;
   }
 
@@ -220,8 +198,6 @@ function hasSufficientGuidelineData(g: GuidelineRow): boolean {
   const propertyTypes = toStringArray(g.property_types);
   const transactionTypes = toStringArray(g.transaction_types);
 
-  // Has at least SOME structural data: at least one populated array OR some allows_* boolean
-  // OR a credit/ltv threshold.
   const hasArrayData =
     borrowerStatuses.length > 0 ||
     occupancyTypes.length > 0 ||
@@ -287,14 +263,9 @@ function evaluateProgram(
   const firstTimeHomebuyer =
     payload.first_time_homebuyer === true || payload.first_time_homebuyer === "yes";
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 1: State eligibility
-  // -------------------------------------------------------------------------
   if (subjectState) {
     if (!stateEligibility || !stateEligibility.is_active) {
-      blockers.push(
-        `${lenderName} has no active state eligibility entry for ${subjectState}.`
-      );
+      blockers.push(`${lenderName} has no active state eligibility entry for ${subjectState}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -311,9 +282,7 @@ function evaluateProgram(
     const isInvestmentScenario = occupancyType === "investment_property";
 
     if (isOwnerOccupiedScenario && !stateEligibility.owner_occupied_allowed) {
-      blockers.push(
-        `${lenderName} is not licensed for owner-occupied loans in ${subjectState}.`
-      );
+      blockers.push(`${lenderName} is not licensed for owner-occupied loans in ${subjectState}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -326,9 +295,7 @@ function evaluateProgram(
     }
 
     if (isInvestmentScenario && !stateEligibility.non_owner_occupied_allowed) {
-      blockers.push(
-        `${lenderName} is not licensed for non-owner-occupied loans in ${subjectState}.`
-      );
+      blockers.push(`${lenderName} is not licensed for non-owner-occupied loans in ${subjectState}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -345,15 +312,10 @@ function evaluateProgram(
     missingItems.push("Subject state");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 2: Borrower status
-  // -------------------------------------------------------------------------
   if (borrowerStatus) {
     const borrowerStatuses = toStringArray(guideline.borrower_statuses);
     if (!borrowerStatusMatches(borrowerStatuses, borrowerStatus, guideline)) {
-      blockers.push(
-        `${programName} does not allow borrower status: ${borrowerStatus.replace(/_/g, " ")}.`
-      );
+      blockers.push(`${programName} does not allow borrower status: ${borrowerStatus.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -369,15 +331,10 @@ function evaluateProgram(
     missingItems.push("Borrower status");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 3: Occupancy type
-  // -------------------------------------------------------------------------
   if (occupancyType) {
     const occupancyTypes = toStringArray(guideline.occupancy_types);
     if (!arrayContainsNormalized(occupancyTypes, occupancyType, "occupancy")) {
-      blockers.push(
-        `${programName} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`
-      );
+      blockers.push(`${programName} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -395,15 +352,10 @@ function evaluateProgram(
     missingItems.push("Occupancy type");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 4: Transaction type
-  // -------------------------------------------------------------------------
   if (transactionType) {
     const transactionTypes = toStringArray(guideline.transaction_types);
     if (!arrayContainsNormalized(transactionTypes, transactionType)) {
-      blockers.push(
-        `${programName} does not allow transaction type: ${transactionType.replace(/_/g, " ")}.`
-      );
+      blockers.push(`${programName} does not allow transaction type: ${transactionType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -421,15 +373,10 @@ function evaluateProgram(
     missingItems.push("Transaction type");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 5: Income type
-  // -------------------------------------------------------------------------
   if (incomeType) {
     const incomeTypes = toStringArray(guideline.income_types);
     if (!arrayContainsNormalized(incomeTypes, incomeType)) {
-      blockers.push(
-        `${programName} does not accept income type: ${incomeType.replace(/_/g, " ")}.`
-      );
+      blockers.push(`${programName} does not accept income type: ${incomeType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -447,15 +394,10 @@ function evaluateProgram(
     missingItems.push("Income type");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 6: Property type
-  // -------------------------------------------------------------------------
   if (propertyType) {
     const propertyTypes = toStringArray(guideline.property_types);
     if (!arrayContainsNormalized(propertyTypes, propertyType)) {
-      blockers.push(
-        `${programName} does not allow property type: ${propertyType.replace(/_/g, " ")}.`
-      );
+      blockers.push(`${programName} does not allow property type: ${propertyType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -473,14 +415,9 @@ function evaluateProgram(
     missingItems.push("Property type");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 7: Credit score
-  // -------------------------------------------------------------------------
   if (creditScore > 0 && guideline.min_credit_score !== null) {
     if (creditScore < guideline.min_credit_score) {
-      blockers.push(
-        `Credit score ${creditScore} is below program minimum of ${guideline.min_credit_score}.`
-      );
+      blockers.push(`Credit score ${creditScore} is below program minimum of ${guideline.min_credit_score}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -508,14 +445,9 @@ function evaluateProgram(
     missingItems.push("Credit score");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 8: LTV
-  // -------------------------------------------------------------------------
   if (ltv > 0 && guideline.max_ltv !== null) {
     if (ltv > Number(guideline.max_ltv)) {
-      blockers.push(
-        `LTV ${ltv}% exceeds program maximum of ${guideline.max_ltv}%.`
-      );
+      blockers.push(`LTV ${ltv}% exceeds program maximum of ${guideline.max_ltv}%.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -540,14 +472,9 @@ function evaluateProgram(
     missingItems.push("LTV");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 9: DTI
-  // -------------------------------------------------------------------------
   if (dti > 0 && guideline.max_dti !== null) {
     if (dti > Number(guideline.max_dti)) {
-      blockers.push(
-        `DTI ${dti}% exceeds program maximum of ${guideline.max_dti}%.`
-      );
+      blockers.push(`DTI ${dti}% exceeds program maximum of ${guideline.max_dti}%.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -572,14 +499,9 @@ function evaluateProgram(
     missingItems.push("DTI");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 10: Loan amount
-  // -------------------------------------------------------------------------
   if (loanAmount > 0) {
     if (guideline.min_loan_amount !== null && loanAmount < Number(guideline.min_loan_amount)) {
-      blockers.push(
-        `Loan amount $${loanAmount.toLocaleString()} is below program minimum of $${Number(guideline.min_loan_amount).toLocaleString()}.`
-      );
+      blockers.push(`Loan amount $${loanAmount.toLocaleString()} is below program minimum of $${Number(guideline.min_loan_amount).toLocaleString()}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -591,9 +513,7 @@ function evaluateProgram(
       };
     }
     if (guideline.max_loan_amount !== null && loanAmount > Number(guideline.max_loan_amount)) {
-      blockers.push(
-        `Loan amount $${loanAmount.toLocaleString()} exceeds program maximum of $${Number(guideline.max_loan_amount).toLocaleString()}.`
-      );
+      blockers.push(`Loan amount $${loanAmount.toLocaleString()} exceeds program maximum of $${Number(guideline.max_loan_amount).toLocaleString()}.`);
       return {
         bucket: "eliminated",
         score: 0,
@@ -611,9 +531,6 @@ function evaluateProgram(
     missingItems.push("Loan amount");
   }
 
-  // -------------------------------------------------------------------------
-  // HARD CHECK 11: Units
-  // -------------------------------------------------------------------------
   if (units > 0) {
     if (guideline.min_units !== null && units < guideline.min_units) {
       blockers.push(`Units (${units}) below program minimum of ${guideline.min_units}.`);
@@ -643,9 +560,6 @@ function evaluateProgram(
     missingItems.push("Units");
   }
 
-  // -------------------------------------------------------------------------
-  // SOFT CHECK: First-time homebuyer
-  // -------------------------------------------------------------------------
   if (firstTimeHomebuyer && guideline.first_time_homebuyer_allowed === false) {
     concerns.push(`Program does not allow first-time homebuyers.`);
     score -= 8;
@@ -654,9 +568,6 @@ function evaluateProgram(
     score += 3;
   }
 
-  // -------------------------------------------------------------------------
-  // SOFT CHECK: Reserves
-  // -------------------------------------------------------------------------
   if (guideline.reserves_required_months !== null) {
     if (reservesMonths === 0) {
       missingItems.push("Available reserves (months of PITIA)");
@@ -664,16 +575,11 @@ function evaluateProgram(
       score += 5;
       strengths.push(`Reserves (${reservesMonths} months) meet program requirement of ${guideline.reserves_required_months} months.`);
     } else {
-      concerns.push(
-        `Reserves (${reservesMonths} months) are below program requirement of ${guideline.reserves_required_months} months.`
-      );
+      concerns.push(`Reserves (${reservesMonths} months) are below program requirement of ${guideline.reserves_required_months} months.`);
       score -= 6;
     }
   }
 
-  // -------------------------------------------------------------------------
-  // BUCKET DECISION
-  // -------------------------------------------------------------------------
   let bucket: "strong" | "conditional" = "conditional";
   if (score >= 75 && concerns.length === 0 && missingItems.length <= 1) {
     bucket = "strong";
@@ -751,7 +657,6 @@ export async function POST(req: Request) {
 
     const supabase = createClient();
 
-    // Pull all active programs + their active guidelines + lender info
     const { data: programs, error: programsError } = await supabase
       .from("programs")
       .select(`
@@ -773,7 +678,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Pull state eligibility once
     const subjectState = String(payload.subject_state || "").trim().toUpperCase();
     let stateEligibilityRows: StateEligibilityRow[] = [];
     if (subjectState) {
@@ -794,7 +698,7 @@ export async function POST(req: Request) {
       stateByLender.set(row.lender_id, row);
     }
 
-    const allRows = (programs || []) as ProgramRow[];
+    const allRows = (programs || []) as unknown as ProgramRow[];
 
     const strongMatches: MatchBucket[] = [];
     const conditionalMatches: MatchBucket[] = [];
@@ -804,18 +708,23 @@ export async function POST(req: Request) {
     const matchedLenderNames = new Set<string>();
 
     for (const program of allRows) {
-      const lenderName = program.lenders?.name || "Unknown Lender";
+      // Normalize lender join (Supabase may return as object or array)
+      const lenderJoin: LenderJoin | null = Array.isArray(program.lenders)
+        ? ((program.lenders[0] as LenderJoin) || null)
+        : ((program.lenders as LenderJoin | null) || null);
+      const lenderName = lenderJoin?.name || "Unknown Lender";
       const lenderId = program.lender_id;
       const programName = program.name || "Unknown Program";
 
       activeLenderNames.add(lenderName);
 
-      const activeGuidelines = (program.program_guidelines || []).filter((g) => g.is_active);
+      const activeGuidelines = (Array.isArray(program.program_guidelines)
+        ? (program.program_guidelines as GuidelineRow[])
+        : []
+      ).filter((g) => g.is_active);
 
-      // No active guidelines at all → skip (option b)
       if (activeGuidelines.length === 0) continue;
 
-      // Pick the first active guideline that has sufficient data
       const guideline = activeGuidelines.find(hasSufficientGuidelineData);
       if (!guideline) continue;
 
@@ -857,12 +766,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // Sort by score descending
     strongMatches.sort((a, b) => b.score - a.score);
     conditionalMatches.sort((a, b) => b.score - a.score);
     eliminatedPaths.sort((a, b) => b.score - a.score);
 
-    // Top recommendation
     let topRecommendation = "";
     if (strongMatches.length > 0) {
       const top = strongMatches[0];
