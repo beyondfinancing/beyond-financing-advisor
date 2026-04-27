@@ -21,6 +21,10 @@ type LenderRow = {
   notes: string | null;
   product_assignments: unknown;
   custom_product_types: unknown;
+  does_conventional: boolean | null;
+  does_fha: boolean | null;
+  does_va: boolean | null;
+  does_usda: boolean | null;
 };
 
 type LenderStateEligibilityRow = {
@@ -167,7 +171,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
     supabaseAdmin
       .from("lenders")
       .select(
-        "id, name, channel, states, created_at, notes, product_assignments, custom_product_types"
+        "id, name, channel, states, created_at, notes, product_assignments, custom_product_types, does_conventional, does_fha, does_va, does_usda"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -246,6 +250,11 @@ export default async function LenderDetailPage({ params }: PageProps) {
 
   const exclusiveIds = new Set(exclusiveProducts.map((item) => item.id));
   const sharedProducts = sharedProductNames(productAssignments, exclusiveIds);
+
+  const doesConventional = Boolean(lenderRow.does_conventional);
+  const doesFha = Boolean(lenderRow.does_fha);
+  const doesVa = Boolean(lenderRow.does_va);
+  const doesUsda = Boolean(lenderRow.does_usda);
 
   return (
     <main
@@ -361,9 +370,15 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 initialLegacyStates={legacyStates}
                 initialOwnerOccupiedStates={ownerOccupiedStates}
                 initialNonOwnerOccupiedStates={nonOwnerOccupiedStates}
+                initialSecondHomeStates={secondHomeStates}
+                initialHelocStates={helocStates}
                 initialNotes={notes}
                 initialProductAssignments={productAssignments}
                 initialCustomProductTypes={exclusiveProducts}
+                initialDoesConventional={doesConventional}
+                initialDoesFha={doesFha}
+                initialDoesVa={doesVa}
+                initialDoesUsda={doesUsda}
               />
             </div>
 
@@ -461,6 +476,19 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <strong>Exclusive Products:</strong> {exclusiveProducts.length}
+                </div>
+                <div>
+                  <strong>Does Conventional:</strong>{" "}
+                  {doesConventional ? "Yes" : "No"}
+                </div>
+                <div>
+                  <strong>Does FHA:</strong> {doesFha ? "Yes" : "No"}
+                </div>
+                <div>
+                  <strong>Does VA:</strong> {doesVa ? "Yes" : "No"}
+                </div>
+                <div>
+                  <strong>Does USDA:</strong> {doesUsda ? "Yes" : "No"}
                 </div>
                 <div>
                   <strong>Created:</strong> {formatDateTime(lenderRow.created_at)}
