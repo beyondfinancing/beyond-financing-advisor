@@ -417,20 +417,23 @@ export async function POST(req: Request) {
   // ---------- Branch on agency vs lender ----------
   const useAgencyPrompt = isAgencyExtraction(lenderName, doc.document_type)
 
-  // Determine product family from document_group ("Single-Family" or "Multi-Family")
+  // Determine product family from document_group.
+  // document_group values now include part suffixes like:
+  //   "Single-Family"
+  //   "Single-Family Part 1"
+  //   "Single-Family Whole Document"
+  //   "Multi-Family Part 3"
+  //   etc.
+  // We do a substring check rather than exact match.
   const groupLower = (doc.document_group || '').toLowerCase()
   let productFamily: 'Single-Family' | 'Multi-Family' | null = null
   if (useAgencyPrompt) {
-    if (groupLower === 'single-family' || groupLower === 'single family') {
-      productFamily = 'Single-Family'
-    } else if (
-      groupLower === 'multi-family' ||
-      groupLower === 'multifamily' ||
-      groupLower === 'multi family'
-    ) {
+    if (groupLower.includes('multi-family') || groupLower.includes('multifamily') || groupLower.includes('multi family')) {
       productFamily = 'Multi-Family'
+    } else if (groupLower.includes('single-family') || groupLower.includes('single family')) {
+      productFamily = 'Single-Family'
     } else {
-      // Default: try to guess from filename
+      // Fallback: filename heuristic
       const fnLower = (doc.original_filename || '').toLowerCase()
       if (fnLower.includes('multi') || fnLower.includes('mf')) {
         productFamily = 'Multi-Family'
