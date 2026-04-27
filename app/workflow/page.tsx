@@ -1,8 +1,33 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace the existing file completely):
+//
+//     app/workflow/page.tsx
+//
+// =============================================================================
+//
+// CHANGE FROM PRIOR VERSION
+//
+// The unauthenticated branch used to render a placeholder card telling the
+// user to "please sign in through your protected team access first." That
+// placeholder is replaced with the shared <TeamLoginCard /> component so
+// mortgage professionals can log in directly on /workflow — no detour
+// through /team needed.
+//
+// On a successful login, the page calls loadUser() to re-check /api/team-auth/me
+// and switches to the authenticated dashboard view without a hard refresh.
+//
+// Everything else — pipeline, file list, urgent oversight, file creation
+// form, agent fields, hero, all i18n — is byte-identical to the prior
+// working version.
+//
+// =============================================================================
+
 "use client";
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import SiteHeader from "@/app/components/SiteHeader";
+import TeamLoginCard from "@/app/components/TeamLoginCard";
 import { SiteLanguage } from "@/app/components/site-header-translations";
 
 type TeamRole =
@@ -95,10 +120,7 @@ const COPY: Record<
   {
     title: string;
     subtitle: string;
-    loginTitle: string;
-    loginText: string;
-    goHome: string;
-    openBorrower: string;
+    loginVariantLabel: string;
     loadingText: string;
     signedInAs: string;
     roleLabel: string;
@@ -164,17 +186,15 @@ const COPY: Record<
     createSuccess: string;
     createError: string;
     requiredError: string;
+    goHome: string;
+    openBorrower: string;
   }
 > = {
   en: {
     title: "Mortgage workflow intelligence from pre-approval handoff through closing.",
     subtitle:
       "Built for loan officers, processors, assistants, and leadership teams who need one disciplined operating layer to manage file handoff, milestone visibility, accountability, and internal communication from processing entry to clear-to-close.",
-    loginTitle: "Protected Professional Access",
-    loginText:
-      "This page uses the same professional authentication layer as Team Mortgage Intelligence. Please sign in through your protected team access first.",
-    goHome: "Back to Homepage",
-    openBorrower: "Open Borrower Experience",
+    loginVariantLabel: "Workflow Intelligence",
     loadingText: "Loading protected workflow command center...",
     signedInAs: "Logged in as",
     roleLabel: "Role",
@@ -253,16 +273,14 @@ const COPY: Record<
     createError: "Unable to create workflow file.",
     requiredError:
       "Loan number, borrower name, property address, and loan officer are required.",
+    goHome: "Back to Homepage",
+    openBorrower: "Open Borrower Experience",
   },
   pt: {
     title: "Inteligência de workflow hipotecário do handoff pré-aprovação até o fechamento.",
     subtitle:
       "Desenvolvido para loan officers, processors, assistentes e liderança que precisam de uma camada operacional disciplinada para handoff do arquivo, visibilidade de marcos, accountability e comunicação interna do início do processing até clear-to-close.",
-    loginTitle: "Acesso Profissional Protegido",
-    loginText:
-      "Esta página usa a mesma camada de autenticação profissional do Team Mortgage Intelligence. Faça login pelo acesso protegido da equipe primeiro.",
-    goHome: "Voltar à Página Inicial",
-    openBorrower: "Abrir Experiência do Cliente",
+    loginVariantLabel: "Workflow Intelligence",
     loadingText: "Carregando centro de comando protegido...",
     signedInAs: "Conectado como",
     roleLabel: "Função",
@@ -341,16 +359,14 @@ const COPY: Record<
     createError: "Não foi possível criar o arquivo de workflow.",
     requiredError:
       "Número do loan, nome do cliente, endereço do imóvel e loan officer são obrigatórios.",
+    goHome: "Voltar à Página Inicial",
+    openBorrower: "Abrir Experiência do Cliente",
   },
   es: {
     title: "Inteligencia de workflow hipotecario desde el handoff de preaprobación hasta el cierre.",
     subtitle:
       "Construido para loan officers, processors, asistentes y liderazgo que necesitan una capa operativa disciplinada para handoff del archivo, visibilidad de hitos, accountability y comunicación interna desde processing hasta clear-to-close.",
-    loginTitle: "Acceso Profesional Protegido",
-    loginText:
-      "Esta página utiliza la misma capa de autenticación profesional que Team Mortgage Intelligence. Inicie sesión a través del acceso protegido del equipo primero.",
-    goHome: "Volver al Inicio",
-    openBorrower: "Abrir Experiencia del Cliente",
+    loginVariantLabel: "Workflow Intelligence",
     loadingText: "Cargando centro de comando protegido...",
     signedInAs: "Conectado como",
     roleLabel: "Rol",
@@ -429,6 +445,8 @@ const COPY: Record<
     createError: "No fue posible crear el archivo de workflow.",
     requiredError:
       "Número del loan, nombre del cliente, dirección de la propiedad y loan officer son obligatorios.",
+    goHome: "Volver al Inicio",
+    openBorrower: "Abrir Experiencia del Cliente",
   },
 };
 
@@ -622,6 +640,25 @@ export default function WorkflowPage() {
     window.location.href = "/team";
   };
 
+  const loadUser = useCallback(async () => {
+    try {
+      const response = await fetch("/api/team-auth/me");
+
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data?.authenticated && data?.user) {
+          setActiveUser(data.user);
+          setCreateLoanOfficer(data.user.name || "");
+        }
+      }
+    } catch {
+      // no-op
+    } finally {
+      setAuthCheckLoading(false);
+    }
+  }, []);
+
   const loadFiles = useCallback(async () => {
     try {
       setFilesLoading(true);
@@ -667,27 +704,8 @@ export default function WorkflowPage() {
   }, []);
 
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/team-auth/me");
-
-        if (response.ok) {
-          const data = await response.json();
-
-          if (data?.authenticated && data?.user) {
-            setActiveUser(data.user);
-            setCreateLoanOfficer(data.user.name || "");
-          }
-        }
-      } catch {
-        // no-op
-      } finally {
-        setAuthCheckLoading(false);
-      }
-    };
-
     void loadUser();
-  }, []);
+  }, [loadUser]);
 
   useEffect(() => {
     void loadFiles();
@@ -889,19 +907,16 @@ export default function WorkflowPage() {
             <p style={styles.heroText}>{t.subtitle}</p>
           </section>
 
-          <div style={styles.loginCard}>
-            <h2 style={styles.sectionTitle}>{t.loginTitle}</h2>
-            <p style={styles.sectionText}>{t.loginText}</p>
-
-            <div style={styles.loginActions}>
-              <a href="/" style={styles.primaryLinkButton}>
-                {t.goHome}
-              </a>
-              <a href="/borrower" style={styles.secondaryLinkButton}>
-                {t.openBorrower}
-              </a>
-            </div>
-          </div>
+          <TeamLoginCard
+            language={language}
+            variantLabel={t.loginVariantLabel}
+            quickActionsTarget="workflow"
+            onLoginSuccess={async () => {
+              setAuthCheckLoading(true);
+              await loadUser();
+              await loadFiles();
+            }}
+          />
         </div>
       </main>
     );
@@ -1613,41 +1628,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     fontSize: 14,
   },
-  loginCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 24,
-    padding: 24,
-    boxShadow: "0 10px 26px rgba(15,23,42,0.06)",
-    maxWidth: 760,
-    margin: "0 auto",
-  },
-  loginActions: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-    marginTop: 18,
-  },
-  primaryLinkButton: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 14,
-    backgroundColor: "#263366",
-    color: "#ffffff",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-  },
-  secondaryLinkButton: {
-    textDecoration: "none",
-    textAlign: "center",
-    borderRadius: 14,
-    border: "1px solid #263366",
-    backgroundColor: "#ffffff",
-    color: "#263366",
-    padding: "13px 18px",
-    fontWeight: 800,
-    fontSize: 14,
-  },
   statGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(4, 1fr)",
@@ -1699,13 +1679,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 28,
     lineHeight: 1.15,
     fontWeight: 900,
-  },
-  sectionText: {
-    color: "#64748B",
-    lineHeight: 1.7,
-    fontSize: 15,
-    marginTop: 10,
-    marginBottom: 0,
   },
   pipelineHeader: {
     display: "flex",
