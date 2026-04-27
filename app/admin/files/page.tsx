@@ -1,24 +1,24 @@
 // =============================================================================
-// PHASE 7.3.5 — REDESIGNED admin/files PAGE
+// PHASE 7.5b — REPLACEMENT for app/admin/files/page.tsx
 //
-// Replace the entire contents of:
-//     app/admin/files/page.tsx
+// What's new vs Phase 7.3.5 redesign:
+//   1. When document_type = "Selling Guide", the form switches to a
+//      multi-part upload flow:
+//      - Product Family dropdown (Single-Family / Multi-Family) — required
+//      - 9 file slots: Whole Document, Part 1, Part 2 ... Part 8
+//      - Pick files for whichever slots apply, leave others blank
+//      - Single "Upload All Selected Files" button
+//      - Files upload SEQUENTIALLY with a clear "Uploading X of Y..." indicator
+//      - Each part becomes its own document_group: "Single-Family Whole Document",
+//        "Single-Family Part 1", "Single-Family Part 2", etc.
+//      - Replace strategy fires per-part, never overwrites other parts
 //
-// What's new vs Phase 7.3 flat layout:
-//   • Lenders are the top-level cards (one row per lender, click to expand)
-//   • Each lender row shows: name, doc count, "X extracting" indicator,
-//     "X drafts ready" indicator, last updated timestamp
-//   • Clicking a lender row expands it inline to show compact one-line
-//     document rows for that lender
-//   • Clicking a document row expands it inline to show full details and
-//     all action buttons (Extract / Approve All / Archive Now)
-//   • Status badges still polled every 5 seconds while any doc is
-//     pending/running
-//   • Search box at top filters lenders by name (helpful when you have
-//     hundreds of lenders)
+//   2. For all OTHER document types (Program Matrix, Pricing Sheet, etc.),
+//      the form keeps the existing single-file flow EXACTLY as before. Zero
+//      change for ClearEdge / FNBA / future lender uploads.
 //
-// Phase 7.3 functionality preserved 1:1 — same auto-extract trigger,
-// same approve-all endpoint, same archive flow, same upload form.
+//   3. Lender-card layout, search, polling, expand/collapse, status badges,
+//      and all action buttons are unchanged from Phase 7.3.5.
 // =============================================================================
 
 "use client";
@@ -90,7 +90,28 @@ const DOCUMENT_TYPES = [
   "Other",
 ] as const;
 
-const MASTER_GROUP_OPTIONS = ["Master", "General", "All Programs", "Single-Family", "Multi-Family"] as const;
+const MASTER_GROUP_OPTIONS = [
+  "Master",
+  "General",
+  "All Programs",
+] as const;
+
+// Selling Guide-specific
+const PRODUCT_FAMILIES = ["Single-Family", "Multi-Family"] as const;
+const PART_OPTIONS = [
+  "Whole Document",
+  "Part 1",
+  "Part 2",
+  "Part 3",
+  "Part 4",
+  "Part 5",
+  "Part 6",
+  "Part 7",
+  "Part 8",
+] as const;
+
+type ProductFamily = (typeof PRODUCT_FAMILIES)[number];
+type PartName = (typeof PART_OPTIONS)[number];
 
 type UploadFormState = {
   lenderId: string;
@@ -100,7 +121,18 @@ type UploadFormState = {
   effectiveDate: string;
   notes: string;
   file: File | null;
+  // Selling Guide multi-part state
+  productFamily: ProductFamily | "";
+  partFiles: Partial<Record<PartName, File | null>>;
 };
+
+type BatchUploadProgress = {
+  total: number;
+  current: number;
+  currentPartName: string;
+  successes: string[];
+  failures: { partName: string; error: string }[];
+} | null;
 
 export default function ManageLenderFilesPage() {
   const [lenders, setLenders] = useState<LenderOption[]>([]);
@@ -111,6 +143,7 @@ export default function ManageLenderFilesPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [lenderSearch, setLenderSearch] = useState("");
+  const [batchProgress, setBatchProgress] = useState<BatchUploadProgress>(null);
 
   const [expandedLenders, setExpandedLenders] = useState<Set<string>>(
     new Set()
@@ -131,6 +164,8 @@ export default function ManageLenderFilesPage() {
     effectiveDate: "",
     notes: "",
     file: null,
+    productFamily: "",
+    partFiles: {},
   });
 
   useEffect(() => {
@@ -144,7 +179,6 @@ export default function ManageLenderFilesPage() {
     };
   }, []);
 
-  // Auto-poll while extraction work is in flight.
   useEffect(() => {
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current);
@@ -176,6 +210,8 @@ export default function ManageLenderFilesPage() {
     return programs.filter((p) => p.lender_id === form.lenderId);
   }, [programs, form.lenderId]);
 
+  const isSellingGuide = form.documentType === "Selling Guide";
+
   const groupRequired = useMemo(() => {
     return (
       form.documentType === "Program Matrix" ||
@@ -185,10 +221,8 @@ export default function ManageLenderFilesPage() {
     );
   }, [form.documentType]);
 
-  // Build lender groups from flat doc list
   const lenderGroups = useMemo<LenderGroup[]>(() => {
     const map = new Map<string, LenderGroup>();
-
     for (const doc of activeDocuments) {
       const key = doc.lender_id;
       if (!map.has(key)) {
@@ -205,7 +239,6 @@ export default function ManageLenderFilesPage() {
       }
       const group = map.get(key)!;
       group.docs.push(doc);
-
       const status = doc.extraction_status || "pending";
       if (status === "pending" || status === "running") {
         group.pendingOrRunningCount += 1;
@@ -218,7 +251,6 @@ export default function ManageLenderFilesPage() {
         group.draftsReadyCount += 1;
         group.totalDraftsAcrossDocs += doc.extraction_drafts_count || 0;
       }
-
       if (
         !group.lastUploadedAt ||
         new Date(doc.uploaded_at) > new Date(group.lastUploadedAt)
@@ -226,8 +258,6 @@ export default function ManageLenderFilesPage() {
         group.lastUploadedAt = doc.uploaded_at;
       }
     }
-
-    // Sort docs within each group by document_type then group
     for (const g of map.values()) {
       g.docs.sort((a, b) => {
         const t = a.document_type.localeCompare(b.document_type);
@@ -235,7 +265,6 @@ export default function ManageLenderFilesPage() {
         return a.document_group.localeCompare(b.document_group);
       });
     }
-
     return [...map.values()].sort((a, b) =>
       a.lender_name.localeCompare(b.lender_name)
     );
@@ -267,25 +296,21 @@ export default function ManageLenderFilesPage() {
   async function loadPageData() {
     setLoading(true);
     setErrorMessage("");
-
     try {
       const [lendersRes, programsRes, docsRes] = await Promise.all([
         fetch("/api/admin/lenders"),
         fetch("/api/admin/programs"),
         fetch("/api/admin/lender-files/active"),
       ]);
-
       const lendersJson = await lendersRes.json();
       const programsJson = await programsRes.json();
       const docsJson = await docsRes.json();
-
       if (!lendersRes.ok)
         throw new Error(lendersJson?.error || "Failed to load lenders.");
       if (!programsRes.ok)
         throw new Error(programsJson?.error || "Failed to load programs.");
       if (!docsRes.ok)
         throw new Error(docsJson?.error || "Failed to load active documents.");
-
       setLenders(
         Array.isArray(lendersJson?.lenders) ? lendersJson.lenders : []
       );
@@ -346,6 +371,9 @@ export default function ManageLenderFilesPage() {
       documentType: value,
       documentGroup: shouldDefaultToMaster ? "Master" : prev.documentGroup || "",
       programId: shouldDefaultToMaster ? "" : prev.programId,
+      productFamily: value === "Selling Guide" ? prev.productFamily : "",
+      partFiles: {},
+      file: null,
     }));
   }
 
@@ -355,6 +383,13 @@ export default function ManageLenderFilesPage() {
       ...prev,
       documentGroup: value,
       programId: matched?.id || "",
+    }));
+  }
+
+  function setPartFile(partName: PartName, file: File | null) {
+    setForm((prev) => ({
+      ...prev,
+      partFiles: { ...prev.partFiles, [partName]: file },
     }));
   }
 
@@ -376,8 +411,10 @@ export default function ManageLenderFilesPage() {
     });
   }
 
-  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  // ---------------------------------------------------------------------------
+  // Single-file upload (existing flow for non-Selling-Guide docs)
+  // ---------------------------------------------------------------------------
+  async function handleSingleUpload() {
     setMessage("");
     setErrorMessage("");
 
@@ -420,22 +457,7 @@ export default function ManageLenderFilesPage() {
         }.${extractionMsg}`
       );
 
-      setForm({
-        lenderId: "",
-        documentType: "",
-        documentGroup: "Master",
-        programId: "",
-        effectiveDate: "",
-        notes: "",
-        file: null,
-      });
-
-      const fileInput = document.getElementById(
-        "lender-file-input"
-      ) as HTMLInputElement | null;
-      if (fileInput) fileInput.value = "";
-
-      // Auto-expand the lender card the upload went to so user sees status
+      resetForm();
       if (form.lenderId) {
         setExpandedLenders((prev) => {
           const next = new Set(prev);
@@ -443,7 +465,6 @@ export default function ManageLenderFilesPage() {
           return next;
         });
       }
-
       await loadPageData();
     } catch (error) {
       setErrorMessage(
@@ -454,20 +475,166 @@ export default function ManageLenderFilesPage() {
     }
   }
 
-  async function handleArchiveNow(documentId: string) {
+  // ---------------------------------------------------------------------------
+  // Batch upload (Selling Guide multi-part flow)
+  // ---------------------------------------------------------------------------
+  async function handleBatchUpload() {
     setMessage("");
     setErrorMessage("");
 
+    if (!form.lenderId) return setErrorMessage("Please select a lender.");
+    if (!form.productFamily)
+      return setErrorMessage("Please select a product family.");
+
+    // Collect selected parts
+    const selectedParts = (PART_OPTIONS as readonly PartName[])
+      .map((partName) => ({ partName, file: form.partFiles[partName] || null }))
+      .filter((p): p is { partName: PartName; file: File } => Boolean(p.file));
+
+    if (selectedParts.length === 0) {
+      return setErrorMessage(
+        "Please choose at least one file for one of the part slots."
+      );
+    }
+
+    setUploading(true);
+    setBatchProgress({
+      total: selectedParts.length,
+      current: 0,
+      currentPartName: "",
+      successes: [],
+      failures: [],
+    });
+
+    const successes: string[] = [];
+    const failures: { partName: string; error: string }[] = [];
+
+    for (let i = 0; i < selectedParts.length; i++) {
+      const { partName, file } = selectedParts[i];
+      const documentGroup = `${form.productFamily} ${partName}`;
+
+      setBatchProgress({
+        total: selectedParts.length,
+        current: i + 1,
+        currentPartName: partName,
+        successes: [...successes],
+        failures: [...failures],
+      });
+
+      try {
+        const payload = new FormData();
+        payload.append("lenderId", form.lenderId);
+        payload.append("documentType", "Selling Guide");
+        payload.append("documentGroup", documentGroup);
+        payload.append("programId", "");
+        payload.append("effectiveDate", form.effectiveDate || "");
+        payload.append("notes", form.notes || "");
+        payload.append("file", file);
+
+        const response = await fetch("/api/admin/lender-files/upload", {
+          method: "POST",
+          body: payload,
+        });
+
+        const json = await response.json();
+        if (!response.ok) {
+          throw new Error(json?.error || "Upload failed.");
+        }
+        successes.push(documentGroup);
+      } catch (error) {
+        failures.push({
+          partName: documentGroup,
+          error: error instanceof Error ? error.message : "Upload failed.",
+        });
+      }
+    }
+
+    setBatchProgress({
+      total: selectedParts.length,
+      current: selectedParts.length,
+      currentPartName: "",
+      successes,
+      failures,
+    });
+
+    setUploading(false);
+
+    if (failures.length === 0) {
+      setMessage(
+        `Uploaded ${successes.length} part${
+          successes.length === 1 ? "" : "s"
+        } successfully. Extractions queued — status will appear on the lender card.`
+      );
+    } else if (successes.length === 0) {
+      setErrorMessage(
+        `All ${failures.length} uploads failed. See progress panel below for details.`
+      );
+    } else {
+      setMessage(
+        `Uploaded ${successes.length} of ${selectedParts.length}. ${failures.length} failed — see progress panel.`
+      );
+    }
+
+    if (form.lenderId) {
+      setExpandedLenders((prev) => {
+        const next = new Set(prev);
+        next.add(form.lenderId);
+        return next;
+      });
+    }
+
+    await loadPageData();
+
+    // Don't auto-clear form so user can see progress; they can manually reset
+  }
+
+  function resetForm() {
+    setForm({
+      lenderId: "",
+      documentType: "",
+      documentGroup: "Master",
+      programId: "",
+      effectiveDate: "",
+      notes: "",
+      file: null,
+      productFamily: "",
+      partFiles: {},
+    });
+    setBatchProgress(null);
+
+    const fileInput = document.getElementById(
+      "lender-file-input"
+    ) as HTMLInputElement | null;
+    if (fileInput) fileInput.value = "";
+
+    for (const partName of PART_OPTIONS) {
+      const partInput = document.getElementById(
+        `part-input-${partName.replace(/\s+/g, "-")}`
+      ) as HTMLInputElement | null;
+      if (partInput) partInput.value = "";
+    }
+  }
+
+  function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (isSellingGuide) {
+      void handleBatchUpload();
+    } else {
+      void handleSingleUpload();
+    }
+  }
+
+  async function handleArchiveNow(documentId: string) {
+    setMessage("");
+    setErrorMessage("");
     try {
       const response = await fetch("/api/admin/lender-files/archive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documentId }),
       });
-
       const json = await response.json();
       if (!response.ok) throw new Error(json?.error || "Archive failed.");
-
       setMessage("Document archived successfully.");
       await loadPageData();
     } catch (error) {
@@ -479,18 +646,15 @@ export default function ManageLenderFilesPage() {
 
   async function handleReExtract(documentId: string) {
     setActionStatus((prev) => ({ ...prev, [documentId]: { state: "busy" } }));
-
     try {
       const res = await fetch("/api/admin/extract-programs/auto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documentId }),
       });
-
       const json = await res.json();
       if (!res.ok || !json.ok)
         throw new Error(json?.error || "Extraction failed.");
-
       setActionStatus((prev) => ({
         ...prev,
         [documentId]: {
@@ -515,18 +679,15 @@ export default function ManageLenderFilesPage() {
 
   async function handleApproveAll(documentId: string) {
     setActionStatus((prev) => ({ ...prev, [documentId]: { state: "busy" } }));
-
     try {
       const res = await fetch("/api/admin/extract-programs/approve-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documentId }),
       });
-
       const json = await res.json();
       if (!res.ok || !json.ok)
         throw new Error(json?.error || "Approval failed.");
-
       setActionStatus((prev) => ({
         ...prev,
         [documentId]: {
@@ -548,9 +709,6 @@ export default function ManageLenderFilesPage() {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Rendering helpers
-  // ---------------------------------------------------------------------------
   function statusBadgeForDoc(doc: ActiveDocument) {
     const status = doc.extraction_status || "pending";
     const draftCount = doc.extraction_drafts_count || 0;
@@ -600,13 +758,11 @@ export default function ManageLenderFilesPage() {
 
   function lenderHeaderStatus(group: LenderGroup) {
     const parts: React.ReactNode[] = [];
-
     parts.push(
       <span key="docs" style={styles.lenderStatChip}>
         {group.docs.length} doc{group.docs.length === 1 ? "" : "s"}
       </span>
     );
-
     if (group.pendingOrRunningCount > 0) {
       parts.push(
         <span
@@ -617,7 +773,6 @@ export default function ManageLenderFilesPage() {
         </span>
       );
     }
-
     if (group.draftsReadyCount > 0) {
       parts.push(
         <span
@@ -629,7 +784,6 @@ export default function ManageLenderFilesPage() {
         </span>
       );
     }
-
     if (group.failedCount > 0) {
       parts.push(
         <span
@@ -640,7 +794,6 @@ export default function ManageLenderFilesPage() {
         </span>
       );
     }
-
     return parts;
   }
 
@@ -657,7 +810,6 @@ export default function ManageLenderFilesPage() {
               Click a lender to expand their documents.
             </p>
           </div>
-
           <a href="/admin" style={styles.backLink}>
             Back to Admin Home
           </a>
@@ -669,15 +821,16 @@ export default function ManageLenderFilesPage() {
         ) : null}
 
         <div style={styles.grid}>
-          {/* Upload form (unchanged) */}
+          {/* Upload form */}
           <section style={styles.uploadCard}>
             <h2 style={styles.cardTitle}>Upload New File</h2>
             <p style={styles.cardText}>
-              PDF matrices, programs, qualification guides, selling guides, and
-              overlays are auto-extracted in the background after upload.
+              {isSellingGuide
+                ? "Selling Guides may be uploaded as multiple parts. Each part becomes its own slot — re-uploading a part replaces only that part."
+                : "PDF matrices, programs, qualification guides, and overlays are auto-extracted in the background after upload."}
             </p>
 
-            <form onSubmit={handleUpload}>
+            <form onSubmit={handleFormSubmit}>
               <label style={styles.label}>Lender</label>
               <select
                 style={styles.input}
@@ -706,69 +859,199 @@ export default function ManageLenderFilesPage() {
                 ))}
               </select>
 
-              <label style={styles.label}>Program / Document Group</label>
-              <select
-                style={styles.input}
-                value={form.documentGroup}
-                onChange={(e) => handleProgramGroupChange(e.target.value)}
-              >
-                {!groupRequired &&
-                  MASTER_GROUP_OPTIONS.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-
-                {groupRequired && (
-                  <>
-                    <option value="">Select document group</option>
-                    <option value="Master">Master</option>
-                    {filteredPrograms.map((p) => (
-                      <option key={p.id} value={p.name}>
-                        {p.name}
+              {/* Selling Guide flow */}
+              {isSellingGuide ? (
+                <>
+                  <label style={styles.label}>Product Family</label>
+                  <select
+                    style={styles.input}
+                    value={form.productFamily}
+                    onChange={(e) =>
+                      updateForm("productFamily", e.target.value as ProductFamily | "")
+                    }
+                  >
+                    <option value="">Select product family</option>
+                    {PRODUCT_FAMILIES.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
                       </option>
                     ))}
-                  </>
-                )}
-              </select>
+                  </select>
 
-              <label style={styles.label}>Effective Date</label>
-              <input
-                style={styles.input}
-                type="date"
-                value={form.effectiveDate}
-                onChange={(e) => updateForm("effectiveDate", e.target.value)}
-              />
+                  <label style={styles.label}>Effective Date</label>
+                  <input
+                    style={styles.input}
+                    type="date"
+                    value={form.effectiveDate}
+                    onChange={(e) => updateForm("effectiveDate", e.target.value)}
+                  />
 
-              <label style={styles.label}>Notes</label>
-              <textarea
-                style={styles.textarea}
-                value={form.notes}
-                onChange={(e) => updateForm("notes", e.target.value)}
-                placeholder="Optional notes such as bulletin date or admin comments."
-              />
+                  <label style={styles.label}>Notes</label>
+                  <textarea
+                    style={styles.textarea}
+                    value={form.notes}
+                    onChange={(e) => updateForm("notes", e.target.value)}
+                    placeholder="Notes apply to all parts uploaded together."
+                  />
 
-              <label style={styles.label}>File</label>
-              <input
-                id="lender-file-input"
-                style={styles.input}
-                type="file"
-                onChange={(e) =>
-                  updateForm("file", e.target.files?.[0] || null)
-                }
-              />
+                  <div style={styles.partsSection}>
+                    <div style={styles.partsSectionTitle}>
+                      Files to upload (pick at least one)
+                    </div>
+                    <div style={styles.partsSectionHelp}>
+                      Use Whole Document if your guide fits in one PDF (under
+                      600 pages). If split into chunks, use Part 1, Part 2, etc.
+                      Leave unused slots blank.
+                    </div>
 
-              <button
-                type="submit"
-                style={styles.primaryButton}
-                disabled={uploading}
-              >
-                {uploading ? "Uploading…" : "Upload File"}
-              </button>
+                    {PART_OPTIONS.map((partName) => {
+                      const file = form.partFiles[partName];
+                      return (
+                        <div key={partName} style={styles.partRow}>
+                          <div style={styles.partLabel}>{partName}</div>
+                          <input
+                            id={`part-input-${partName.replace(/\s+/g, "-")}`}
+                            type="file"
+                            style={styles.partFileInput}
+                            onChange={(e) =>
+                              setPartFile(partName, e.target.files?.[0] || null)
+                            }
+                          />
+                          {file ? (
+                            <div style={styles.partFilename}>
+                              ✓ {file.name} ({(file.size / (1024 * 1024)).toFixed(1)} MB)
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {batchProgress ? (
+                    <div style={styles.progressBox}>
+                      <div style={styles.progressTitle}>
+                        {uploading
+                          ? `Uploading ${batchProgress.current} of ${batchProgress.total}…`
+                          : `Batch complete: ${batchProgress.successes.length} succeeded, ${batchProgress.failures.length} failed`}
+                      </div>
+                      {uploading && batchProgress.currentPartName ? (
+                        <div style={styles.progressCurrent}>
+                          Now uploading: <strong>{batchProgress.currentPartName}</strong>
+                        </div>
+                      ) : null}
+                      {batchProgress.successes.length > 0 ? (
+                        <div style={styles.progressSuccessList}>
+                          ✓ Succeeded:
+                          <ul style={styles.progressList}>
+                            {batchProgress.successes.map((s) => (
+                              <li key={s}>{s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {batchProgress.failures.length > 0 ? (
+                        <div style={styles.progressFailureList}>
+                          ⚠ Failed:
+                          <ul style={styles.progressList}>
+                            {batchProgress.failures.map((f) => (
+                              <li key={f.partName}>
+                                <strong>{f.partName}:</strong> {f.error}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="submit"
+                    style={styles.primaryButton}
+                    disabled={uploading}
+                  >
+                    {uploading
+                      ? `Uploading… (${batchProgress?.current || 0}/${batchProgress?.total || 0})`
+                      : "Upload All Selected Files"}
+                  </button>
+
+                  {!uploading && batchProgress ? (
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={resetForm}
+                    >
+                      Clear Form
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                /* Single-file flow (existing) */
+                <>
+                  <label style={styles.label}>Program / Document Group</label>
+                  <select
+                    style={styles.input}
+                    value={form.documentGroup}
+                    onChange={(e) => handleProgramGroupChange(e.target.value)}
+                  >
+                    {!groupRequired &&
+                      MASTER_GROUP_OPTIONS.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+
+                    {groupRequired && (
+                      <>
+                        <option value="">Select document group</option>
+                        <option value="Master">Master</option>
+                        {filteredPrograms.map((p) => (
+                          <option key={p.id} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+
+                  <label style={styles.label}>Effective Date</label>
+                  <input
+                    style={styles.input}
+                    type="date"
+                    value={form.effectiveDate}
+                    onChange={(e) => updateForm("effectiveDate", e.target.value)}
+                  />
+
+                  <label style={styles.label}>Notes</label>
+                  <textarea
+                    style={styles.textarea}
+                    value={form.notes}
+                    onChange={(e) => updateForm("notes", e.target.value)}
+                    placeholder="Optional notes such as bulletin date or admin comments."
+                  />
+
+                  <label style={styles.label}>File</label>
+                  <input
+                    id="lender-file-input"
+                    style={styles.input}
+                    type="file"
+                    onChange={(e) =>
+                      updateForm("file", e.target.files?.[0] || null)
+                    }
+                  />
+
+                  <button
+                    type="submit"
+                    style={styles.primaryButton}
+                    disabled={uploading}
+                  >
+                    {uploading ? "Uploading…" : "Upload File"}
+                  </button>
+                </>
+              )}
             </form>
           </section>
 
-          {/* Right side: lender groups */}
+          {/* Right side: lender groups (unchanged from Phase 7.3.5) */}
           <section style={styles.listCard}>
             <div style={styles.activeHeader}>
               <div>
@@ -828,7 +1111,6 @@ export default function ManageLenderFilesPage() {
               <div style={styles.lenderList}>
                 {filteredLenderGroups.map((group) => {
                   const isExpanded = expandedLenders.has(group.lender_id);
-
                   return (
                     <div key={group.lender_id} style={styles.lenderCard}>
                       <button
@@ -946,7 +1228,7 @@ export default function ManageLenderFilesPage() {
                                             <>
                                               {" "}
                                               <a
-                                                href="/admin/programs?tab=extracted"
+                                                href="/admin/agency-guidelines"
                                                 style={styles.reviewLink}
                                               >
                                                 Review →
@@ -1049,11 +1331,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#263366",
     fontFamily: "Arial, Helvetica, sans-serif",
   },
-  wrap: {
-    maxWidth: 1400,
-    margin: "0 auto",
-    padding: "28px 18px 40px",
-  },
+  wrap: { maxWidth: 1400, margin: "0 auto", padding: "28px 18px 40px" },
   headerRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -1069,12 +1347,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#5b7097",
     marginBottom: 10,
   },
-  title: {
-    fontSize: 48,
-    lineHeight: 1.05,
-    margin: 0,
-    fontWeight: 400,
-  },
+  title: { fontSize: 48, lineHeight: 1.05, margin: 0, fontWeight: 400 },
   subtitle: {
     maxWidth: 980,
     fontSize: 15,
@@ -1089,7 +1362,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "380px 1fr",
+    gridTemplateColumns: "420px 1fr",
     gap: 20,
   },
   uploadCard: {
@@ -1107,11 +1380,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 20,
     boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
   },
-  cardTitle: {
-    margin: 0,
-    fontSize: 22,
-    marginBottom: 8,
-  },
+  cardTitle: { margin: 0, fontSize: 22, marginBottom: 8 },
   cardText: {
     color: "#4b628c",
     lineHeight: 1.6,
@@ -1141,14 +1410,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 700,
   },
-  statChipBusy: {
-    backgroundColor: "#fef3c7",
-    color: "#92400e",
-  },
-  statChipReady: {
-    backgroundColor: "#dcfce7",
-    color: "#166534",
-  },
+  statChipBusy: { backgroundColor: "#fef3c7", color: "#92400e" },
+  statChipReady: { backgroundColor: "#dcfce7", color: "#166534" },
   refreshButton: {
     background: "#fff",
     border: "1px solid #c8d5eb",
@@ -1185,12 +1448,51 @@ const styles: Record<string, React.CSSProperties> = {
   },
   textarea: {
     width: "100%",
-    minHeight: 90,
+    minHeight: 70,
     border: "1px solid #c8d5eb",
     borderRadius: 12,
     padding: "12px 14px",
     fontSize: 14,
     resize: "vertical",
+  },
+  partsSection: {
+    marginTop: 18,
+    padding: 14,
+    border: "1px solid #d7e2f2",
+    borderRadius: 12,
+    backgroundColor: "#f9fbff",
+  },
+  partsSectionTitle: {
+    fontSize: 14,
+    fontWeight: 700,
+    marginBottom: 6,
+  },
+  partsSectionHelp: {
+    fontSize: 12,
+    color: "#5b7097",
+    marginBottom: 14,
+    lineHeight: 1.5,
+  },
+  partRow: {
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottom: "1px solid #e2e8f0",
+  },
+  partLabel: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#263366",
+    marginBottom: 4,
+  },
+  partFileInput: {
+    width: "100%",
+    fontSize: 12,
+  },
+  partFilename: {
+    fontSize: 11,
+    color: "#16a34a",
+    marginTop: 4,
+    fontWeight: 700,
   },
   primaryButton: {
     width: "100%",
@@ -1203,6 +1505,51 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 700,
     cursor: "pointer",
+  },
+  secondaryButton: {
+    width: "100%",
+    marginTop: 8,
+    backgroundColor: "#fff",
+    color: "#263366",
+    border: "1px solid #c8d5eb",
+    borderRadius: 12,
+    padding: "11px 18px",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  progressBox: {
+    marginTop: 16,
+    padding: 14,
+    backgroundColor: "#fef3c7",
+    border: "1px solid #fbbf24",
+    borderRadius: 12,
+    fontSize: 13,
+  },
+  progressTitle: {
+    fontWeight: 700,
+    marginBottom: 6,
+    color: "#92400e",
+  },
+  progressCurrent: {
+    fontSize: 13,
+    color: "#92400e",
+    marginBottom: 10,
+  },
+  progressSuccessList: {
+    fontSize: 12,
+    color: "#166534",
+    marginTop: 8,
+  },
+  progressFailureList: {
+    fontSize: 12,
+    color: "#991b1b",
+    marginTop: 8,
+  },
+  progressList: {
+    margin: "4px 0 0 16px",
+    paddingLeft: 0,
+    lineHeight: 1.7,
   },
   successBox: {
     backgroundColor: "#ecfdf3",
@@ -1251,11 +1598,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     color: "inherit",
   },
-  lenderHeaderLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
+  lenderHeaderLeft: { display: "flex", alignItems: "center", gap: 10 },
   lenderHeaderRight: {
     display: "flex",
     flexWrap: "wrap",
@@ -1274,11 +1617,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 12,
     display: "inline-block",
   },
-  lenderName: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: "#263366",
-  },
+  lenderName: { fontSize: 16, fontWeight: 700, color: "#263366" },
   lenderStatChip: {
     backgroundColor: "#f4f6fb",
     color: "#263366",
@@ -1287,18 +1626,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 700,
   },
-  lenderStatChipBusy: {
-    backgroundColor: "#fef3c7",
-    color: "#92400e",
-  },
-  lenderStatChipReady: {
-    backgroundColor: "#dcfce7",
-    color: "#166534",
-  },
-  lenderStatChipError: {
-    backgroundColor: "#fee2e2",
-    color: "#991b1b",
-  },
+  lenderStatChipBusy: { backgroundColor: "#fef3c7", color: "#92400e" },
+  lenderStatChipReady: { backgroundColor: "#dcfce7", color: "#166534" },
+  lenderStatChipError: { backgroundColor: "#fee2e2", color: "#991b1b" },
   docList: {
     borderTop: "1px solid #e2e8f0",
     backgroundColor: "#f9fbff",
@@ -1358,22 +1688,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 700,
   },
-  miniBadgeNeutral: {
-    backgroundColor: "#f4f6fb",
-    color: "#263366",
-  },
-  miniBadgeRunning: {
-    backgroundColor: "#fef3c7",
-    color: "#92400e",
-  },
-  miniBadgeSuccess: {
-    backgroundColor: "#dcfce7",
-    color: "#166534",
-  },
-  miniBadgeError: {
-    backgroundColor: "#fee2e2",
-    color: "#991b1b",
-  },
+  miniBadgeNeutral: { backgroundColor: "#f4f6fb", color: "#263366" },
+  miniBadgeRunning: { backgroundColor: "#fef3c7", color: "#92400e" },
+  miniBadgeSuccess: { backgroundColor: "#dcfce7", color: "#166534" },
+  miniBadgeError: { backgroundColor: "#fee2e2", color: "#991b1b" },
   docExpandedBody: {
     padding: 14,
     borderTop: "1px solid #e2e8f0",
