@@ -57,6 +57,18 @@ type EligibilityUpsertRow = {
   notes: string | null;
 };
 
+type ProductAssignmentNormalized = {
+  productId: string;
+  productName: string;
+  categories: string[];
+};
+
+type CustomProductTypeNormalized = {
+  id: string;
+  name: string;
+  category: string | null;
+};
+
 function normalizeString(value: unknown): string {
   return String(value ?? "").trim();
 }
@@ -100,80 +112,52 @@ function normalizeStateArray(value: unknown): string[] {
   ).sort();
 }
 
-function normalizeProductAssignments(value: unknown) {
+function normalizeProductAssignments(value: unknown): ProductAssignmentNormalized[] {
   if (!Array.isArray(value)) return [];
 
-  return Array.from(
-    new Map(
-      value
-        .map((item) => {
-          const row = (item ?? {}) as ProductAssignmentInput;
+  const dedupeMap = new Map<string, ProductAssignmentNormalized>();
 
-          const productId = normalizeString(row.productId);
-          const productName = normalizeString(row.productName);
-          const categories = normalizeStringArray(row.categories);
+  for (const item of value) {
+    const row = (item ?? {}) as ProductAssignmentInput;
 
-          if (!productId || !productName) return null;
+    const productId = normalizeString(row.productId);
+    const productName = normalizeString(row.productName);
+    const categories = normalizeStringArray(row.categories);
 
-          return [
-            productId.toLowerCase(),
-            {
-              productId,
-              productName,
-              categories,
-            },
-          ] as const;
-        })
-        .filter(Boolean) as Array
-        readonly [
-          string,
-          {
-            productId: string;
-            productName: string;
-            categories: string[];
-          }
-        ]
-      >
-    ).values()
-  );
+    if (!productId || !productName) continue;
+
+    dedupeMap.set(productId.toLowerCase(), {
+      productId,
+      productName,
+      categories,
+    });
+  }
+
+  return Array.from(dedupeMap.values());
 }
 
-function normalizeCustomProductTypes(value: unknown) {
+function normalizeCustomProductTypes(value: unknown): CustomProductTypeNormalized[] {
   if (!Array.isArray(value)) return [];
 
-  return Array.from(
-    new Map(
-      value
-        .map((item) => {
-          const row = (item ?? {}) as CustomProductTypeInput;
+  const dedupeMap = new Map<string, CustomProductTypeNormalized>();
 
-          const id = normalizeString(row.id);
-          const name = normalizeString(row.name);
-          const category = normalizeNullableString(row.category);
+  for (const item of value) {
+    const row = (item ?? {}) as CustomProductTypeInput;
 
-          if (!id || !name) return null;
+    const id = normalizeString(row.id);
+    const name = normalizeString(row.name);
+    const category = normalizeNullableString(row.category);
 
-          return [
-            id.toLowerCase(),
-            {
-              id,
-              name,
-              category,
-            },
-          ] as const;
-        })
-        .filter(Boolean) as Array
-        readonly [
-          string,
-          {
-            id: string;
-            name: string;
-            category: string | null;
-          }
-        ]
-      >
-    ).values()
-  );
+    if (!id || !name) continue;
+
+    dedupeMap.set(id.toLowerCase(), {
+      id,
+      name,
+      category,
+    });
+  }
+
+  return Array.from(dedupeMap.values());
 }
 
 async function ensureAdmin() {
@@ -283,16 +267,15 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
       existingMap.set(normalizeString(row.state_code).toUpperCase(), row);
     }
 
-    const stateMap = new Map
-      string,
-      {
-        owner_occupied_allowed: boolean;
-        non_owner_occupied_allowed: boolean;
-        second_home_allowed: boolean;
-        heloc_allowed: boolean;
-        notes: string | null;
-      }
-    >();
+    type StateEligibilityFlags = {
+      owner_occupied_allowed: boolean;
+      non_owner_occupied_allowed: boolean;
+      second_home_allowed: boolean;
+      heloc_allowed: boolean;
+      notes: string | null;
+    };
+
+    const stateMap = new Map<string, StateEligibilityFlags>();
 
     const allStates = Array.from(
       new Set([
