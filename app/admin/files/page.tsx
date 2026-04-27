@@ -90,7 +90,7 @@ const DOCUMENT_TYPES = [
   "Other",
 ] as const;
 
-const MASTER_GROUP_OPTIONS = ["Master", "General", "All Programs"] as const;
+const MASTER_GROUP_OPTIONS = ["Master", "General", "All Programs", "Single-Family", "Multi-Family"] as const;
 
 type UploadFormState = {
   lenderId: string;
