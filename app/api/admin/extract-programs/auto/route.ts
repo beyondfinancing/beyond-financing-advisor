@@ -1,16 +1,20 @@
 // =============================================================================
-// PHASE 7.5 — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
+// PHASE 7.5c — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
 //
-// What changed vs Phase 7.3:
-//   - Detects when the document belongs to "Fannie Mae" or "Freddie Mac"
-//     AND the document_type is "Selling Guide". In that case it routes to
-//     a different prompt tuned for agency mega-docs and writes results to
-//     global_guidelines instead of programs.
-//   - Everything else (regular lender extraction → programs table) is
-//     unchanged from Phase 7.3.
-//   - The replace strategy still works: when a new Selling Guide upload
-//     supersedes an old one, old global_guidelines rows from the old doc
-//     are deactivated.
+// Changes vs Phase 7.5:
+//   1. max_tokens bumped from 8000 → 16000 (both PATH A agency and PATH B lender)
+//      Dense chunks (e.g. Fannie SF Subpart B5) need more output room.
+//   2. parseJsonFromResponse() upgraded to tolerant 4-strategy parser:
+//      Strategy 1: direct JSON.parse (happy path, unchanged behavior)
+//      Strategy 2: strip markdown code fences ```json ... ``` (was already in old version, kept)
+//      Strategy 3: extract substring between first { and last }
+//      Strategy 4: extract substring between first [ and last ]
+//      On total failure, error message now includes first 500 chars of Claude's
+//      actual response so we can diagnose what went wrong.
+//   3. Both call sites still pass rawResponse on parse failure for visibility.
+//
+// All other logic (PATH A agency vs PATH B lender, archive strategy, doc-group
+// product family detection, replace strategy) is unchanged.
 // =============================================================================
 
 import { NextResponse } from 'next/server'
@@ -74,7 +78,7 @@ type AgencyExtractionResponse = {
 }
 
 // ----------------------------------------------------------------------------
-// PROMPT 1 — regular lender programs (Phase 7.3 prompt, unchanged)
+// PROMPT 1 — regular lender programs (unchanged)
 // ----------------------------------------------------------------------------
 const PROGRAM_SYSTEM_PROMPT = `You are an expert mortgage operations analyst working for Beyond Intelligence, a mortgage decision-support platform. Your job is to read lender guideline PDFs, rate sheets, and program matrices, and extract structured program data that loan officers can use to match borrower scenarios to lender programs.
 
@@ -135,7 +139,7 @@ Each ProposedProgram has these fields:
 Return ONLY the JSON object. No prose before or after.`
 
 // ----------------------------------------------------------------------------
-// PROMPT 2 — agency Selling Guide extraction (NEW for Phase 7.5)
+// PROMPT 2 — agency Selling Guide extraction (unchanged)
 // ----------------------------------------------------------------------------
 const AGENCY_SYSTEM_PROMPT = `You are an expert mortgage operations analyst working for Beyond Intelligence, a mortgage decision-support platform. Your task is to read agency Selling Guides from Fannie Mae or Freddie Mac and extract structured program data for residential and multifamily lending.
 
@@ -223,17 +227,66 @@ Each ProposedAgencyGuideline has these fields:
 Return ONLY the JSON object. No prose before or after.`
 
 // ----------------------------------------------------------------------------
-// Helpers
+// Helpers — UPGRADED in Phase 7.5c
 // ----------------------------------------------------------------------------
+
+/**
+ * Tolerant JSON parser. Tries 4 strategies before giving up.
+ * Strategy 1: direct JSON.parse (happy path)
+ * Strategy 2: strip markdown code fences ```json ... ```
+ * Strategy 3: extract substring between first { and last }
+ * Strategy 4: extract substring between first [ and last ]
+ *
+ * Returns null on total failure. Caller is responsible for surfacing the
+ * raw response to the user.
+ */
 function parseJsonFromResponse<T>(text: string): T | null {
-  let cleaned = text.trim()
-  const fenceMatch = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
-  if (fenceMatch) cleaned = fenceMatch[1].trim()
+  if (!text || text.trim().length === 0) return null
+
+  const trimmed = text.trim()
+
+  // Strategy 1: direct parse
   try {
-    return JSON.parse(cleaned) as T
+    return JSON.parse(trimmed) as T
   } catch {
-    return null
+    // fall through
   }
+
+  // Strategy 2: strip markdown code fences ```json ... ``` or ``` ... ```
+  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+  if (fenceMatch && fenceMatch[1]) {
+    try {
+      return JSON.parse(fenceMatch[1].trim()) as T
+    } catch {
+      // fall through
+    }
+  }
+
+  // Strategy 3: substring between first { and last }
+  const firstBrace = trimmed.indexOf('{')
+  const lastBrace = trimmed.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = trimmed.substring(firstBrace, lastBrace + 1)
+    try {
+      return JSON.parse(candidate) as T
+    } catch {
+      // fall through
+    }
+  }
+
+  // Strategy 4: substring between first [ and last ]
+  const firstBracket = trimmed.indexOf('[')
+  const lastBracket = trimmed.lastIndexOf(']')
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    const candidate = trimmed.substring(firstBracket, lastBracket + 1)
+    try {
+      return JSON.parse(candidate) as T
+    } catch {
+      // fall through
+    }
+  }
+
+  return null
 }
 
 function deriveOccupancyString(occupancy: string[] | null): string | null {
@@ -428,9 +481,16 @@ export async function POST(req: Request) {
   const groupLower = (doc.document_group || '').toLowerCase()
   let productFamily: 'Single-Family' | 'Multi-Family' | null = null
   if (useAgencyPrompt) {
-    if (groupLower.includes('multi-family') || groupLower.includes('multifamily') || groupLower.includes('multi family')) {
+    if (
+      groupLower.includes('multi-family') ||
+      groupLower.includes('multifamily') ||
+      groupLower.includes('multi family')
+    ) {
       productFamily = 'Multi-Family'
-    } else if (groupLower.includes('single-family') || groupLower.includes('single family')) {
+    } else if (
+      groupLower.includes('single-family') ||
+      groupLower.includes('single family')
+    ) {
       productFamily = 'Single-Family'
     } else {
       // Fallback: filename heuristic
@@ -511,7 +571,7 @@ Return only the JSON object as instructed.`
     try {
       const message = await anthropic.messages.create({
         model: 'claude-opus-4-7',
-        max_tokens: 8000,
+        max_tokens: 16000,
         system: AGENCY_SYSTEM_PROMPT,
         messages: [
           {
@@ -555,7 +615,8 @@ Return only the JSON object as instructed.`
       claudeResponseText
     )
     if (!parsed) {
-      const errMessage = 'Could not parse Claude response as JSON.'
+      const preview = claudeResponseText.substring(0, 500)
+      const errMessage = `Could not parse Claude response as JSON after 4 strategies. First 500 chars: ${preview}`
       await setDocStatus(documentId, {
         extraction_status: 'failed',
         extraction_error: errMessage,
@@ -599,7 +660,8 @@ Return only the JSON object as instructed.`
         max_ltv: g.maxLtv,
         max_dti: g.maxDti,
         max_units: g.maxUnits,
-        notes: [g.guidelineSummary, g.notes].filter(Boolean).join('\n\n') || null,
+        notes:
+          [g.guidelineSummary, g.notes].filter(Boolean).join('\n\n') || null,
         source_name: doc.original_filename,
         effective_date: g.effectiveDate,
         is_active: false,
@@ -681,7 +743,7 @@ Return only the JSON object as instructed.`
   try {
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-7',
-      max_tokens: 8000,
+      max_tokens: 16000,
       system: PROGRAM_SYSTEM_PROMPT,
       messages: [
         {
@@ -734,7 +796,8 @@ Extract all distinct loan programs. Return only the JSON object as instructed.`,
     claudeResponseText
   )
   if (!parsed) {
-    const errMessage = 'Could not parse Claude response as JSON.'
+    const preview = claudeResponseText.substring(0, 500)
+    const errMessage = `Could not parse Claude response as JSON after 4 strategies. First 500 chars: ${preview}`
     await setDocStatus(documentId, {
       extraction_status: 'failed',
       extraction_error: errMessage,
