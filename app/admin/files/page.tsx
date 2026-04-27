@@ -988,10 +988,7 @@ export default function ManageLenderFilesPage() {
                                           </button>
                                         )}
 
-                                      {(status === "failed" ||
-                                        status === "skipped" ||
-                                        (status === "completed" &&
-                                          draftCount === 0)) && (
+                                      {status !== "running" && (
                                         <button
                                           type="button"
                                           style={{
@@ -1010,7 +1007,10 @@ export default function ManageLenderFilesPage() {
                                             ? "Extracting…"
                                             : status === "failed"
                                             ? "Retry Extraction"
-                                            : "Extract Programs"}
+                                            : status === "completed" &&
+                                              draftCount > 0
+                                            ? "Re-Extract"
+                                            : "Extract Now"}
                                         </button>
                                       )}
 
