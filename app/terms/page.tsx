@@ -49,7 +49,7 @@ export default function TermsPage() {
         <p style={{ fontWeight: 600, marginBottom: 4 }}>Program Name</p>
         <p style={{ marginTop: 0 }}>
           Beyond Intelligence™ Transactional SMS Notifications, operated by
-          Beyond Intelligence, LLC.
+          Beyond Financing, Inc.
         </p>
 
         <p style={{ fontWeight: 600, marginBottom: 4 }}>Program Description</p>
