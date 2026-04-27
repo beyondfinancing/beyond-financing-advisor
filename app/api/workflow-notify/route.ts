@@ -1,3 +1,36 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace the existing file completely):
+//
+//     app/api/workflow-notify/route.ts
+//
+// =============================================================================
+//
+// CHANGE FROM PRIOR VERSION
+//
+// The internal-team email body now ends with a clear "Open This File in
+// Workflow Intelligence" call-to-action button that deep-links to the
+// specific workflow file:
+//
+//     ${APP_URL}/workflow/{workflowFileId}
+//
+// If the visitor isn't logged in when they click, /workflow now renders the
+// shared TeamLoginCard component inline so they can sign in without the
+// detour to /team.
+//
+// The deep-link target is built from process.env.NEXT_PUBLIC_APP_URL with a
+// safe default of https://beyondintelligence.io. This means preview deploys
+// can override and you don't ship a hardcoded URL into a non-production
+// environment.
+//
+// Realtor courtesy emails are unchanged — no internal links are ever sent
+// to listing agents or buyer agents.
+//
+// Everything else (recipient lookup, Phase 1 hardcoded email maps, audit
+// logging into workflow_notifications, Twilio SMS branch, final-close
+// deactivation logic) is byte-identical to the prior working version.
+//
+// =============================================================================
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
@@ -56,6 +89,21 @@ type RequestBody = {
   changedFields?: string[];
   noteText?: string;
 };
+
+// ---- App URL for deep links (env-configurable, safe default) ----
+
+const APP_URL = (
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.APP_URL ||
+  "https://beyondintelligence.io"
+).replace(/\/+$/, ""); // strip any trailing slash
+
+function buildWorkflowDeepLink(workflowFileId: string): string {
+  // Always link to the file-specific workflow record. /workflow/[id] handles
+  // unauthenticated visitors by routing them through the shared login card
+  // and then back to the requested file.
+  return `${APP_URL}/workflow/${encodeURIComponent(workflowFileId)}`;
+}
 
 // ---- Internal team email lookup (Phase 1: hardcoded; Phase 2: query team_users) ----
 
@@ -287,10 +335,11 @@ function buildInternalEmailHtml(params: {
   changeDetails: string;
   changedFields: string[];
   noteText: string;
+  workflowFileId: string;
 }): string {
   const {
     eventType, file, recipientName, actorName, actorRole,
-    changeDetails, changedFields, noteText,
+    changeDetails, changedFields, noteText, workflowFileId,
   } = params;
 
   const status = (file.status || "new_scenario") as WorkflowStatus;
@@ -304,6 +353,8 @@ function buildInternalEmailHtml(params: {
   const targetClose = formatTargetClose(file.target_close);
   const amount = formatCurrency(file.amount);
   const latestUpdate = String(file.latest_update || "");
+
+  const deepLinkUrl = buildWorkflowDeepLink(workflowFileId);
 
   let eventTitle = "Workflow File Update";
   let eventNarrative = "";
@@ -336,6 +387,30 @@ function buildInternalEmailHtml(params: {
        </div>`
     : "";
 
+  // Deep-link CTA block. Uses table-based button markup so it renders
+  // consistently across Gmail, Outlook, Apple Mail, and mobile clients
+  // (table is the most reliable email-button structure).
+  const ctaBlockHtml = `
+    <div style="margin:24px 0 8px 0;text-align:center;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
+        <tr>
+          <td align="center" bgcolor="#263366" style="border-radius:14px;">
+            <a href="${escapeHtml(deepLinkUrl)}"
+               style="display:inline-block;padding:14px 26px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:14px;background-color:#263366;">
+              Open This File in Workflow Intelligence
+            </a>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-top:12px;font-size:13px;color:#64748B;line-height:1.6;">
+        Sign-in is required. If you are not currently logged in, you will be prompted to sign in directly on the workflow page.
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#94A3B8;line-height:1.6;word-break:break-all;">
+        Direct link: <a href="${escapeHtml(deepLinkUrl)}" style="color:#64748B;text-decoration:underline;">${escapeHtml(deepLinkUrl)}</a>
+      </div>
+    </div>
+  `;
+
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
       <h1 style="margin:0 0 18px 0;color:#263366;">${escapeHtml(eventTitle)}</h1>
@@ -361,6 +436,8 @@ function buildInternalEmailHtml(params: {
 
       ${changedFieldsHtml}
       ${noteTextHtml}
+
+      ${ctaBlockHtml}
 
       <div style="margin-top:18px;color:#64748B;font-size:13px;line-height:1.6;">
         Internal team notification from Beyond Intelligence Workflow Intelligence. Realtor agents receive a separate courtesy update without internal note content.
@@ -583,7 +660,7 @@ export async function POST(request: NextRequest) {
 
     const results: Array<Record<string, string | boolean>> = [];
 
-    // ---- INTERNAL TEAM (always full content) ----
+    // ---- INTERNAL TEAM (always full content + deep-link CTA) ----
     for (const recipient of internalRecipients) {
       const html = buildInternalEmailHtml({
         eventType,
@@ -594,6 +671,7 @@ export async function POST(request: NextRequest) {
         changeDetails,
         changedFields,
         noteText,
+        workflowFileId,
       });
 
       let internalSubject = "";
@@ -644,7 +722,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ---- REALTORS (courtesy summary, no internal note content) ----
+    // ---- REALTORS (courtesy summary, no internal note content, no deep link) ----
     for (const recipient of realtorRecipients) {
       if (recipient.email) {
         const html = buildRealtorEmailHtml({
