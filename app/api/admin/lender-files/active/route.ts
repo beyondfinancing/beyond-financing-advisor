@@ -19,6 +19,11 @@ export async function GET() {
         is_active,
         notes,
         size_bytes,
+        extraction_status,
+        extraction_started_at,
+        extraction_completed_at,
+        extraction_error,
+        extraction_drafts_count,
         lenders!inner (
           name
         )
@@ -50,6 +55,11 @@ export async function GET() {
           is_active: row.is_active,
           notes: row.notes,
           size_bytes: row.size_bytes,
+          extraction_status: row.extraction_status || "pending",
+          extraction_started_at: row.extraction_started_at,
+          extraction_completed_at: row.extraction_completed_at,
+          extraction_error: row.extraction_error,
+          extraction_drafts_count: row.extraction_drafts_count ?? 0,
         }))
       : [];
 
