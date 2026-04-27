@@ -7,27 +7,19 @@
 //
 // CHANGE FROM PRIOR VERSION
 //
-// The internal-team email body now ends with a clear "Open This File in
-// Workflow Intelligence" call-to-action button that deep-links to the
-// specific workflow file:
+// 1. Added a "Do Not Reply" disclaimer block to the footer of BOTH the
+//    internal-team email and the realtor courtesy email. The block is
+//    visually distinct (yellow tint, bordered) so it stands out without
+//    looking like an error.
 //
-//     ${APP_URL}/workflow/{workflowFileId}
+// 2. The disclaimer states: "This is an automated notification from an
+//    unmonitored inbox. Please do not reply to this email. Use Workflow
+//    Intelligence or contact your loan officer directly."
 //
-// If the visitor isn't logged in when they click, /workflow now renders the
-// shared TeamLoginCard component inline so they can sign in without the
-// detour to /team.
-//
-// The deep-link target is built from process.env.NEXT_PUBLIC_APP_URL with a
-// safe default of https://beyondintelligence.io. This means preview deploys
-// can override and you don't ship a hardcoded URL into a non-production
-// environment.
-//
-// Realtor courtesy emails are unchanged — no internal links are ever sent
-// to listing agents or buyer agents.
-//
-// Everything else (recipient lookup, Phase 1 hardcoded email maps, audit
-// logging into workflow_notifications, Twilio SMS branch, final-close
-// deactivation logic) is byte-identical to the prior working version.
+// Everything else — recipient lookup, eventType branching, deep-link CTA,
+// audit logging, status_change vs file_change handling, final-close
+// deactivation logic, Twilio SMS branch — is byte-identical to the prior
+// working version that just passed Phase 1 testing.
 //
 // =============================================================================
 
@@ -96,12 +88,9 @@ const APP_URL = (
   process.env.NEXT_PUBLIC_APP_URL ||
   process.env.APP_URL ||
   "https://beyondintelligence.io"
-).replace(/\/+$/, ""); // strip any trailing slash
+).replace(/\/+$/, "");
 
 function buildWorkflowDeepLink(workflowFileId: string): string {
-  // Always link to the file-specific workflow record. /workflow/[id] handles
-  // unauthenticated visitors by routing them through the shared login card
-  // and then back to the requested file.
   return `${APP_URL}/workflow/${encodeURIComponent(workflowFileId)}`;
 }
 
@@ -203,12 +192,26 @@ function formatTargetClose(value: string | null | undefined): string {
   return new Intl.DateTimeFormat("en-US").format(date);
 }
 
+// ---- Shared do-not-reply disclaimer (used in both internal and realtor emails) ----
+
+function buildDoNotReplyHtml(): string {
+  return `
+    <div style="margin-top:22px;padding:14px 16px;border:1px solid #FCD34D;background:#FFFBEB;border-radius:14px;font-family:Arial,Helvetica,sans-serif;">
+      <div style="font-size:13px;font-weight:700;color:#92400E;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">
+        Do Not Reply
+      </div>
+      <div style="font-size:13px;line-height:1.6;color:#78350F;">
+        This is an automated notification from an unmonitored inbox. Please do not reply to this email. To respond or take action, use Workflow Intelligence or contact the assigned loan officer directly.
+      </div>
+    </div>
+  `;
+}
+
 // ---- Recipient builders ----
 
 function buildInternalRecipients(file: WorkflowFileRecord): InternalRecipient[] {
   const recipients: InternalRecipient[] = [];
 
-  // Loan Officer (lookup with fallback)
   const loanOfficerName = String(file.loan_officer || "").trim();
   if (loanOfficerName) {
     recipients.push({
@@ -218,14 +221,12 @@ function buildInternalRecipients(file: WorkflowFileRecord): InternalRecipient[] 
     });
   }
 
-  // Production Manager (always Amarilis for now)
   recipients.push({
     role: "production_manager",
     name: PRODUCTION_MANAGER_NAME,
     email: PRODUCTION_MANAGER_EMAIL,
   });
 
-  // Processor (only if assigned and in map)
   const processorName = String(file.processor || "").trim();
   if (
     processorName &&
@@ -239,7 +240,6 @@ function buildInternalRecipients(file: WorkflowFileRecord): InternalRecipient[] 
     });
   }
 
-  // Dedupe by email
   const seen = new Set<string>();
   return recipients.filter((r) => {
     const key = r.email.toLowerCase();
@@ -316,7 +316,6 @@ function buildRealtorMessage(params: {
     };
   }
 
-  // file_change or internal_update — generic activity ping, no detail content
   return {
     subject: `Activity update for ${propertyAddress}`,
     emailTitle: "There has been activity on this file",
@@ -387,9 +386,6 @@ function buildInternalEmailHtml(params: {
        </div>`
     : "";
 
-  // Deep-link CTA block. Uses table-based button markup so it renders
-  // consistently across Gmail, Outlook, Apple Mail, and mobile clients
-  // (table is the most reliable email-button structure).
   const ctaBlockHtml = `
     <div style="margin:24px 0 8px 0;text-align:center;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
@@ -442,6 +438,8 @@ function buildInternalEmailHtml(params: {
       <div style="margin-top:18px;color:#64748B;font-size:13px;line-height:1.6;">
         Internal team notification from Beyond Intelligence Workflow Intelligence. Realtor agents receive a separate courtesy update without internal note content.
       </div>
+
+      ${buildDoNotReplyHtml()}
     </div>
   `;
 }
@@ -484,6 +482,8 @@ function buildRealtorEmailHtml(params: {
 
         <p style="line-height:1.8;margin-top:18px;color:#64748B;font-size:13px;">This courtesy update does not disclose internal processing details and does not constitute loan approval.</p>
       </div>
+
+      ${buildDoNotReplyHtml()}
     </div>
   `;
 }
@@ -568,9 +568,6 @@ async function logNotification(params: {
   messageSubject: string;
   messageBody: string;
 }) {
-  // Set BOTH notification_type and event_type to the same value so this
-  // works whether the schema treats notification_type or event_type as
-  // canonical. notification_type is NOT NULL in the current schema.
   await supabaseAdmin.from("workflow_notifications").insert({
     workflow_file_id: params.workflowFileId,
     file_number: params.fileNumber || null,
@@ -660,7 +657,7 @@ export async function POST(request: NextRequest) {
 
     const results: Array<Record<string, string | boolean>> = [];
 
-    // ---- INTERNAL TEAM (always full content + deep-link CTA) ----
+    // ---- INTERNAL TEAM (always full content + deep-link CTA + do-not-reply) ----
     for (const recipient of internalRecipients) {
       const html = buildInternalEmailHtml({
         eventType,
@@ -722,7 +719,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ---- REALTORS (courtesy summary, no internal note content, no deep link) ----
+    // ---- REALTORS (courtesy summary, no internal note content, no deep link, with do-not-reply) ----
     for (const recipient of realtorRecipients) {
       if (recipient.email) {
         const html = buildRealtorEmailHtml({
