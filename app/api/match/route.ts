@@ -5,13 +5,19 @@
 //
 // =============================================================================
 //
-// PHASE 1 SUPABASE-BACKED MATCHER (TypeScript-safe relations version)
+// PHASE 2 SUPABASE-BACKED MATCHER
 //
-// Reads from: programs + program_guidelines + lenders + lender_state_eligibility
+// Reads from:
+//   - programs + program_guidelines (lender-specific programs)
+//   - global_guidelines (agency programs: Fannie, Freddie, FHA, VA, USDA)
+//   - lenders (with capability flags: does_conventional/fha/va/usda)
+//   - lender_state_eligibility
 //
-// Returns the contract expected by app/finley/page.tsx:
-//   strong_matches, conditional_matches, eliminated_paths,
-//   next_question, top_recommendation, lender_summary, summary
+// For each agency program in global_guidelines, finds all active lenders that
+// have the matching capability flag and state eligibility. Each (agency program
+// x eligible lender) combination produces a separate match card.
+//
+// Returns the contract expected by app/finley/page.tsx.
 //
 // =============================================================================
 
@@ -108,6 +114,33 @@ type StateEligibilityRow = {
   is_active: boolean;
 };
 
+type LenderRow = {
+  id: string;
+  name: string | null;
+  is_active?: boolean | null;
+  does_conventional: boolean | null;
+  does_fha: boolean | null;
+  does_va: boolean | null;
+  does_usda: boolean | null;
+};
+
+type GlobalGuidelineRow = {
+  id: string;
+  agency: string;
+  product_family: string;
+  program_name: string;
+  document_type: string;
+  occupancy: unknown;
+  income_types: unknown;
+  min_credit: number | null;
+  max_ltv: number | null;
+  max_dti: number | null;
+  max_units: number | null;
+  notes: string | null;
+  effective_date: string | null;
+  is_active: boolean;
+};
+
 // -----------------------------------------------------------------------------
 // Normalization helpers
 // -----------------------------------------------------------------------------
@@ -188,7 +221,7 @@ function borrowerStatusMatches(
 }
 
 // -----------------------------------------------------------------------------
-// Guideline completeness check (option b: skip if insufficient)
+// Guideline completeness check (lender-program path)
 // -----------------------------------------------------------------------------
 
 function hasSufficientGuidelineData(g: GuidelineRow): boolean {
@@ -221,7 +254,7 @@ function hasSufficientGuidelineData(g: GuidelineRow): boolean {
 }
 
 // -----------------------------------------------------------------------------
-// Per-program evaluation
+// Per-program evaluation (lender programs)
 // -----------------------------------------------------------------------------
 
 type EvaluationResult = {
@@ -234,7 +267,7 @@ type EvaluationResult = {
   explanation: string;
 };
 
-function evaluateProgram(
+function evaluateLenderProgram(
   guideline: GuidelineRow,
   payload: FormPayload,
   stateEligibility: StateEligibilityRow | null,
@@ -606,6 +639,289 @@ function evaluateProgram(
 }
 
 // -----------------------------------------------------------------------------
+// Agency program evaluation (Phase 2 — global_guidelines)
+// -----------------------------------------------------------------------------
+
+// Maps an agency name (from global_guidelines.agency) to the lender capability
+// flag column that gates which lenders can place that agency program.
+function getCapabilityFlagForAgency(agency: string): keyof Pick<LenderRow, "does_conventional" | "does_fha" | "does_va" | "does_usda"> | null {
+  const normalized = normalizeToken(agency);
+  if (normalized === "fannie_mae" || normalized === "freddie_mac") return "does_conventional";
+  if (normalized === "fha") return "does_fha";
+  if (normalized === "va") return "does_va";
+  if (normalized === "usda") return "does_usda";
+  return null;
+}
+
+// Agency programs use full-doc underwriting. If borrower selected a non-doc
+// type (bank_statements, dscr, etc.), agency is not a fit.
+function isIncomeTypeAgencyCompatible(incomeType: string): boolean {
+  if (!incomeType) return true;
+  const normalized = normalizeToken(incomeType);
+  return normalized === "full_doc" || normalized === "express_doc";
+}
+
+function evaluateAgencyProgramForLender(
+  agencyGuideline: GlobalGuidelineRow,
+  lender: LenderRow,
+  stateEligibility: StateEligibilityRow | null,
+  payload: FormPayload
+): EvaluationResult {
+  const blockers: string[] = [];
+  const concerns: string[] = [];
+  const strengths: string[] = [];
+  const missingItems: string[] = [];
+
+  let score = 50;
+
+  const subjectState = String(payload.subject_state || "").trim().toUpperCase();
+  const occupancyType = String(payload.occupancy_type || "").trim();
+  const incomeType = String(payload.income_type || "").trim();
+  const creditScore = toNumber(payload.credit_score);
+  const ltv = toNumber(payload.ltv);
+  const dti = toNumber(payload.dti);
+  const units = toNumber(payload.units);
+  const reservesMonths = toNumber(payload.available_reserves_months);
+  const firstTimeHomebuyer =
+    payload.first_time_homebuyer === true || payload.first_time_homebuyer === "yes";
+
+  const lenderName = lender.name || "Unknown Lender";
+  const agencyDisplay = agencyGuideline.agency;
+  const programDisplay = `${agencyGuideline.program_name} (${agencyDisplay})`;
+
+  // State eligibility check
+  if (subjectState) {
+    if (!stateEligibility || !stateEligibility.is_active) {
+      blockers.push(`${lenderName} has no active state eligibility for ${subjectState}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${lenderName} is not eligible to lend in ${subjectState} for this scenario.`,
+      };
+    }
+
+    const isOwnerOccupiedScenario =
+      occupancyType === "primary_residence" || occupancyType === "second_home";
+    const isInvestmentScenario = occupancyType === "investment_property";
+
+    if (isOwnerOccupiedScenario && !stateEligibility.owner_occupied_allowed) {
+      blockers.push(`${lenderName} is not licensed for owner-occupied loans in ${subjectState}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${lenderName} does not allow owner-occupied lending in ${subjectState} (agency program ${agencyGuideline.program_name} cannot be placed there).`,
+      };
+    }
+
+    if (isInvestmentScenario && !stateEligibility.non_owner_occupied_allowed) {
+      blockers.push(`${lenderName} is not licensed for non-owner-occupied loans in ${subjectState}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${lenderName} does not allow investment-property lending in ${subjectState}.`,
+      };
+    }
+
+    strengths.push(`${lenderName} is licensed in ${subjectState} for this occupancy.`);
+  } else {
+    missingItems.push("Subject state");
+  }
+
+  // Agency programs are full-doc — eliminate non-doc income types
+  if (incomeType && !isIncomeTypeAgencyCompatible(incomeType)) {
+    blockers.push(`${agencyDisplay} agency programs require full-doc income; ${incomeType.replace(/_/g, " ")} is not accepted.`);
+    return {
+      bucket: "eliminated",
+      score: 0,
+      blockers,
+      concerns,
+      strengths,
+      missingItems,
+      explanation: `Agency programs (${agencyDisplay}) require full-documentation income. The selected income type is not compatible.`,
+    };
+  }
+
+  // Occupancy match against global_guidelines.occupancy
+  if (occupancyType) {
+    const occupancyArr = toStringArray(agencyGuideline.occupancy);
+    if (!arrayContainsNormalized(occupancyArr, occupancyType, "occupancy")) {
+      blockers.push(`${programDisplay} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Occupancy (${occupancyType.replace(/_/g, " ")}) is not permitted under ${programDisplay}.`,
+      };
+    }
+    if (occupancyArr.length > 0) {
+      strengths.push(`Occupancy (${occupancyType.replace(/_/g, " ")}) is permitted under this agency program.`);
+    }
+  } else {
+    missingItems.push("Occupancy type");
+  }
+
+  // Credit score
+  if (creditScore > 0 && agencyGuideline.min_credit !== null) {
+    if (creditScore < agencyGuideline.min_credit) {
+      blockers.push(`Credit score ${creditScore} is below agency minimum of ${agencyGuideline.min_credit}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Credit score ${creditScore} does not meet agency minimum of ${agencyGuideline.min_credit} for ${programDisplay}.`,
+      };
+    }
+    const margin = creditScore - agencyGuideline.min_credit;
+    if (margin >= 60) {
+      score += 12;
+      strengths.push(`Credit score (${creditScore}) is well above agency minimum of ${agencyGuideline.min_credit}.`);
+    } else if (margin >= 30) {
+      score += 8;
+      strengths.push(`Credit score (${creditScore}) clears agency minimum of ${agencyGuideline.min_credit} comfortably.`);
+    } else if (margin >= 10) {
+      score += 4;
+      strengths.push(`Credit score (${creditScore}) meets agency minimum of ${agencyGuideline.min_credit}.`);
+    } else {
+      concerns.push(`Credit score (${creditScore}) only narrowly clears agency minimum of ${agencyGuideline.min_credit}.`);
+    }
+  } else if (creditScore <= 0) {
+    missingItems.push("Credit score");
+  }
+
+  // LTV
+  if (ltv > 0 && agencyGuideline.max_ltv !== null) {
+    const maxLtv = Number(agencyGuideline.max_ltv);
+    if (ltv > maxLtv) {
+      blockers.push(`LTV ${ltv}% exceeds agency maximum of ${maxLtv}%.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `LTV ${ltv}% exceeds the agency maximum of ${maxLtv}% for ${programDisplay}.`,
+      };
+    }
+    const margin = maxLtv - ltv;
+    if (margin >= 15) {
+      score += 10;
+      strengths.push(`LTV (${ltv}%) is comfortably below agency maximum of ${maxLtv}%.`);
+    } else if (margin >= 5) {
+      score += 5;
+      strengths.push(`LTV (${ltv}%) is within agency maximum of ${maxLtv}%.`);
+    } else {
+      concerns.push(`LTV (${ltv}%) is close to agency maximum of ${maxLtv}%.`);
+    }
+  } else if (ltv <= 0) {
+    missingItems.push("LTV");
+  }
+
+  // DTI
+  if (dti > 0 && agencyGuideline.max_dti !== null) {
+    const maxDti = Number(agencyGuideline.max_dti);
+    if (dti > maxDti) {
+      blockers.push(`DTI ${dti}% exceeds agency maximum of ${maxDti}%.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `DTI ${dti}% exceeds the agency maximum of ${maxDti}% for ${programDisplay}.`,
+      };
+    }
+    const margin = maxDti - dti;
+    if (margin >= 15) {
+      score += 6;
+      strengths.push(`DTI (${dti}%) is comfortably below agency maximum of ${maxDti}%.`);
+    } else if (margin >= 5) {
+      score += 3;
+      strengths.push(`DTI (${dti}%) is within agency maximum of ${maxDti}%.`);
+    } else {
+      concerns.push(`DTI (${dti}%) is close to agency maximum of ${maxDti}%.`);
+    }
+  } else if (dti <= 0) {
+    missingItems.push("DTI");
+  }
+
+  // Units
+  if (units > 0 && agencyGuideline.max_units !== null) {
+    if (units > agencyGuideline.max_units) {
+      blockers.push(`Units (${units}) exceed agency maximum of ${agencyGuideline.max_units}.`);
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `Units count exceeds agency maximum for ${programDisplay}.`,
+      };
+    }
+  } else if (units <= 0) {
+    missingItems.push("Units");
+  }
+
+  // FTHB soft signal
+  if (firstTimeHomebuyer) {
+    score += 2;
+    strengths.push(`First-time homebuyer status noted; many agency programs offer FTHB-friendly options.`);
+  }
+
+  // Reserves are typically required for agency but specific months not stated
+  // in our global_guidelines data — handle as soft check.
+  if (reservesMonths > 0) {
+    score += 2;
+  } else {
+    missingItems.push("Available reserves (months of PITIA)");
+  }
+
+  let bucket: "strong" | "conditional" = "conditional";
+  if (score >= 75 && concerns.length === 0 && missingItems.length <= 1) {
+    bucket = "strong";
+  } else if (score >= 60 && concerns.length <= 1) {
+    bucket = "strong";
+  } else {
+    bucket = "conditional";
+  }
+
+  const explanation =
+    bucket === "strong"
+      ? `${programDisplay} aligns well as an agency placement option through ${lenderName} based on the documented qualification facts.`
+      : `${programDisplay} via ${lenderName} appears workable but has open items or soft concerns to confirm before placement.`;
+
+  return {
+    bucket,
+    score,
+    blockers,
+    concerns,
+    strengths,
+    missingItems,
+    explanation,
+  };
+}
+
+// -----------------------------------------------------------------------------
 // Build next question
 // -----------------------------------------------------------------------------
 
@@ -657,6 +973,7 @@ export async function POST(req: Request) {
 
     const supabase = createClient();
 
+    // Pull all active lender programs with their lender + guideline relations
     const { data: programs, error: programsError } = await supabase
       .from("programs")
       .select(`
@@ -678,6 +995,36 @@ export async function POST(req: Request) {
       );
     }
 
+    // Pull all lenders with capability flags
+    const { data: lendersData, error: lendersError } = await supabase
+      .from("lenders")
+      .select("id, name, does_conventional, does_fha, does_va, does_usda");
+
+    if (lendersError) {
+      return NextResponse.json(
+        { success: false, error: `Failed to load lenders: ${lendersError.message}` },
+        { status: 500 }
+      );
+    }
+
+    const allLenders = (lendersData || []) as LenderRow[];
+
+    // Pull active agency programs from global_guidelines
+    const { data: agencyData, error: agencyError } = await supabase
+      .from("global_guidelines")
+      .select("*")
+      .eq("is_active", true);
+
+    if (agencyError) {
+      return NextResponse.json(
+        { success: false, error: `Failed to load agency guidelines: ${agencyError.message}` },
+        { status: 500 }
+      );
+    }
+
+    const agencyGuidelines = (agencyData || []) as GlobalGuidelineRow[];
+
+    // Pull state eligibility for the borrower's subject state
     const subjectState = String(payload.subject_state || "").trim().toUpperCase();
     let stateEligibilityRows: StateEligibilityRow[] = [];
     if (subjectState) {
@@ -707,8 +1054,8 @@ export async function POST(req: Request) {
     const activeLenderNames = new Set<string>();
     const matchedLenderNames = new Set<string>();
 
+    // -------- LENDER PROGRAM PASS --------
     for (const program of allRows) {
-      // Normalize lender join (Supabase may return as object or array)
       const lenderJoin: LenderJoin | null = Array.isArray(program.lenders)
         ? ((program.lenders[0] as LenderJoin) || null)
         : ((program.lenders as LenderJoin | null) || null);
@@ -730,7 +1077,7 @@ export async function POST(req: Request) {
 
       const stateEligibility = stateByLender.get(lenderId) || null;
 
-      const evaluation = evaluateProgram(
+      const evaluation = evaluateLenderProgram(
         guideline,
         payload,
         stateEligibility,
@@ -766,6 +1113,59 @@ export async function POST(req: Request) {
       }
     }
 
+    // -------- AGENCY PROGRAM PASS (Phase 2) --------
+    for (const agencyGuideline of agencyGuidelines) {
+      const capabilityFlag = getCapabilityFlagForAgency(agencyGuideline.agency);
+      if (!capabilityFlag) continue; // Unknown agency — skip
+
+      // Find all lenders that have this capability flag set to true
+      const eligibleLenders = allLenders.filter((lender) => lender[capabilityFlag] === true);
+
+      for (const lender of eligibleLenders) {
+        activeLenderNames.add(lender.name || "Unknown Lender");
+
+        const stateEligibility = stateByLender.get(lender.id) || null;
+
+        const evaluation = evaluateAgencyProgramForLender(
+          agencyGuideline,
+          lender,
+          stateEligibility,
+          payload
+        );
+
+        const programNameDisplay = `${agencyGuideline.program_name} (${agencyGuideline.agency})`;
+        const lenderNameDisplay = lender.name || "Unknown Lender";
+
+        const bucketEntry: MatchBucket = {
+          lender_name: lenderNameDisplay,
+          lender_id: lender.id,
+          program_name: programNameDisplay,
+          program_slug: null,
+          loan_category: `${agencyGuideline.agency} ${agencyGuideline.product_family}`,
+          guideline_id: agencyGuideline.id,
+          notes: agencyGuideline.notes ? [agencyGuideline.notes] : [],
+          missing_items: evaluation.missingItems,
+          blockers: evaluation.blockers,
+          strengths: evaluation.strengths,
+          concerns: evaluation.concerns,
+          explanation: evaluation.explanation,
+          score: evaluation.score,
+          required_reserves_months: null,
+        };
+
+        if (evaluation.bucket === "strong") {
+          strongMatches.push(bucketEntry);
+          matchedLenderNames.add(lenderNameDisplay);
+        } else if (evaluation.bucket === "conditional") {
+          conditionalMatches.push(bucketEntry);
+          matchedLenderNames.add(lenderNameDisplay);
+        } else {
+          eliminatedPaths.push(bucketEntry);
+        }
+      }
+    }
+
+    // Sort by score descending
     strongMatches.sort((a, b) => b.score - a.score);
     conditionalMatches.sort((a, b) => b.score - a.score);
     eliminatedPaths.sort((a, b) => b.score - a.score);
@@ -802,7 +1202,7 @@ export async function POST(req: Request) {
         matched_lenders_in_results: Array.from(matchedLenderNames).sort(),
       },
       summary: {
-        total_guidelines_checked: allRows.length,
+        total_guidelines_checked: allRows.length + agencyGuidelines.length,
         strong_count: strongMatches.length,
         conditional_count: conditionalMatches.length,
         eliminated_count: eliminatedPaths.length,
