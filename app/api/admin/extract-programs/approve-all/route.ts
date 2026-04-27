@@ -1,20 +1,13 @@
 // =============================================================================
-// PHASE 7.3 — APPROVE ALL DRAFTS FROM A DOCUMENT
+// PHASE 7.5 — REPLACEMENT for app/api/admin/extract-programs/approve-all/route.ts
 //
-// Paste this file at:
-//     app/api/admin/extract-programs/approve-all/route.ts
+// What changed vs Phase 7.3:
+//   When approving drafts from a document, we now check BOTH programs and
+//   global_guidelines tables and activate whichever has draft rows for the
+//   given document. A single document only writes to one table, but this
+//   approve-all endpoint is now table-agnostic.
 //
-// What it does:
-//   POST { documentId: "<lender_documents.id>" }
-//
-//   Finds all draft programs (source='extracted', is_active=false,
-//   source_document_id=documentId) and flips them all to active in one shot.
-//   Also activates their program_guidelines rows.
-//
-// Response:
-//   { ok, approvedCount, programIds }
-//
-// Auth: admin only.
+//   Returns counts for both so the UI/JSON consumer knows what happened.
 // =============================================================================
 
 import { NextResponse } from 'next/server'
@@ -47,65 +40,117 @@ export async function POST(req: Request) {
     )
   }
 
-  // Find all drafts from this document.
-  const { data: drafts, error: findError } = await supabaseAdmin
+  // ---------------- TABLE 1: programs (regular lender programs) ----------------
+  const { data: programDrafts, error: programFindError } = await supabaseAdmin
     .from('programs')
     .select('id, name')
     .eq('source_document_id', documentId)
     .eq('source', 'extracted')
     .eq('is_active', false)
 
-  if (findError) {
+  if (programFindError) {
     return NextResponse.json(
-      { ok: false, error: `Failed to find drafts: ${findError.message}` },
+      { ok: false, error: `Failed to find program drafts: ${programFindError.message}` },
       { status: 500 }
     )
   }
 
-  if (!drafts || drafts.length === 0) {
-    return NextResponse.json({
-      ok: true,
-      message: 'No draft programs found for this document.',
-      approvedCount: 0,
-      programIds: [],
-    })
+  let programsApproved = 0
+  let programNames: string[] = []
+  let programIds: string[] = []
+
+  if (programDrafts && programDrafts.length > 0) {
+    programIds = programDrafts.map((d) => d.id)
+    programNames = programDrafts.map((d) => d.name)
+
+    const { error: programUpdateError } = await supabaseAdmin
+      .from('programs')
+      .update({ is_active: true })
+      .in('id', programIds)
+
+    if (programUpdateError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Failed to activate programs: ${programUpdateError.message}`,
+        },
+        { status: 500 }
+      )
+    }
+
+    // Also activate guideline rows
+    await supabaseAdmin
+      .from('program_guidelines')
+      .update({ is_active: true })
+      .in('program_id', programIds)
+
+    programsApproved = programIds.length
   }
 
-  const draftIds = drafts.map((d) => d.id)
+  // ---------------- TABLE 2: global_guidelines (agency programs) ----------------
+  const { data: agencyDrafts, error: agencyFindError } = await supabaseAdmin
+    .from('global_guidelines')
+    .select('id, program_name, agency, product_family')
+    .eq('source_document_id', documentId)
+    .eq('source', 'extracted')
+    .eq('is_active', false)
 
-  // Activate programs.
-  const { error: programUpdateError } = await supabaseAdmin
-    .from('programs')
-    .update({ is_active: true })
-    .in('id', draftIds)
-
-  if (programUpdateError) {
+  if (agencyFindError) {
     return NextResponse.json(
       {
         ok: false,
-        error: `Failed to activate programs: ${programUpdateError.message}`,
+        error: `Failed to find global guideline drafts: ${agencyFindError.message}`,
       },
       { status: 500 }
     )
   }
 
-  // Activate guidelines (best effort — log and continue if it fails).
-  const { error: guidelineUpdateError } = await supabaseAdmin
-    .from('program_guidelines')
-    .update({ is_active: true })
-    .in('program_id', draftIds)
+  let agencyApproved = 0
+  let agencyNames: string[] = []
+  let agencyIds: string[] = []
 
-  if (guidelineUpdateError) {
-    console.warn(
-      '[approve-all] Programs activated but guideline activation failed:',
-      guidelineUpdateError.message
+  if (agencyDrafts && agencyDrafts.length > 0) {
+    agencyIds = agencyDrafts.map((d) => d.id)
+    agencyNames = agencyDrafts.map(
+      (d) => `${d.agency} ${d.product_family} — ${d.program_name}`
     )
+
+    const { error: agencyUpdateError } = await supabaseAdmin
+      .from('global_guidelines')
+      .update({ is_active: true })
+      .in('id', agencyIds)
+
+    if (agencyUpdateError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Failed to activate agency guidelines: ${agencyUpdateError.message}`,
+        },
+        { status: 500 }
+      )
+    }
+
+    agencyApproved = agencyIds.length
+  }
+
+  const totalApproved = programsApproved + agencyApproved
+
+  if (totalApproved === 0) {
+    return NextResponse.json({
+      ok: true,
+      message: 'No draft programs or agency guidelines found for this document.',
+      approvedCount: 0,
+      programIds: [],
+      programNames: [],
+    })
   }
 
   return NextResponse.json({
     ok: true,
-    approvedCount: draftIds.length,
-    programIds: draftIds,
-    programNames: drafts.map((d) => d.name),
+    approvedCount: totalApproved,
+    programsApproved,
+    agencyApproved,
+    programIds: [...programIds, ...agencyIds],
+    programNames: [...programNames, ...agencyNames],
   })
 }
