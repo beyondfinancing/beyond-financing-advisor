@@ -5,7 +5,7 @@
 //
 // =============================================================================
 //
-// PHASE 2 SUPABASE-BACKED MATCHER
+// PHASE 2 SUPABASE-BACKED MATCHER — with CATEGORY TIER SCORING
 //
 // Reads from:
 //   - programs + program_guidelines (lender-specific programs)
@@ -13,11 +13,16 @@
 //   - lenders (with capability flags: does_conventional/fha/va/usda)
 //   - lender_state_eligibility
 //
-// For each agency program in global_guidelines, finds all active lenders that
-// have the matching capability flag and state eligibility. Each (agency program
-// x eligible lender) combination produces a separate match card.
+// SCORING CHANGE (this version):
+//   - Agency / Conventional / Government programs: +20 tier bonus
+//   - Non-QM / DSCR / Bank Statement programs: -10 tier penalty
+//   - ITIN / Foreign National programs: -15 tier penalty
+//   - HELOC / Second / Other / null: 0 (neutral)
 //
-// Returns the contract expected by app/finley/page.tsx.
+//   Rationale: when a borrower qualifies for both agency conventional AND
+//   non-QM, agency conventional should always be the top recommendation
+//   (better rate, lower fees). The previous version scored both categories
+//   on the same scale, letting non-QM programs win on bonus headroom.
 //
 // =============================================================================
 
@@ -221,6 +226,55 @@ function borrowerStatusMatches(
 }
 
 // -----------------------------------------------------------------------------
+// Category tier bonus (NEW)
+// -----------------------------------------------------------------------------
+//
+// When a borrower qualifies for both agency conventional and a non-QM tier,
+// agency should always win. This bonus encodes that preference structurally
+// rather than relying on coincidental margin bonuses.
+//
+// Returns a number that is added to the per-program score AFTER all the
+// margin-based bonuses are applied, but BEFORE bucket assignment. That way
+// the bucket reflects the tier-adjusted score.
+//
+// String matching is loose (case-insensitive, normalized) to handle whatever
+// values land in the loan_category column. Add new categories here as they
+// appear in the data.
+//
+function getCategoryTierBonus(loanCategory: string | null | undefined): number {
+  if (!loanCategory) return 0;
+  const normalized = normalizeToken(loanCategory);
+
+  // Agency / conventional / government — preferred placement tier
+  if (normalized === "agency") return 20;
+  if (normalized === "conventional") return 20;
+  if (normalized.includes("fannie_mae")) return 20;
+  if (normalized.includes("freddie_mac")) return 20;
+  if (normalized.includes("fha")) return 20;
+  if (normalized.includes("va")) return 20;
+  if (normalized.includes("usda")) return 20;
+  if (normalized === "government") return 20;
+
+  // Neutral tiers — HELOC, second liens, generic "Other"
+  if (normalized === "heloc") return 0;
+  if (normalized === "second") return 0;
+  if (normalized === "other") return 0;
+
+  // Non-QM family — penalized vs agency
+  if (normalized === "non_qm") return -10;
+  if (normalized === "jumbo_non_qm") return -10;
+  if (normalized === "bank_statement") return -10;
+  if (normalized === "dscr") return -10;
+
+  // Non-citizen / alternative-doc product tiers — heavier penalty
+  if (normalized === "itin") return -15;
+  if (normalized === "foreign_national") return -15;
+
+  // Unknown category — neutral, don't penalize unfamiliar data
+  return 0;
+}
+
+// -----------------------------------------------------------------------------
 // Guideline completeness check (lender-program path)
 // -----------------------------------------------------------------------------
 
@@ -272,7 +326,8 @@ function evaluateLenderProgram(
   payload: FormPayload,
   stateEligibility: StateEligibilityRow | null,
   lenderName: string,
-  programName: string
+  programName: string,
+  loanCategory: string | null
 ): EvaluationResult {
   const blockers: string[] = [];
   const concerns: string[] = [];
@@ -613,6 +668,10 @@ function evaluateLenderProgram(
     }
   }
 
+  // Apply category tier bonus AFTER margin-based scoring but BEFORE bucket
+  // assignment so the bucket reflects the tier-adjusted score.
+  score += getCategoryTierBonus(loanCategory);
+
   let bucket: "strong" | "conditional" = "conditional";
   if (score >= 75 && concerns.length === 0 && missingItems.length <= 1) {
     bucket = "strong";
@@ -896,6 +955,11 @@ function evaluateAgencyProgramForLender(
     missingItems.push("Available reserves (months of PITIA)");
   }
 
+  // Agency programs are tier-1 by definition. Apply the tier bonus AFTER
+  // margin-based scoring but BEFORE bucket assignment so the bucket reflects
+  // the tier-adjusted score. This is the +20 from getCategoryTierBonus("agency").
+  score += 20;
+
   let bucket: "strong" | "conditional" = "conditional";
   if (score >= 75 && concerns.length === 0 && missingItems.length <= 1) {
     bucket = "strong";
@@ -1082,7 +1146,8 @@ export async function POST(req: Request) {
         payload,
         stateEligibility,
         lenderName,
-        programName
+        programName,
+        program.loan_category
       );
 
       const bucketEntry: MatchBucket = {
