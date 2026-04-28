@@ -24,6 +24,35 @@
 //   (better rate, lower fees). The previous version scored both categories
 //   on the same scale, letting non-QM programs win on bonus headroom.
 //
+// STEP 2.5 EXTENSION — TRANSACTION-TYPE INFERENCE FROM PROGRAM NAME
+//
+// `global_guidelines` has no transaction_types column. The empty-array-permissive
+// logic in Step 2 was therefore treating refi-only and construction programs
+// as eligible for purchase scenarios. This version extends Step 2.5
+// (deriveProgramRestrictions / evaluateAgencyProgramForLender) with name-derived
+// transaction-type rules:
+//
+//   - Refinance programs (name contains "Refinance"):
+//       ELIMINATE on a purchase transaction.
+//       Caught: High LTV Refinance (Alt Path / Option), Disaster-Related
+//       Limited Cash-Out Refinance, Student Loan Cash-Out Refinance, PACE
+//       Refinance, etc.
+//
+//   - Construction-to-Permanent programs:
+//       Demote to CONDITIONAL on a purchase transaction with a "verify
+//       intent to build" concern. (Construction-to-Perm IS technically
+//       purchase financing, but only for ground-up build.)
+//
+//   - HomeStyle Renovation / HomeStyle Refresh:
+//       Demote to CONDITIONAL on a purchase transaction with a "verify
+//       intent to renovate at closing" concern.
+//
+// The conditional demotion uses an explicit `forceConditional` flag rather
+// than relying on score/concern arithmetic so it survives regardless of
+// other scoring noise. When `global_guidelines` gains a transaction_types
+// column (Option C territory), this logic should migrate into proper field
+// checks alongside the existing transaction_types check on the lender path.
+//
 // =============================================================================
 
 import { NextResponse } from "next/server";
@@ -791,16 +820,20 @@ function isIncomeTypeAgencyCompatible(incomeType: string): boolean {
 // `global_guidelines` does not have columns for property_types, transaction_types,
 // or per-program eligible_states. Many programs in that table (Manufactured
 // Housing, Co-op Share Loan, Texas Section 50(a)(6), FHA-Insured, VA-Guaranteed,
-// RD Section 502, HUD Section 184) carry their restrictions only in the program
-// name. This helper pattern-matches the program_name and returns whatever
-// borrower-side conflicts can be derived from it.
+// RD Section 502, HUD Section 184, refinance-only programs, construction, and
+// renovation products) carry their restrictions only in the program name. This
+// helper pattern-matches the program_name and returns whatever borrower-side
+// conflicts can be derived from it.
 //
-// Two classes of restriction:
-//   1. Hard conflicts (property type, single state) — the borrower's input
-//      directly contradicts the program. Eliminate.
+// Three classes of restriction:
+//   1. Hard conflicts (property type, single state, refinance-only on a purchase)
+//      — the borrower's input directly contradicts the program. Eliminate.
 //   2. Government programs (FHA / VA / USDA / Section 184) — borrower wasn't
 //      asked which agency they want; LO will decide in Pro Mode. Demote with a
 //      targeted concern so it's still visible but no longer cluttering strong.
+//   3. Construction and renovation products on a purchase — these CAN fund a
+//      purchase, but only with extra borrower intent (build vs. buy, renovate
+//      at closing). Demote to conditional via the `forceConditional` flag.
 //
 // When `global_guidelines` gains structured columns for these restrictions,
 // migrate this logic into proper field checks and delete this helper.
@@ -810,6 +843,8 @@ type ProgramRestrictions = {
   propertyTypeLabel?: string;
   requiresState?: string;
   governmentProgram?: "FHA" | "VA" | "USDA" | "Section 184";
+  refinanceOnly?: boolean;
+  conditionalForPurchase?: "construction" | "renovation";
 };
 
 function deriveProgramRestrictions(programName: string): ProgramRestrictions {
@@ -828,6 +863,27 @@ function deriveProgramRestrictions(programName: string): ProgramRestrictions {
   // State-restricted programs (eliminate on mismatch)
   if (/texas section 50/i.test(name)) {
     restrictions.requiresState = "TX";
+  }
+
+  // Refinance-only programs (eliminate on a purchase transaction)
+  // Catches: High LTV Refinance / Refinance Option / Alternative Qualification Path,
+  // Disaster-Related Limited Cash-Out Refinance, Student Loan Cash-Out Refinance,
+  // PACE Refinance, etc.
+  if (/refinance/i.test(name)) {
+    restrictions.refinanceOnly = true;
+  }
+
+  // Construction-to-Permanent — conditional on a purchase (verify intent to build).
+  // Catches all "Construction-to-Permanent" variants (Single-Closing, Two-Closing,
+  // Financing, etc.). Allows optional hyphens or whitespace between tokens.
+  if (/construction[-\s]?to[-\s]?permanent/i.test(name)) {
+    restrictions.conditionalForPurchase = "construction";
+  }
+
+  // HomeStyle Renovation / HomeStyle Refresh — conditional on a purchase
+  // (verify intent to renovate at closing).
+  if (/homestyle\s*(renovation|refresh)/i.test(name)) {
+    restrictions.conditionalForPurchase = "renovation";
   }
 
   // Government programs (demote with targeted concern; do not eliminate)
@@ -858,9 +914,11 @@ function evaluateAgencyProgramForLender(
   const missingItems: string[] = [];
 
   let score = 50;
+  let forceConditional = false;
 
   const subjectState = String(payload.subject_state || "").trim().toUpperCase();
   const occupancyType = String(payload.occupancy_type || "").trim();
+  const transactionType = String(payload.transaction_type || "").trim();
   const incomeType = String(payload.income_type || "").trim();
   const propertyType = String(payload.property_type || "").trim();
   const creditScore = toNumber(payload.credit_score);
@@ -877,9 +935,11 @@ function evaluateAgencyProgramForLender(
 
   // -----------------------------------------------------------------------
   // Program-name-derived restrictions (Step 2.5)
-  // Hard conflicts (property type, single-state) eliminate immediately.
-  // Government programs (FHA/VA/USDA/Section 184) demote to conditional
-  // with a targeted concern so the LO can confirm in Pro Mode.
+  // Hard conflicts (property type, single-state, refinance-only on purchase)
+  // eliminate immediately. Construction/renovation programs on a purchase get
+  // demoted to conditional via forceConditional. Government programs
+  // (FHA/VA/USDA/Section 184) demote to conditional with a targeted concern
+  // so the LO can confirm in Pro Mode.
   // -----------------------------------------------------------------------
   const restrictions = deriveProgramRestrictions(agencyGuideline.program_name);
 
@@ -920,6 +980,41 @@ function evaluateAgencyProgramForLender(
       missingItems,
       explanation: `${programDisplay} is a ${restrictions.requiresState}-only product and cannot be placed in ${subjectState}.`,
     };
+  }
+
+  // Refinance-only restriction — eliminate on a purchase transaction
+  if (restrictions.refinanceOnly && transactionType === "purchase") {
+    blockers.push(
+      `${programDisplay} is a refinance program — borrower's transaction type is purchase.`
+    );
+    return {
+      bucket: "eliminated",
+      score: 0,
+      blockers,
+      concerns,
+      strengths,
+      missingItems,
+      explanation: `${programDisplay} is a refinance product and cannot be placed on a purchase transaction.`,
+    };
+  }
+
+  // Construction or renovation product on a purchase — demote to conditional
+  // via the explicit forceConditional flag. The concern + missing item make
+  // the open question visible; the flag overrides bucket assignment at the end.
+  if (restrictions.conditionalForPurchase && transactionType === "purchase") {
+    if (restrictions.conditionalForPurchase === "construction") {
+      concerns.push(
+        `${programDisplay} is a construction-to-permanent product — confirm borrower intends ground-up construction (vs. buying an existing property).`
+      );
+      missingItems.push("Construction intent (build vs. purchase existing property) not confirmed");
+    } else {
+      concerns.push(
+        `${programDisplay} is a renovation/refresh program — confirm borrower intends to renovate at closing.`
+      );
+      missingItems.push("Renovation scope and intent at closing not confirmed");
+    }
+    score -= 10;
+    forceConditional = true;
   }
 
   // Government program — demote with targeted concern (do not eliminate)
@@ -1161,6 +1256,13 @@ function evaluateAgencyProgramForLender(
   } else if (score >= 60 && concerns.length <= 1) {
     bucket = "strong";
   } else {
+    bucket = "conditional";
+  }
+
+  // Step 2.5 conditional override — construction/renovation on a purchase
+  // never lands in strong regardless of how high the underlying score is.
+  // The concern + missing item from the block above explain why.
+  if (forceConditional && bucket === "strong") {
     bucket = "conditional";
   }
 
