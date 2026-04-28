@@ -24,6 +24,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import AdminNav from "@/app/components/AdminNav";
 
 type LenderOption = {
   id: string;
@@ -800,6 +801,8 @@ export default function ManageLenderFilesPage() {
   return (
     <main style={styles.page}>
       <div style={styles.wrap}>
+        <AdminNav />
+
         <div style={styles.headerRow}>
           <div>
             <div style={styles.eyebrow}>FILE INTAKE</div>
