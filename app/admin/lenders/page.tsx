@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import LendersClient from "./LendersClient";
+import AdminNav from "@/app/components/AdminNav";
 
 type LenderRow = {
   id: string;
@@ -195,6 +196,8 @@ export default async function AdminLendersPage() {
   return (
     <main style={pageShellStyle()}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 32 }}>
+        <AdminNav />
+
         <div
           style={{
             display: "flex",
