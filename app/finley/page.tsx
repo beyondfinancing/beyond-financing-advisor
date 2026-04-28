@@ -5,30 +5,44 @@
 //
 // =============================================================================
 //
-// PHASE 6 — RECONNECT THE PROFESSIONAL THINKING LAYER
+// PROGRAM-FIRST GROUPED RESULTS UI
 //
 // Changes vs. the prior version:
 //
-//   1. Removed the localStorage-based auth scheme (PROFESSIONAL_SESSION_KEY
-//      constant + parseProfessionalSession function). No longer used.
+//   1. Match results now group by PROGRAM at the top level rather than
+//      flat-listing every (lender x program) combination. With ~19
+//      wholesale lenders x ~26 agency programs, the previous flat list
+//      produced ~500 nearly-identical cards. The new layout collapses
+//      to ~26 program rows (Strong) / ~10 (Eliminated), each expandable
+//      inline to show the lenders offering that program.
 //
-//   2. The auth useEffect now calls /api/team-auth/me, the same signed-cookie
-//      session source that the rest of the app uses. This brings /finley
-//      onto the same auth system as /team, /team/inbox, and the API routes.
+//   2. Three render levels:
+//        L1 - Program row: program name, best score across lenders,
+//             lender count, blocker (eliminated only).
+//        L2 - Click program -> inline list of lenders for that program
+//             with individual scores + "View Details" button per lender.
+//        L3 - Click "View Details" -> existing per-lender detail panel
+//             (explanation, strengths, concerns, notes, missing items,
+//             blockers) - UNCHANGED behavior from prior version.
 //
-//   3. Added a role guard: only Loan Officer, Loan Officer Assistant,
-//      Branch Manager, Production Manager, and Processor are allowed.
-//      Real Estate Agent is explicitly excluded — agents should not see
-//      lender/program matching. Unauthorized roles bounce back to /team.
+//   3. Sort within bucket: best score desc -> lender count desc ->
+//      program name alpha. Sort within program group: score desc ->
+//      lender name alpha.
 //
-//   4. logoutProfessional() now POSTs to /api/team-auth/logout to clear the
-//      server-side session, instead of clearing localStorage.
+//   4. Group key: guideline_id || program_slug || program_name.
+//      Display label: program_name.
 //
-// Everything else in this file is unchanged: the qualification intake form,
-// /api/match integration, Strong/Conditional/Eliminated buckets, scoring
-// pills, OpenAI enhancement panel, Email My Summary flow, conversation
-// panel powered by /api/qualify/next-question, the entire results UI,
-// and all styling.
+//   5. State additions: expandedPrograms (separate from expandedCards
+//      to avoid collisions). Both reset on new match run.
+//
+//   6. renderBucketCard is unchanged EXCEPT for one line: the cardKey
+//      now includes lender_id (or lender_name) to ensure each lender's
+//      "View Details" toggle is independent. Without this, cards
+//      sharing the same guideline_id would expand as a group.
+//
+// Auth, intake form, /api/match integration, scoring pills, OpenAI
+// enhancement panel, Email My Summary, conversation panel, and all
+// styling outside the results section remain unchanged.
 //
 // =============================================================================
 
@@ -113,6 +127,17 @@ type MatchBucket = {
   explanation?: string;
   score?: number;
   required_reserves_months?: number | null;
+};
+
+type ProgramGroup = {
+  groupKey: string;
+  programName: string;
+  loanCategory: string | null;
+  guidelineId: string;
+  bestScore: number;
+  lenderCount: number;
+  blocker: string | null;
+  items: MatchBucket[];
 };
 
 type OpenAiEnhancement = {
@@ -236,6 +261,74 @@ function buildChatSummary(data: MatchResponse): string {
     ai?.nextBestQuestion ||
     "No visible paths were identified yet. Please confirm the next qualification detail."
   );
+}
+
+// ---------------------------------------------------------------------------
+// groupByProgram
+//
+// Collapses a flat list of (lender x program) match items into one row per
+// distinct program. Each group carries the best score across lenders, the
+// lender count, and (for eliminated bucket) the first non-empty blocker.
+//
+// Group key precedence: guideline_id > program_slug > program_name. The
+// display label is always program_name.
+//
+// Group sort: bestScore desc -> lenderCount desc -> programName alpha.
+// Within-group sort: score desc -> lender_name alpha.
+// ---------------------------------------------------------------------------
+function groupByProgram(items: MatchBucket[]): ProgramGroup[] {
+  const map = new Map<string, ProgramGroup>();
+
+  for (const item of items) {
+    const groupKey =
+      item.guideline_id ||
+      item.program_slug ||
+      item.program_name ||
+      "unknown_program";
+    const programName = item.program_name || "Unknown Program";
+    const loanCategory = item.loan_category ?? null;
+    const guidelineId = item.guideline_id || "";
+    const score = item.score ?? 0;
+    const firstBlocker = safeArray(item.blockers)[0] || null;
+
+    const existing = map.get(groupKey);
+    if (!existing) {
+      map.set(groupKey, {
+        groupKey,
+        programName,
+        loanCategory,
+        guidelineId,
+        bestScore: score,
+        lenderCount: 1,
+        blocker: firstBlocker,
+        items: [item],
+      });
+    } else {
+      existing.bestScore = Math.max(existing.bestScore, score);
+      existing.lenderCount += 1;
+      if (!existing.blocker && firstBlocker) {
+        existing.blocker = firstBlocker;
+      }
+      existing.items.push(item);
+    }
+  }
+
+  // Sort items within each group: score desc, then lender name alpha
+  for (const group of map.values()) {
+    group.items.sort((a, b) => {
+      const scoreA = a.score ?? 0;
+      const scoreB = b.score ?? 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return (a.lender_name || "").localeCompare(b.lender_name || "");
+    });
+  }
+
+  // Sort groups: bestScore desc, then lenderCount desc, then programName alpha
+  return Array.from(map.values()).sort((a, b) => {
+    if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore;
+    if (b.lenderCount !== a.lenderCount) return b.lenderCount - a.lenderCount;
+    return a.programName.localeCompare(b.programName);
+  });
 }
 
 function renderList(title: string, items: string[]) {
@@ -525,6 +618,7 @@ export default function FinleyPage() {
   const [lenderSummary, setLenderSummary] =
     useState<MatchResponse["lender_summary"]>(null);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [expandedPrograms, setExpandedPrograms] = useState<Record<string, boolean>>({});
 
   // ---------------------------------------------------------------------------
   // Auth — verify cookie session via /api/team-auth/me, then guard by role.
@@ -605,6 +699,19 @@ export default function FinleyPage() {
 
   const missingFields = useMemo(() => getMissingFields(form), [form]);
 
+  const groupedStrong = useMemo(
+    () => groupByProgram(strongMatches),
+    [strongMatches]
+  );
+  const groupedConditional = useMemo(
+    () => groupByProgram(conditionalMatches),
+    [conditionalMatches]
+  );
+  const groupedEliminated = useMemo(
+    () => groupByProgram(eliminatedPaths),
+    [eliminatedPaths]
+  );
+
   function updateField<K extends keyof QualificationInput>(
     key: K,
     value: QualificationInput[K]
@@ -675,6 +782,7 @@ export default function FinleyPage() {
       setOpenAiEnhancement(data.openai_enhancement || null);
       setLenderSummary(data.lender_summary || null);
       setExpandedCards({});
+      setExpandedPrograms({});
 
       const resolvedNextQuestion =
         data.next_question ||
@@ -712,6 +820,7 @@ export default function FinleyPage() {
       setOpenAiEnhancement(null);
       setLenderSummary(null);
       setExpandedCards({});
+      setExpandedPrograms({});
     } finally {
       setLoading(false);
     }
@@ -793,6 +902,13 @@ export default function FinleyPage() {
     }));
   }
 
+  function togglePrograms(key: string) {
+    setExpandedPrograms((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }
+
   function renderBucketCard(
     item: MatchBucket,
     type: "strong" | "conditional" | "eliminated",
@@ -803,7 +919,12 @@ export default function FinleyPage() {
     const blockers = safeArray(item.blockers);
     const strengths = safeArray(item.strengths);
     const concerns = safeArray(item.concerns);
-    const cardKey = `${type}-${item.guideline_id || item.program_slug || index}`;
+    // cardKey now includes lender_id (or lender_name) so each lender's
+    // "View Details" toggle is independent — without this, lenders sharing
+    // the same guideline_id would expand as a group inside a program row.
+    const cardKey = `${type}-${
+      item.guideline_id || item.program_slug || "p"
+    }-${item.lender_id || item.lender_name || index}`;
     const expanded = !!expandedCards[cardKey];
 
     return (
@@ -912,6 +1033,166 @@ export default function FinleyPage() {
             {renderList("Notes", notes)}
             {renderList("Missing Items", missingItems)}
             {renderList("Blockers", blockers)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // renderProgramGroup — L1 row.
+  //
+  // Renders a clickable program-level header showing program name, loan
+  // category, best score across lenders, and lender count. For eliminated
+  // bucket, also shows the program-level blocker. When expanded, fans out
+  // into renderBucketCard calls per lender (which themselves expand into
+  // the existing per-lender detail panel).
+  // ---------------------------------------------------------------------------
+  function renderProgramGroup(
+    group: ProgramGroup,
+    type: "strong" | "conditional" | "eliminated"
+  ) {
+    const programKey = `${type}-program-${group.groupKey}`;
+    const isExpanded = !!expandedPrograms[programKey];
+
+    const pillBg =
+      type === "strong"
+        ? "#e8f7ee"
+        : type === "conditional"
+        ? "#fff6e5"
+        : "#fdecec";
+    const pillFg =
+      type === "strong"
+        ? "#157347"
+        : type === "conditional"
+        ? "#946200"
+        : "#b42318";
+
+    return (
+      <div
+        key={programKey}
+        style={{
+          border: "1px solid #d9e1ec",
+          borderRadius: 18,
+          marginBottom: 14,
+          background: "#ffffff",
+          overflow: "hidden",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => togglePrograms(programKey)}
+          aria-expanded={isExpanded}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "auto 1fr auto",
+            gap: 14,
+            alignItems: "center",
+            width: "100%",
+            padding: "16px 18px",
+            border: "none",
+            background: isExpanded ? "#f8fbff" : "transparent",
+            cursor: "pointer",
+            textAlign: "left",
+            color: "#263366",
+            fontFamily: "inherit",
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              fontSize: 16,
+              color: "#0096C7",
+              width: 14,
+              display: "inline-block",
+            }}
+          >
+            {isExpanded ? "▾" : "▸"}
+          </span>
+
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 17,
+                fontWeight: 700,
+                color: "#263366",
+                marginBottom: 4,
+                lineHeight: 1.3,
+              }}
+            >
+              {group.programName}
+            </div>
+            {group.loanCategory && (
+              <div style={{ fontSize: 13, color: "#4b5d7a" }}>
+                {labelize(group.loanCategory)}
+              </div>
+            )}
+            {type === "eliminated" && group.blocker && (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#b42318",
+                  marginTop: 6,
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong>Blocker:</strong> {group.blocker}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+            }}
+          >
+            {type !== "eliminated" && (
+              <span
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  background: pillBg,
+                  color: pillFg,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Best: {group.bestScore}
+              </span>
+            )}
+            <span
+              style={{
+                padding: "6px 12px",
+                borderRadius: 999,
+                background: "#eef4fb",
+                color: "#263366",
+                fontWeight: 700,
+                fontSize: 13,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {group.lenderCount}{" "}
+              {group.lenderCount === 1 ? "lender" : "lenders"}
+            </span>
+          </div>
+        </button>
+
+        {isExpanded && (
+          <div
+            style={{
+              padding: "16px 18px 4px 18px",
+              borderTop: "1px solid #eef2f8",
+              background: "#fbfcfe",
+            }}
+          >
+            {group.items.map((item, index) =>
+              renderBucketCard(item, type, index)
+            )}
           </div>
         )}
       </div>
@@ -1607,7 +1888,16 @@ export default function FinleyPage() {
           {strongMatches.length === 0 ? (
             <div style={{ color: "#4b5d7a" }}>No strong matches yet.</div>
           ) : (
-            strongMatches.map((item, index) => renderBucketCard(item, "strong", index))
+            <>
+              <div style={groupSummaryStyle}>
+                {groupedStrong.length}{" "}
+                {groupedStrong.length === 1 ? "program" : "programs"} across{" "}
+                {strongMatches.length}{" "}
+                {strongMatches.length === 1 ? "lender" : "lenders"}. Click a
+                program to see the lenders offering it.
+              </div>
+              {groupedStrong.map((group) => renderProgramGroup(group, "strong"))}
+            </>
           )}
         </section>
 
@@ -1616,9 +1906,18 @@ export default function FinleyPage() {
           {conditionalMatches.length === 0 ? (
             <div style={{ color: "#4b5d7a" }}>No conditional matches.</div>
           ) : (
-            conditionalMatches.map((item, index) =>
-              renderBucketCard(item, "conditional", index)
-            )
+            <>
+              <div style={groupSummaryStyle}>
+                {groupedConditional.length}{" "}
+                {groupedConditional.length === 1 ? "program" : "programs"} across{" "}
+                {conditionalMatches.length}{" "}
+                {conditionalMatches.length === 1 ? "lender" : "lenders"}. Click a
+                program to see the lenders and concerns to clear.
+              </div>
+              {groupedConditional.map((group) =>
+                renderProgramGroup(group, "conditional")
+              )}
+            </>
           )}
         </section>
 
@@ -1627,9 +1926,18 @@ export default function FinleyPage() {
           {eliminatedPaths.length === 0 ? (
             <div style={{ color: "#4b5d7a" }}>No eliminated paths yet.</div>
           ) : (
-            eliminatedPaths.map((item, index) =>
-              renderBucketCard(item, "eliminated", index)
-            )
+            <>
+              <div style={groupSummaryStyle}>
+                {groupedEliminated.length}{" "}
+                {groupedEliminated.length === 1 ? "program" : "programs"} across{" "}
+                {eliminatedPaths.length}{" "}
+                {eliminatedPaths.length === 1 ? "lender" : "lenders"}. The
+                program-level blocker is shown on each row.
+              </div>
+              {groupedEliminated.map((group) =>
+                renderProgramGroup(group, "eliminated")
+              )}
+            </>
           )}
         </section>
       </div>
@@ -1666,4 +1974,11 @@ const resultsSectionStyle: React.CSSProperties = {
 const resultsTitleStyle: React.CSSProperties = {
   fontSize: "clamp(24px, 4vw, 30px)",
   margin: "0 0 16px 0",
+};
+
+const groupSummaryStyle: React.CSSProperties = {
+  color: "#4b5d7a",
+  fontSize: 14,
+  lineHeight: 1.6,
+  marginBottom: 14,
 };
