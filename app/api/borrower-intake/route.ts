@@ -8,9 +8,9 @@
 //     (only if the borrower indicated they have one)
 //   - A row in borrower_action_logs for audit
 //
-// This route deliberately does NOT include borrower credit/income/debt
-// in the realtor email. It only confirms a mortgage review is underway
-// and gives the realtor a path to reach the loan officer.
+// Privacy: the realtor email NEVER contains borrower credit / income / debt /
+// scenario numbers. Only the fact that a mortgage review is underway and how
+// to reach the loan officer.
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -57,20 +57,6 @@ function escapeHtml(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
-}
-
-async function resolveOfficer(
-  supabase: ReturnType<typeof createClient>,
-  loanOfficerId: string | null,
-  loanOfficerQuery: string | null,
-) {
-  const { data, error } = await supabase.rpc('resolve_loan_officer', {
-    officer_id: loanOfficerId,
-    officer_query: loanOfficerQuery,
-  });
-  if (error || !data) return null;
-  const rows = (Array.isArray(data) ? data : [data]) as unknown as ResolvedOfficerRow[];
-  return rows[0] ?? null;
 }
 
 async function sendResendEmail(args: {
@@ -271,11 +257,28 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY,
     );
 
-    const officer = await resolveOfficer(
-      supabase,
-      body.loanOfficerId?.trim() || null,
-      body.loanOfficerQuery?.trim() || null,
+    // ----------------------------------------------------------
+    // Resolve loan officer via Supabase RPC.
+    // Inlined here (rather than extracted to a helper) because
+    // `ReturnType<typeof createClient>` strips the RPC overload
+    // that accepts parameters, breaking TypeScript inference.
+    // ----------------------------------------------------------
+    const officerId = body.loanOfficerId?.trim() || null;
+    const officerQuery = body.loanOfficerQuery?.trim() || null;
+
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'resolve_loan_officer',
+      {
+        officer_id: officerId,
+        officer_query: officerQuery,
+      },
     );
+
+    let officer: ResolvedOfficerRow | null = null;
+    if (!rpcError && rpcData) {
+      const rows = (Array.isArray(rpcData) ? rpcData : [rpcData]) as unknown as ResolvedOfficerRow[];
+      officer = rows[0] ?? null;
+    }
 
     const officerName = officer?.full_name ?? 'Beyond Financing Loan Officer';
     const officerEmail = officer?.email ?? 'finley@beyondfinancing.com';
@@ -353,8 +356,10 @@ export async function POST(req: Request) {
       trigger: 'preliminary_review',
       event_type: 'intake_submit',
       status:
-        notificationStatus.loan_officer === 'sent' ? 'logged' : 'logged_with_errors',
-      source_page: '/finley',
+        notificationStatus.loan_officer === 'sent'
+          ? 'logged'
+          : 'logged_with_errors',
+      source_page: '/borrower',
       metadata: {
         officer_id: officer?.id ?? null,
         officer_nmls: officerNmls,
