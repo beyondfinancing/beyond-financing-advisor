@@ -1,7 +1,42 @@
+// =============================================================================
+// PASTE THIS FILE AT (replace the existing file completely):
+//
+//     app/workflow/[id]/page.tsx
+//
+// =============================================================================
+//
+// CHANGES FROM PRIOR VERSION
+//
+// 1. Replaced the inline <TopNav /> component with the shared
+//    <SiteHeader variant="workflow" />. This matches /workflow and /team
+//    so the entire authenticated experience uses one consistent header.
+//
+// 2. The unauthenticated branch no longer says "please sign in through
+//    Team Mortgage Intelligence first" with a redirect button. It now
+//    renders <TeamLoginCard /> inline so the professional can sign in
+//    directly on the file they clicked into from a notification email.
+//
+// 3. After successful login, the page re-fetches /api/team-auth/me AND
+//    re-loads the file (loadFile) so the user lands on the original
+//    file they came for — completing the deep-link UX story.
+//
+// 4. Removed the local <TopNav /> component and its navStyles block
+//    (no longer needed).
+//
+// Everything else — file detail rendering, edit form, internal feed,
+// processor permission rules, delete authority, file_change /
+// internal_update fan-out calls — is byte-identical to the prior
+// working version.
+//
+// =============================================================================
+
 "use client";
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import SiteHeader from "@/app/components/SiteHeader";
+import TeamLoginCard from "@/app/components/TeamLoginCard";
+import { SiteLanguage } from "@/app/components/site-header-translations";
 
 type TeamRole =
   | "Loan Officer"
@@ -330,6 +365,7 @@ export default function WorkflowFileDetailPage() {
       ? window.location.pathname.split("/").filter(Boolean).pop() || ""
       : "";
 
+  const [language, setLanguage] = useState<SiteLanguage>("en");
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
   const [authCheckLoading, setAuthCheckLoading] = useState(true);
 
@@ -415,6 +451,24 @@ export default function WorkflowFileDetailPage() {
     setLatestUpdate(f.latestUpdate);
   }, []);
 
+  const loadUser = useCallback(async () => {
+    try {
+      const response = await fetch("/api/team-auth/me");
+
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data?.authenticated && data?.user) {
+          setActiveUser(data.user);
+        }
+      }
+    } catch {
+      // no-op
+    } finally {
+      setAuthCheckLoading(false);
+    }
+  }, []);
+
   const loadFile = useCallback(async () => {
     if (!fileId) return;
 
@@ -448,29 +502,11 @@ export default function WorkflowFileDetailPage() {
   }, [fileId, mapFile, syncForm]);
 
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/team-auth/me");
-
-        if (response.ok) {
-          const data = await response.json();
-
-          if (data?.authenticated && data?.user) {
-            setActiveUser(data.user);
-          }
-        }
-      } catch {
-        // no-op
-      } finally {
-        setAuthCheckLoading(false);
-      }
-    };
-
-    loadUser();
-  }, []);
+    void loadUser();
+  }, [loadUser]);
 
   useEffect(() => {
-    loadFile();
+    void loadFile();
   }, [loadFile]);
 
   const activeStatusTone = useMemo(
@@ -719,11 +755,18 @@ export default function WorkflowFileDetailPage() {
     }
   };
 
-  if (authCheckLoading || loading) {
+  // ---- Render branches ----
+
+  if (authCheckLoading) {
     return (
       <main style={styles.page}>
         <style>{responsiveCss}</style>
         <div style={styles.wrap}>
+          <SiteHeader
+            variant="workflow"
+            language={language}
+            onLanguageChange={setLanguage}
+          />
           <section style={styles.hero}>
             <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
             <h1 style={styles.heroTitle}>Loading operational file...</h1>
@@ -738,17 +781,48 @@ export default function WorkflowFileDetailPage() {
       <main style={styles.page}>
         <style>{responsiveCss}</style>
         <div style={styles.wrap}>
+          <SiteHeader
+            variant="workflow"
+            language={language}
+            onLanguageChange={setLanguage}
+          />
+
           <section style={styles.hero}>
             <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
-            <h1 style={styles.heroTitle}>Protected Professional Access</h1>
+            <h1 style={styles.heroTitle}>Sign in to open this file</h1>
             <p style={styles.heroText}>
-              Please sign in through Team Mortgage Intelligence first.
+              Please sign in below to access this workflow file. After signing in, you will be returned to this same file automatically.
             </p>
-            <div style={styles.heroActionRow}>
-              <a href="/team" style={styles.heroActionOutline}>
-                Go to Login
-              </a>
-            </div>
+          </section>
+
+          <TeamLoginCard
+            language={language}
+            variantLabel="Workflow Intelligence"
+            quickActionsTarget="workflow"
+            onLoginSuccess={async () => {
+              setAuthCheckLoading(true);
+              await loadUser();
+              await loadFile();
+            }}
+          />
+        </div>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main style={styles.page}>
+        <style>{responsiveCss}</style>
+        <div style={styles.wrap}>
+          <SiteHeader
+            variant="workflow"
+            language={language}
+            onLanguageChange={setLanguage}
+          />
+          <section style={styles.hero}>
+            <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
+            <h1 style={styles.heroTitle}>Loading operational file...</h1>
           </section>
         </div>
       </main>
@@ -760,6 +834,11 @@ export default function WorkflowFileDetailPage() {
       <main style={styles.page}>
         <style>{responsiveCss}</style>
         <div style={styles.wrap}>
+          <SiteHeader
+            variant="workflow"
+            language={language}
+            onLanguageChange={setLanguage}
+          />
           <section style={styles.hero}>
             <div style={styles.heroBadge}>WORKFLOW FILE DETAIL</div>
             <h1 style={styles.heroTitle}>File not found</h1>
@@ -782,7 +861,11 @@ export default function WorkflowFileDetailPage() {
       <style>{responsiveCss}</style>
 
       <div style={styles.wrap}>
-        <TopNav active="workflow" />
+        <SiteHeader
+          variant="workflow"
+          language={language}
+          onLanguageChange={setLanguage}
+        />
 
         <section style={styles.hero}>
           <div className="bf-detail-hero-grid" style={styles.heroGrid}>
@@ -1119,45 +1202,6 @@ export default function WorkflowFileDetailPage() {
         </div>
       </div>
     </main>
-  );
-}
-
-function TopNav({ active = "workflow" }: { active?: "team" | "workflow" }) {
-  return (
-    <div style={navStyles.topBar}>
-      <a href="/" style={navStyles.brand}>
-        Beyond Intelligence™
-      </a>
-
-      <div style={navStyles.topBarLinks}>
-        <a href="/" style={navStyles.topBarLink}>
-          Home
-        </a>
-        <a href="/borrower" style={navStyles.topBarLink}>
-          Borrower Experience
-        </a>
-        <a
-          href="/team"
-          style={
-            active === "team"
-              ? navStyles.topBarLinkActive
-              : navStyles.topBarLink
-          }
-        >
-          Mortgage Intelligence
-        </a>
-        <a
-          href="/workflow"
-          style={
-            active === "workflow"
-              ? navStyles.topBarLinkActive
-              : navStyles.topBarLink
-          }
-        >
-          Workflow Intelligence
-        </a>
-      </div>
-    </div>
   );
 }
 
@@ -1537,51 +1581,5 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.7,
     fontSize: 14,
     marginTop: 10,
-  },
-};
-
-const navStyles: Record<string, React.CSSProperties> = {
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 18,
-    padding: "4px 2px",
-    flexWrap: "wrap",
-  },
-  brand: {
-    textDecoration: "none",
-    color: "#263366",
-    fontSize: 15,
-    fontWeight: 800,
-    letterSpacing: 0.2,
-  },
-  topBarLinks: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-  topBarLink: {
-    textDecoration: "none",
-    color: "#263366",
-    background: "#F7F9FD",
-    border: "1px solid #C9D5EA",
-    borderRadius: 999,
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 700,
-    lineHeight: 1,
-  },
-  topBarLinkActive: {
-    textDecoration: "none",
-    color: "#ffffff",
-    background: "#263366",
-    border: "1px solid #263366",
-    borderRadius: 999,
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 700,
-    lineHeight: 1,
   },
 };
