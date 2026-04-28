@@ -15,6 +15,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import AdminNav from "@/app/components/AdminNav";
 
 type AgencyGuideline = {
   id: string;
@@ -611,6 +612,8 @@ export default function AgencyGuidelinesPage() {
   return (
     <main style={styles.page}>
       <div style={styles.wrap}>
+        <AdminNav />
+
         <div style={styles.headerRow}>
           <div>
             <div style={styles.eyebrow}>AGENCY ENGINE</div>
