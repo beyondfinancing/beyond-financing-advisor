@@ -490,6 +490,16 @@ function normalizeCurrencyInput(value: string) {
   return value.replace(/[^\d]/g, "");
 }
 
+// Display formatter for the amount input.
+// Takes a digits-only string ("612000") and returns it with thousand
+// separators ("612,000") for display in the input. No dollar sign —
+// the goal is to show the number cleanly without the currency symbol.
+function formatAmountWithCommas(digits: string) {
+  const cleaned = digits.replace(/[^\d]/g, "");
+  if (!cleaned) return "";
+  return new Intl.NumberFormat("en-US").format(Number(cleaned));
+}
+
 function getStatusLabel(status: WorkflowStatus) {
   switch (status) {
     case "new_scenario":
@@ -1220,17 +1230,12 @@ export default function WorkflowPage() {
 
                 <label style={styles.label}>{t.amount}</label>
                 <input
-                  value={createAmount}
+                  value={formatAmountWithCommas(createAmount)}
                   onChange={(e) => setCreateAmount(normalizeCurrencyInput(e.target.value))}
                   style={styles.input}
-                  placeholder="612000"
+                  placeholder="612,000"
                   inputMode="numeric"
                 />
-                {createAmount ? (
-                  <div style={styles.inlineHelperText}>
-                    Display amount: {formatCurrency(Number(createAmount || 0))}
-                  </div>
-                ) : null}
 
                 <label style={styles.label}>{t.loanOfficer}</label>
                 <input
