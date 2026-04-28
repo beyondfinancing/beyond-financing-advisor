@@ -1,12 +1,6 @@
 // app/api/loan-officers/route.ts
 //
 // Public read-only endpoint for the borrower-facing officer picker.
-// Returns only the fields the UI actually needs. Email/phone are
-// included because the existing borrower page renders them in the
-// "Internal routing" confirmation box and the mailto/tel links —
-// matching current behavior. If you later want to hide PII from
-// the client, drop those fields here and route mailto through
-// a server-side endpoint instead.
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -27,19 +21,34 @@ export type PublicLoanOfficer = {
   isDefaultRouting: boolean;
 };
 
+type TeamUserRow = {
+  id: string;
+  full_name: string | null;
+  nmls: string | null;
+  email: string | null;
+  assistant_email: string | null;
+  mobile: string | null;
+  phone: string | null;
+  assistant_mobile: string | null;
+  apply_url: string | null;
+  schedule_url: string | null;
+  calendly: string | null;
+  is_default_routing: boolean | null;
+  role: string | null;
+  show_in_borrower_picker: boolean | null;
+  is_active: boolean | null;
+};
+
 export async function GET() {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    // anon key is fine — RLS-friendly and these fields are intentionally public
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
 
   const { data, error } = await supabase
     .from('team_users')
     .select(
-      'id, full_name, nmls, email, assistant_email, mobile, phone, ' +
-        'assistant_mobile, apply_url, schedule_url, calendly, ' +
-        'is_default_routing, role, show_in_borrower_picker, is_active',
+      'id, full_name, nmls, email, assistant_email, mobile, phone, assistant_mobile, apply_url, schedule_url, calendly, is_default_routing, role, show_in_borrower_picker, is_active',
     )
     .eq('is_active', true)
     .eq('show_in_borrower_picker', true)
@@ -54,7 +63,9 @@ export async function GET() {
     );
   }
 
-  const officers: PublicLoanOfficer[] = (data ?? []).map((r) => ({
+  const rows = (data ?? []) as unknown as TeamUserRow[];
+
+  const officers: PublicLoanOfficer[] = rows.map((r) => ({
     id: r.id,
     name: r.full_name ?? '',
     nmls: r.nmls ?? '',
@@ -63,7 +74,8 @@ export async function GET() {
     mobile: r.mobile ?? r.phone ?? '',
     assistantMobile: r.assistant_mobile ?? '',
     applyUrl: r.apply_url ?? 'https://www.beyondfinancing.com/apply-now',
-    scheduleUrl: r.schedule_url ?? r.calendly ?? 'https://www.beyondfinancing.com',
+    scheduleUrl:
+      r.schedule_url ?? r.calendly ?? 'https://www.beyondfinancing.com',
     isDefaultRouting: Boolean(r.is_default_routing),
   }));
 
