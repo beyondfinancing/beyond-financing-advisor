@@ -37,6 +37,14 @@ type SummaryPayload = {
   loanOfficerActionPlan: string[];
 };
 
+type ResolvedOfficerRow = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  assistant_email: string | null;
+  nmls: string | null;
+};
+
 type ResolvedOfficer = {
   id: string;
   full_name: string;
@@ -67,7 +75,8 @@ function nl2br(value: string): string {
 function buildTranscriptHtml(messages: ChatMessage[]): string {
   return messages
     .map((msg, index) => {
-      const roleLabel = msg.role === 'user' ? 'Borrower' : 'Finley Beyond Advisor';
+      const roleLabel =
+        msg.role === 'user' ? 'Borrower' : 'Finley Beyond Advisor';
       return `
         <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;background:${
           msg.role === 'user' ? '#DCEAFE' : '#F3F4F6'
@@ -98,7 +107,10 @@ function legacyEmailFromQuery(query: string): string | null {
 }
 
 async function resolveOfficer(lead: LeadPayload): Promise<ResolvedOfficer> {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY
+  ) {
     return null;
   }
 
@@ -109,9 +121,7 @@ async function resolveOfficer(lead: LeadPayload): Promise<ResolvedOfficer> {
 
   const officerId = lead.loanOfficerId?.trim() || null;
   const officerQuery =
-    lead.loanOfficerQuery?.trim() ||
-    lead.loanOfficer?.trim() ||
-    null;
+    lead.loanOfficerQuery?.trim() || lead.loanOfficer?.trim() || null;
 
   const { data, error } = await supabase.rpc('resolve_loan_officer', {
     officer_id: officerId,
@@ -120,14 +130,14 @@ async function resolveOfficer(lead: LeadPayload): Promise<ResolvedOfficer> {
 
   if (error || !data) return null;
 
-  // RPC returns a single row of team_users
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) return null;
+  const rows = (Array.isArray(data) ? data : [data]) as unknown as ResolvedOfficerRow[];
+  const row = rows[0];
+  if (!row || !row.id) return null;
 
   return {
     id: row.id,
-    full_name: row.full_name,
-    email: row.email,
+    full_name: row.full_name ?? '',
+    email: row.email ?? '',
     assistant_email: row.assistant_email,
     nmls: row.nmls,
   };
@@ -197,7 +207,10 @@ export async function POST(req: Request) {
 
     if (!fullName || !email || !preferredLanguage) {
       return NextResponse.json(
-        { success: false, error: 'Missing lead details (name, email, language).' },
+        {
+          success: false,
+          error: 'Missing lead details (name, email, language).',
+        },
         { status: 400 },
       );
     }
@@ -209,7 +222,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Resolve via Supabase. Falls back to legacy map if needed.
     const resolved = await resolveOfficer(lead);
 
     const officerName =
@@ -308,7 +320,8 @@ ${messages
                 ? parsed.strengths
                 : summary.strengths,
             openQuestions:
-              Array.isArray(parsed.openQuestions) && parsed.openQuestions.length > 0
+              Array.isArray(parsed.openQuestions) &&
+              parsed.openQuestions.length > 0
                 ? parsed.openQuestions
                 : summary.openQuestions,
             provisionalPrograms:
