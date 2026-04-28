@@ -422,7 +422,10 @@ function evaluateLenderProgram(
 
   if (occupancyType) {
     const occupancyTypes = toStringArray(guideline.occupancy_types);
-    if (!arrayContainsNormalized(occupancyTypes, occupancyType, "occupancy")) {
+    if (occupancyTypes.length === 0) {
+      concerns.push(`${programName} does not document allowed occupancy types — confirm directly with the lender.`);
+      missingItems.push(`${programName}: occupancy types not documented`);
+    } else if (!arrayContainsNormalized(occupancyTypes, occupancyType, "occupancy")) {
       blockers.push(`${programName} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
@@ -433,8 +436,7 @@ function evaluateLenderProgram(
         missingItems,
         explanation: `Occupancy (${occupancyType.replace(/_/g, " ")}) is not permitted under ${programName}.`,
       };
-    }
-    if (occupancyTypes.length > 0) {
+    } else {
       strengths.push(`Occupancy (${occupancyType.replace(/_/g, " ")}) is permitted.`);
     }
   } else {
@@ -443,7 +445,10 @@ function evaluateLenderProgram(
 
   if (transactionType) {
     const transactionTypes = toStringArray(guideline.transaction_types);
-    if (!arrayContainsNormalized(transactionTypes, transactionType)) {
+    if (transactionTypes.length === 0) {
+      concerns.push(`${programName} does not document allowed transaction types — confirm directly with the lender.`);
+      missingItems.push(`${programName}: transaction types not documented`);
+    } else if (!arrayContainsNormalized(transactionTypes, transactionType)) {
       blockers.push(`${programName} does not allow transaction type: ${transactionType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
@@ -454,8 +459,7 @@ function evaluateLenderProgram(
         missingItems,
         explanation: `Transaction type (${transactionType.replace(/_/g, " ")}) is not permitted under ${programName}.`,
       };
-    }
-    if (transactionTypes.length > 0) {
+    } else {
       strengths.push(`Transaction type (${transactionType.replace(/_/g, " ")}) is permitted.`);
     }
   } else {
@@ -464,7 +468,10 @@ function evaluateLenderProgram(
 
   if (incomeType) {
     const incomeTypes = toStringArray(guideline.income_types);
-    if (!arrayContainsNormalized(incomeTypes, incomeType)) {
+    if (incomeTypes.length === 0) {
+      concerns.push(`${programName} does not document accepted income types — confirm directly with the lender.`);
+      missingItems.push(`${programName}: income types not documented`);
+    } else if (!arrayContainsNormalized(incomeTypes, incomeType)) {
       blockers.push(`${programName} does not accept income type: ${incomeType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
@@ -475,8 +482,7 @@ function evaluateLenderProgram(
         missingItems,
         explanation: `Income type (${incomeType.replace(/_/g, " ")}) is not accepted under ${programName}.`,
       };
-    }
-    if (incomeTypes.length > 0) {
+    } else {
       strengths.push(`Income type (${incomeType.replace(/_/g, " ")}) is accepted.`);
     }
   } else {
@@ -485,7 +491,10 @@ function evaluateLenderProgram(
 
   if (propertyType) {
     const propertyTypes = toStringArray(guideline.property_types);
-    if (!arrayContainsNormalized(propertyTypes, propertyType)) {
+    if (propertyTypes.length === 0) {
+      concerns.push(`${programName} does not document allowed property types — confirm directly with the lender.`);
+      missingItems.push(`${programName}: property types not documented`);
+    } else if (!arrayContainsNormalized(propertyTypes, propertyType)) {
       blockers.push(`${programName} does not allow property type: ${propertyType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
@@ -496,8 +505,7 @@ function evaluateLenderProgram(
         missingItems,
         explanation: `Property type (${propertyType.replace(/_/g, " ")}) is not permitted under ${programName}.`,
       };
-    }
-    if (propertyTypes.length > 0) {
+    } else {
       strengths.push(`Property type (${propertyType.replace(/_/g, " ")}) is permitted.`);
     }
   } else {
@@ -816,7 +824,10 @@ function evaluateAgencyProgramForLender(
   // Occupancy match against global_guidelines.occupancy
   if (occupancyType) {
     const occupancyArr = toStringArray(agencyGuideline.occupancy);
-    if (!arrayContainsNormalized(occupancyArr, occupancyType, "occupancy")) {
+    if (occupancyArr.length === 0) {
+      concerns.push(`${programDisplay} does not document allowed occupancy types — confirm directly with the lender.`);
+      missingItems.push(`${programDisplay}: occupancy types not documented`);
+    } else if (!arrayContainsNormalized(occupancyArr, occupancyType, "occupancy")) {
       blockers.push(`${programDisplay} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`);
       return {
         bucket: "eliminated",
@@ -827,8 +838,7 @@ function evaluateAgencyProgramForLender(
         missingItems,
         explanation: `Occupancy (${occupancyType.replace(/_/g, " ")}) is not permitted under ${programDisplay}.`,
       };
-    }
-    if (occupancyArr.length > 0) {
+    } else {
       strengths.push(`Occupancy (${occupancyType.replace(/_/g, " ")}) is permitted under this agency program.`);
     }
   } else {
