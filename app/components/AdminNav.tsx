@@ -84,10 +84,10 @@ const COPY: Record<SiteLanguage, RouteCopy> = {
 };
 
 type Props = {
-  language: SiteLanguage;
+  language?: SiteLanguage;
 };
 
-export default function AdminNav({ language }: Props) {
+export default function AdminNav({ language = "en" }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
