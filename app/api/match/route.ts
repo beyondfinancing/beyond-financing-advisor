@@ -123,6 +123,7 @@ type LenderRow = {
   id: string;
   name: string | null;
   is_active?: boolean | null;
+  lender_type: string | null;
   does_conventional: boolean | null;
   does_fha: boolean | null;
   does_va: boolean | null;
@@ -1059,10 +1060,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // Pull all lenders with capability flags
+    // Pull all lenders with capability flags and type. Filter out agencies
+    // (Fannie Mae, Freddie Mac, etc.) — they are investors/GSEs that publish
+    // selling guides, not placement options for borrowers. The matcher pairs
+    // each agency guideline with the wholesale lenders capable of placing it,
+    // which is why agencies should never appear in the candidate pool.
     const { data: lendersData, error: lendersError } = await supabase
       .from("lenders")
-      .select("id, name, does_conventional, does_fha, does_va, does_usda");
+      .select("id, name, lender_type, does_conventional, does_fha, does_va, does_usda")
+      .or("lender_type.is.null,lender_type.neq.agency");
 
     if (lendersError) {
       return NextResponse.json(
