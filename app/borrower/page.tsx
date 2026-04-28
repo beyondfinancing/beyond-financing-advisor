@@ -531,6 +531,17 @@ function extractAiText(data: unknown): string {
   return "";
 }
 
+// Pulls the persisted intake session id out of /api/chat's response meta.
+// Returns null if not present (e.g. server-side persistence hiccup — chat
+// reply still flows through, we just don't get a session id back this turn).
+function extractIntakeSessionId(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const meta = (data as { meta?: unknown }).meta;
+  if (!meta || typeof meta !== "object") return null;
+  const id = (meta as { intakeSessionId?: unknown }).intakeSessionId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
 function toOfficerRecordFromAPI(lo: LoanOfficerOut): LoanOfficerRecord {
   return {
     id: lo.id,
@@ -566,6 +577,7 @@ export default function BorrowerPage() {
   const [actionMessage, setActionMessage] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [intakeSessionId, setIntakeSessionId] = useState<string | null>(null);
 
   // Phase 6: track whether the intake notification (LO + realtor + audit log)
   // has fired this session so re-running preliminary review doesn't re-spam.
@@ -1043,6 +1055,7 @@ Then ask the next logical qualification-style question.
             language,
             borrowerPath,
             realtorStatus,
+            intakeSessionId,
           },
           messages: [{ role: "user", content: prompt }],
         }),
@@ -1058,6 +1071,9 @@ Then ask the next logical qualification-style question.
 
       const finalText =
         extractAiText(data) || "No response was returned from the AI system.";
+
+      const newSessionId = extractIntakeSessionId(data);
+      if (newSessionId) setIntakeSessionId(newSessionId);
 
       setConversation([{ role: "assistant", content: finalText }]);
       setScenarioUnlocked(true);
@@ -1132,6 +1148,7 @@ Then ask the next logical qualification-style question.
             language,
             borrowerPath,
             realtorStatus,
+            intakeSessionId,
           },
           messages: [{ role: "user", content: prompt }],
         }),
@@ -1147,6 +1164,9 @@ Then ask the next logical qualification-style question.
 
       const finalText =
         extractAiText(data) || "No response was returned from the AI system.";
+
+      const newSessionId = extractIntakeSessionId(data);
+      if (newSessionId) setIntakeSessionId(newSessionId);
 
       setConversation((prev) => [...prev, { role: "assistant", content: finalText }]);
     } catch (error: unknown) {
@@ -1199,6 +1219,7 @@ Then ask the next logical qualification-style question.
             language,
             borrowerPath,
             realtorStatus,
+            intakeSessionId,
           },
           messages: [
             {
@@ -1226,6 +1247,9 @@ Advise that the assigned loan officer will personally review the scenario and ad
       const finalText =
         extractAiText(data) || "No response was returned from the AI system.";
 
+      const newSessionId = extractIntakeSessionId(data);
+      if (newSessionId) setIntakeSessionId(newSessionId);
+
       setConversation((prev) => [...prev, { role: "assistant", content: finalText }]);
     } catch (error: unknown) {
       setChatError(
@@ -1246,6 +1270,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
     setSubmitted(false);
     setScenarioUnlocked(false);
     setConversation([]);
+    setIntakeSessionId(null);
     setChatInput("");
     setSelectedOfficer(null);
     setSelectedRealtor(null);
