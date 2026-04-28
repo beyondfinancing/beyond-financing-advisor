@@ -5,20 +5,29 @@
 //
 // =============================================================================
 //
-// PHASE 5-prep-D — Borrower UX fixes
+// PHASE 6 — Borrower intake notification + validation
 //
-// What's new vs. Phase 5-prep-B:
-//   1. Bug fix: "Confirm Loan Officer" no longer reverts to Finley when an
-//      officer was already chosen from the autocomplete.
-//   2. resolveOfficerFromQuery() is more forgiving — it now matches
-//      "Sandro Pansini Souza — NMLS 1625542" style strings.
-//   3. Disclaimer gate: ALL form fields are disabled until the borrower
-//      acknowledges the disclaimer.
-//   4. "Continue with This Scenario" is properly disabled until Preliminary
-//      Review has run, with a hint explaining what to do.
-//   5. Action buttons (Apply Now / Schedule / Email / Call) reset the entire
-//      form 3 seconds after clicking, so the next borrower starts fresh.
-//   6. Visual lock notices indicate which sections are blocked and why.
+// What's new vs. Phase 5-prep-D:
+//   1. runPreliminaryReview now fires /api/borrower-intake exactly once per
+//      session, after the chat call succeeds. That endpoint sends:
+//        - "[New Lead]" email to the assigned LO (CC: assistant if available)
+//        - Privacy-conservative courtesy email to the realtor (only when
+//          realtorStatus === "yes" and realtor fields are filled). The
+//          realtor email contains NO borrower financial info.
+//        - One row in borrower_action_logs for audit.
+//   2. Intake-level validation: name, email, phone always required;
+//      realtor name/email/phone required when realtorStatus === "yes".
+//      Missing fields disable Run Preliminary Review and show a hint.
+//   3. buildSummaryPayload now includes loanOfficerId + loanOfficerQuery so
+//      chat-summary's resolve_loan_officer RPC takes the FK path (faster +
+//      doesn't depend on text name matching).
+//   4. resetForm clears the new intakeSubmitted flag so the next borrower
+//      gets a fresh notification cycle.
+//
+// Everything else from Phase 5-prep-D is unchanged: disclaimer gating,
+// three-way realtor toggle, state-driven /api/public/team-users directory,
+// autocomplete, confirmOfficerSelection bug fix, chat scrolling, action
+// buttons + 3-second reset, all styles, all copy.
 //
 // =============================================================================
 
@@ -61,7 +70,6 @@ type ChatMessage = {
   content: string;
 };
 
-// Shape of items returned by /api/public/team-users (Phase 5-prep-B)
 type LoanOfficerOut = {
   id: string;
   name: string;
@@ -180,6 +188,7 @@ const COPY: Record<
     realtorSearchHint: string;
     realtorPickStateFirst: string;
     realtorNoneInState: string;
+    realtorPrivacyNotice: string;
     loanOfficerSearch: string;
     loanOfficerSearchHint: string;
     loanOfficerPickStateFirst: string;
@@ -208,6 +217,7 @@ const COPY: Record<
     formLockedNotice: string;
     runReviewFirstHint: string;
     formResetNotice: string;
+    intakeIncompleteHint: string;
   }
 > = {
   en: {
@@ -223,6 +233,8 @@ const COPY: Record<
       "Click Run Preliminary Review above before continuing with the property scenario.",
     formResetNotice:
       "This form will reset shortly so the next borrower starts fresh.",
+    intakeIncompleteHint:
+      "Please fill in your name, email, phone, and (if working with a realtor) the realtor's name, phone, and email before running the preliminary review.",
     scenarioDirectionTitle: "Internal Scenario Direction",
     scenarioDirectionText:
       "This section reflects Finley Beyond’s internal matching direction and is used to guide the conversation and routing.",
@@ -261,6 +273,8 @@ const COPY: Record<
     realtorSearchHint: "Start typing to see registered Realtors in your Target State.",
     realtorPickStateFirst: "Select a Target State above to see registered Realtors in that state.",
     realtorNoneInState: "No registered Realtors in this state yet. You can still type your Realtor's details manually below.",
+    realtorPrivacyNotice:
+      "Your realtor will receive a courtesy notice that you started a mortgage review. No financial details are shared with them.",
     loanOfficerSearch: "Start typing to see matching loan officers.",
     loanOfficerSearchHint: "Loan officers shown are licensed in your Target State.",
     loanOfficerPickStateFirst: "Select a Target State above to see loan officers licensed in that state.",
@@ -304,6 +318,8 @@ const COPY: Record<
       "Clique em Executar Revisão Preliminar antes de continuar com o cenário do imóvel.",
     formResetNotice:
       "Este formulário será reiniciado em instantes para o próximo cliente.",
+    intakeIncompleteHint:
+      "Por favor, preencha seu nome, email, telefone e (se estiver trabalhando com um corretor) o nome, telefone e email do corretor antes de executar a revisão preliminar.",
     scenarioDirectionTitle: "Direção Interna do Cenário",
     scenarioDirectionText:
       "Esta seção reflete a direção interna de matching do Finley Beyond e é usada para orientar a conversa e o roteamento.",
@@ -342,6 +358,8 @@ const COPY: Record<
     realtorSearchHint: "Comece a digitar para ver Realtors cadastrados no Estado Desejado.",
     realtorPickStateFirst: "Selecione um Estado Desejado acima para ver Realtors cadastrados nesse estado.",
     realtorNoneInState: "Ainda não há Realtors cadastrados neste estado. Você pode digitar os dados do seu Realtor manualmente abaixo.",
+    realtorPrivacyNotice:
+      "Seu corretor receberá um aviso de cortesia informando que você iniciou uma revisão hipotecária. Nenhum dado financeiro é compartilhado.",
     loanOfficerSearch: "Comece a digitar para ver loan officers correspondentes.",
     loanOfficerSearchHint: "Os loan officers exibidos estão licenciados no seu Estado Desejado.",
     loanOfficerPickStateFirst: "Selecione um Estado Desejado acima para ver loan officers licenciados nesse estado.",
@@ -385,6 +403,8 @@ const COPY: Record<
       "Haga clic en Ejecutar Revisión Preliminar antes de continuar con el escenario de la propiedad.",
     formResetNotice:
       "Este formulario se reiniciará en breve para que el próximo cliente comience desde cero.",
+    intakeIncompleteHint:
+      "Por favor, complete su nombre, correo, teléfono y (si trabaja con un Realtor) el nombre, teléfono y correo del Realtor antes de ejecutar la revisión preliminar.",
     scenarioDirectionTitle: "Dirección Interna del Escenario",
     scenarioDirectionText:
       "Esta sección refleja la dirección interna de matching de Finley Beyond y se utiliza para guiar la conversación y el enrutamiento.",
@@ -423,6 +443,8 @@ const COPY: Record<
     realtorSearchHint: "Comience a escribir para ver Realtors registrados en su Estado Objetivo.",
     realtorPickStateFirst: "Seleccione un Estado Objetivo arriba para ver Realtors registrados en ese estado.",
     realtorNoneInState: "Aún no hay Realtors registrados en este estado. Puede escribir los datos de su Realtor manualmente abajo.",
+    realtorPrivacyNotice:
+      "Su Realtor recibirá un aviso de cortesía indicando que inició una revisión hipotecaria. No se comparten detalles financieros.",
     loanOfficerSearch: "Comience a escribir para ver loan officers coincidentes.",
     loanOfficerSearchHint: "Los loan officers mostrados están licenciados en su Estado Objetivo.",
     loanOfficerPickStateFirst: "Seleccione un Estado Objetivo arriba para ver loan officers licenciados en ese estado.",
@@ -472,9 +494,6 @@ function formatPhoneDisplay(value: string) {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 10)}`;
 }
 
-// Phase 5-prep-D-bugs: format dollar amounts with thousands separators (no $ sign).
-// State holds raw digits (e.g. "700000"); display shows "700,000".
-// All Number(state) calls keep working because state stays numeric.
 function formatNumberDisplay(value: string): string {
   const digits = String(value || "").replace(/\D/g, "");
   if (!digits) return "";
@@ -548,13 +567,15 @@ export default function BorrowerPage() {
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
 
-  // Phase 5-prep-D-bugs: auto-scroll the chat to the latest message
+  // Phase 6: track whether the intake notification (LO + realtor + audit log)
+  // has fired this session so re-running preliminary review doesn't re-spam.
+  const [intakeSubmitted, setIntakeSubmitted] = useState(false);
+
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [conversation.length, chatLoading]);
 
-  // Phase 5-prep-B: split arrays from filtered API
   const [loanOfficersFromApi, setLoanOfficersFromApi] = useState<LoanOfficerOut[]>([]);
   const [realtorsFromApi, setRealtorsFromApi] = useState<RealtorOut[]>([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
@@ -591,7 +612,6 @@ export default function BorrowerPage() {
 
   // ---------------------------------------------------------------------------
   // Phase 5-prep-B: Re-fetch directory whenever target state changes.
-  // No state selected → fetch nothing (empty arrays + helpful hints).
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const stateCode = (intakeForm.targetState || "").trim().toUpperCase();
@@ -648,9 +668,6 @@ export default function BorrowerPage() {
 
     const hasFinley = loanOfficersFromApi.some((u) => u.isBot);
 
-    // If state selected and Finley is among returned bots, do nothing extra.
-    // If no state selected (empty array) OR no Finley returned, inject default
-    // Finley as a fallback so the "I Don't Know My LO" button always works.
     if (mapped.length === 0) {
       return [FALLBACK_DEFAULT_LOAN_OFFICER];
     }
@@ -712,13 +729,10 @@ export default function BorrowerPage() {
     }
   };
 
-  // Special handler: when target state changes, clear LO/realtor selections
-  // because the previously-selected entities may not be licensed in new state.
   const setTargetState = (newCode: string) => {
     setIntakeForm((prev) => ({
       ...prev,
       targetState: newCode,
-      // Clear realtor inputs when state changes since we'll re-filter realtors
       realtorName: "",
       realtorPhone: "",
       realtorEmail: "",
@@ -775,19 +789,31 @@ export default function BorrowerPage() {
 
   const loanOfficerMessage = (() => {
     if (!intakeForm.targetState) return t.loanOfficerPickStateFirst;
-    // If we got an empty list AND no fallback Finley, show "no LOs in state".
-    // Otherwise show the standard hint.
     if (loanOfficersFromApi.length === 0 && !directoryLoading) {
       return t.loanOfficerNoneInState;
     }
     return t.loanOfficerSearchHint;
   })();
 
+  // Phase 6: intake validation. Runs before /api/borrower-intake fires.
+  const intakeIsValid = (): boolean => {
+    if (!intakeForm.name.trim()) return false;
+    if (!intakeForm.email.trim()) return false;
+    if (!intakeForm.phone.trim()) return false;
+
+    if (realtorStatus === "yes") {
+      if (!intakeForm.realtorName.trim()) return false;
+      if (!intakeForm.realtorPhone.trim()) return false;
+      if (!intakeForm.realtorEmail.trim()) return false;
+    }
+
+    return true;
+  };
+
   const resolveOfficerFromQuery = (query: string): LoanOfficerRecord | null => {
     const trimmed = query.trim().toLowerCase();
     if (!trimmed) return null;
 
-    // Exact match by full name or NMLS
     const exact = dynamicLoanOfficers.find(
       (officer) =>
         officer.name.toLowerCase() === trimmed ||
@@ -796,10 +822,6 @@ export default function BorrowerPage() {
 
     if (exact) return exact;
 
-    // Phase 5-prep-D: handle the "Name — NMLS 12345" format produced when
-    // an officer is selected from autocomplete. The query string is then
-    // longer than any single field, so we check if the query CONTAINS a
-    // known officer name or NMLS.
     const containedInQuery = dynamicLoanOfficers.find(
       (officer) =>
         trimmed.includes(officer.name.toLowerCase()) ||
@@ -808,7 +830,6 @@ export default function BorrowerPage() {
 
     if (containedInQuery) return containedInQuery;
 
-    // Fall back to partial match (officer field contains user-typed query)
     const partial = dynamicLoanOfficers.find(
       (officer) =>
         officer.name.toLowerCase().includes(trimmed) ||
@@ -873,13 +894,16 @@ Respond in ${
       phone: intakeForm.phone,
       preferredLanguage: toPreferredLanguage(language),
       loanOfficer: activeOfficer.name,
+      // Phase 6: pass FK + raw query so chat-summary's resolve_loan_officer
+      // RPC takes the FK path instead of falling back to text name match.
+      loanOfficerId: activeOfficer.id,
+      loanOfficerQuery: loanOfficerQuery,
       assignedEmail: activeOfficer.email,
       assistantEmail: activeOfficer.assistantEmail,
       realtorName: realtorStatus === "yes" ? intakeForm.realtorName : "",
       realtorEmail: realtorStatus === "yes" ? intakeForm.realtorEmail : "",
       realtorPhone: realtorStatus === "yes" ? intakeForm.realtorPhone : "",
       realtorMls: realtorStatus === "yes" ? intakeForm.realtorMls : "",
-      // Phase 5.1 — additional scenario context fields
       borrowerPath,
       currentState: intakeForm.currentState,
       targetState: intakeForm.targetState,
@@ -903,13 +927,39 @@ Respond in ${
     messages: conversation,
   });
 
+  // Phase 6: payload for /api/borrower-intake (different shape than chat-summary)
+  const buildIntakePayload = () => ({
+    borrower: {
+      fullName: intakeForm.name.trim(),
+      email: intakeForm.email.trim(),
+      phone: intakeForm.phone.trim(),
+      preferredLanguage: toPreferredLanguage(language),
+    },
+    loanOfficerId: activeOfficer.id,
+    loanOfficerQuery: loanOfficerQuery,
+    realtor:
+      realtorStatus === "yes"
+        ? {
+            hasRealtor: true,
+            name: intakeForm.realtorName.trim(),
+            email: intakeForm.realtorEmail.trim(),
+            phone: intakeForm.realtorPhone.trim(),
+          }
+        : { hasRealtor: false },
+    scenario: {
+      homePrice: scenarioForm.homePrice,
+      downPayment: scenarioForm.downPayment,
+      estimatedLoanAmount:
+        estimatedLoanAmount > 0 ? String(Math.round(estimatedLoanAmount)) : "",
+      estimatedLtv:
+        Number(scenarioForm.homePrice) > 0
+          ? `${Math.round(estimatedLtv * 100)}%`
+          : "",
+    },
+  });
+
   const confirmOfficerSelection = () => {
-    // Phase 5-prep-D fix: if user already selected an officer via the
-    // autocomplete dropdown, that selection is the source of truth.
-    // Re-resolving from the input text would parse the formatted
-    // "Name — NMLS 12345" string and incorrectly fall back to Finley.
     if (selectedOfficer) {
-      // Keep the existing selection; just normalize the display string.
       setLoanOfficerQuery(
         `${selectedOfficer.name} — NMLS ${selectedOfficer.nmls}`
       );
@@ -936,6 +986,13 @@ Respond in ${
   };
 
   const runPreliminaryReview = async () => {
+    // Phase 6: gate on intake validity. The button is disabled when invalid,
+    // but defend in depth in case state goes stale.
+    if (!intakeIsValid()) {
+      setErrorMessage(t.intakeIncompleteHint);
+      return;
+    }
+
     setSubmitted(true);
     setLoading(true);
     setErrorMessage("");
@@ -1004,6 +1061,24 @@ Then ask the next logical qualification-style question.
 
       setConversation([{ role: "assistant", content: finalText }]);
       setScenarioUnlocked(true);
+
+      // Phase 6: fire intake notification once per session, after the AI
+      // confirms the conversation started. Non-blocking — the borrower keeps
+      // chatting even if Resend hiccups.
+      if (!intakeSubmitted) {
+        void fetch("/api/borrower-intake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildIntakePayload()),
+        })
+          .then((res) => {
+            if (res.ok) setIntakeSubmitted(true);
+          })
+          .catch(() => {
+            // Server-side log captures the failure; UI doesn't surface it
+            // because the borrower's chat session is already underway.
+          });
+      }
     } catch (error: unknown) {
       setErrorMessage(
         error instanceof Error
@@ -1164,8 +1239,6 @@ Advise that the assigned loan officer will personally review the scenario and ad
     }
   };
 
-  // Phase 5-prep-D: Reset entire form to initial state. Called 3 seconds
-  // after Apply / Schedule / Email / Call so the next borrower starts fresh.
   const resetForm = () => {
     setAccepted(false);
     setBorrowerPath("Purchase");
@@ -1182,6 +1255,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
     setActionMessage("");
     setLoanOfficersFromApi([]);
     setRealtorsFromApi([]);
+    setIntakeSubmitted(false); // Phase 6
     setIntakeForm({
       name: "",
       email: "",
@@ -1228,8 +1302,6 @@ Advise that the assigned loan officer will personally review the scenario and ad
       setActionLoading("");
     }
 
-    // Phase 5-prep-D: reset the form 3 seconds after action so the user
-    // briefly sees the success message before the page clears.
     setTimeout(() => {
       resetForm();
     }, 3000);
@@ -1248,6 +1320,14 @@ Advise that the assigned loan officer will personally review the scenario and ad
   const assignedEmailLine = activeOfficer.assistantEmail
     ? `${activeOfficer.email} and ${activeOfficer.assistantEmail}.`
     : `${activeOfficer.email}.`;
+
+  // Phase 6: precompute disabled/hint state for the Run button so it stays
+  // readable below.
+  const reviewDisabled =
+    !accepted || loading || scenarioUnlocked || !intakeIsValid();
+
+  const showIntakeHint =
+    accepted && !scenarioUnlocked && !loading && !intakeIsValid();
 
   return (
     <main style={styles.page}>
@@ -1360,7 +1440,6 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 inputMode="numeric"
               />
 
-              {/* Phase 5-prep-B: Current State as dropdown */}
               <select
                 style={styles.input}
                 value={intakeForm.currentState}
@@ -1378,7 +1457,6 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 ))}
               </select>
 
-              {/* Phase 5-prep-B: Target State as dropdown — drives state filter */}
               <select
                 style={styles.input}
                 value={intakeForm.targetState}
@@ -1433,6 +1511,12 @@ Advise that the assigned loan officer will personally review the scenario and ad
 
             {realtorStatus === "yes" && (
               <>
+                {/* Phase 6: privacy notice surfaced to borrower so they know
+                    what (and what not) the realtor will see. */}
+                <div style={{ ...styles.statusBox, marginTop: 12 }}>
+                  {t.realtorPrivacyNotice}
+                </div>
+
                 <div className="bf-form-grid" style={{ ...styles.formGrid, marginTop: 14 }}>
                   <div style={styles.autocompleteWrap}>
                     <input
@@ -1604,13 +1688,9 @@ Advise that the assigned loan officer will personally review the scenario and ad
 
               <button
                 type="button"
-                style={
-                  !accepted || loading || scenarioUnlocked
-                    ? styles.disabledButton
-                    : styles.primaryButtonWide
-                }
+                style={reviewDisabled ? styles.disabledButton : styles.primaryButtonWide}
                 onClick={runPreliminaryReview}
-                disabled={!accepted || loading || scenarioUnlocked}
+                disabled={reviewDisabled}
               >
                 {loading
                   ? t.reviewing
@@ -1618,6 +1698,12 @@ Advise that the assigned loan officer will personally review the scenario and ad
                   ? t.reviewCompleted
                   : t.runReview}
               </button>
+
+              {/* Phase 6: explain why the Run button is disabled when intake
+                  is incomplete, so the borrower knows what to fix. */}
+              {showIntakeHint && (
+                <div style={styles.hintText}>{t.intakeIncompleteHint}</div>
+              )}
 
               <button
                 type="button"
