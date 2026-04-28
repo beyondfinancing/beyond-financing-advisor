@@ -95,20 +95,74 @@ function buildWorkflowDeepLink(workflowFileId: string): string {
 }
 
 // ---- Internal team email lookup (Phase 1: hardcoded; Phase 2: query team_users) ----
+//
+// HARDENING (April 2026): the prior version used case-sensitive exact-match
+// lookups, which meant a typo like "warren wendt" or "Warren  Wendt"
+// (double space) silently fell through to LOAN_OFFICER_FALLBACK_EMAIL,
+// which used to be Sandro's address. That meant another loan officer's
+// confidential file could land in Sandro's inbox.
+//
+// Two changes:
+//   1. Lookup is now normalized (lowercase, trimmed, internal whitespace
+//      collapsed) on both the keys and the incoming name.
+//   2. The fallback target is the shared, monitored ops inbox
+//      (myloan@beyondfinancing.com) instead of a specific LO. Anyone on
+//      the team who sees that address knows the file needs reassignment.
+//
+// Processor lookup is normalized the same way, but processors that don't
+// match are skipped (not fallback-routed) — a file can genuinely have no
+// assigned processor, so a miss is treated as "no processor" rather than
+// "route to a default human."
 
-const PROCESSOR_EMAIL_MAP: Record<string, string> = {
+const PROCESSOR_EMAILS_RAW: Record<string, string> = {
   "Amarilis Santos": "amarilis@beyondfinancing.com",
   "Kyle Nicholson": "kyle@beyondfinancing.com",
   "Bia Marques": "bia@beyondfinancing.com",
 };
 
-const LOAN_OFFICER_EMAIL_MAP: Record<string, string> = {
+const LOAN_OFFICER_EMAILS_RAW: Record<string, string> = {
   "Sandro Pansini Souza": "pansini@beyondfinancing.com",
   "Warren Wendt": "warren@beyondfinancing.com",
   "Finley Beyond": "finley@beyondfinancing.com",
 };
 
-const LOAN_OFFICER_FALLBACK_EMAIL = "pansini@beyondfinancing.com";
+// Lowercase + trim + collapse all internal whitespace runs to a single space.
+// "  Warren  Wendt  " → "warren wendt"
+function normalizeNameKey(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+// Build normalized lookup tables once at module load. Keys are normalized
+// but the original display name is preserved as the value alongside the
+// email, so the recipient name in the email body still reads naturally.
+type EmailMapEntry = { displayName: string; email: string };
+
+function buildNormalizedEmailMap(
+  raw: Record<string, string>
+): Record<string, EmailMapEntry> {
+  const out: Record<string, EmailMapEntry> = {};
+  for (const [displayName, email] of Object.entries(raw)) {
+    const key = normalizeNameKey(displayName);
+    if (key) {
+      out[key] = { displayName, email };
+    }
+  }
+  return out;
+}
+
+const LOAN_OFFICER_LOOKUP = buildNormalizedEmailMap(LOAN_OFFICER_EMAILS_RAW);
+const PROCESSOR_LOOKUP = buildNormalizedEmailMap(PROCESSOR_EMAILS_RAW);
+
+// Shared, monitored ops inbox. Used when the LO name on a workflow file
+// does not match any known LO after normalization. NEVER use a specific
+// LO's address here — it would route another LO's confidential file to
+// the wrong person.
+const LOAN_OFFICER_FALLBACK_EMAIL = "myloan@beyondfinancing.com";
+const LOAN_OFFICER_FALLBACK_DISPLAY_NAME = "Beyond Financing Operations";
+
 const PRODUCTION_MANAGER_NAME = "Amarilis Santos";
 const PRODUCTION_MANAGER_EMAIL = "amarilis@beyondfinancing.com";
 
@@ -116,6 +170,10 @@ type InternalRecipient = {
   role: "loan_officer" | "production_manager" | "processor";
   name: string;
   email: string;
+  // True when the LO lookup missed after normalization and we routed to
+  // the shared ops fallback. Used in audit logging so we can search for
+  // and triage misrouted files (e.g. typos in the loan_officer field).
+  routedViaFallback?: boolean;
 };
 
 type RealtorRecipient = {
@@ -212,34 +270,63 @@ function buildDoNotReplyHtml(): string {
 function buildInternalRecipients(file: WorkflowFileRecord): InternalRecipient[] {
   const recipients: InternalRecipient[] = [];
 
-  const loanOfficerName = String(file.loan_officer || "").trim();
-  if (loanOfficerName) {
-    recipients.push({
-      role: "loan_officer",
-      name: loanOfficerName,
-      email: LOAN_OFFICER_EMAIL_MAP[loanOfficerName] || LOAN_OFFICER_FALLBACK_EMAIL,
-    });
+  // ---- Loan Officer ----
+  // Normalize the incoming name and look it up in the normalized table.
+  // If no match, fall back to the shared ops inbox (NOT a specific LO)
+  // and flag the recipient as routedViaFallback so the audit log shows it.
+  const loanOfficerRaw = String(file.loan_officer || "").trim();
+  if (loanOfficerRaw) {
+    const key = normalizeNameKey(loanOfficerRaw);
+    const match = LOAN_OFFICER_LOOKUP[key];
+
+    if (match) {
+      recipients.push({
+        role: "loan_officer",
+        name: match.displayName,
+        email: match.email,
+        routedViaFallback: false,
+      });
+    } else {
+      recipients.push({
+        role: "loan_officer",
+        // Keep the raw name in the recipient record so the audit log
+        // captures the unrecognized value as it was entered. The email
+        // body addresses the fallback contact by display name.
+        name: loanOfficerRaw,
+        email: LOAN_OFFICER_FALLBACK_EMAIL,
+        routedViaFallback: true,
+      });
+    }
   }
 
+  // ---- Production Manager (always Amarilis for now) ----
   recipients.push({
     role: "production_manager",
     name: PRODUCTION_MANAGER_NAME,
     email: PRODUCTION_MANAGER_EMAIL,
+    routedViaFallback: false,
   });
 
-  const processorName = String(file.processor || "").trim();
-  if (
-    processorName &&
-    processorName !== "Unassigned" &&
-    PROCESSOR_EMAIL_MAP[processorName]
-  ) {
-    recipients.push({
-      role: "processor",
-      name: processorName,
-      email: PROCESSOR_EMAIL_MAP[processorName],
-    });
+  // ---- Processor ----
+  // Normalized lookup; if it misses, the processor recipient is silently
+  // skipped (no fallback). Files can legitimately have no processor.
+  const processorRaw = String(file.processor || "").trim();
+  if (processorRaw && processorRaw !== "Unassigned") {
+    const key = normalizeNameKey(processorRaw);
+    const match = PROCESSOR_LOOKUP[key];
+
+    if (match) {
+      recipients.push({
+        role: "processor",
+        name: match.displayName,
+        email: match.email,
+        routedViaFallback: false,
+      });
+    }
+    // else: unrecognized processor name — skip this recipient entirely.
   }
 
+  // ---- Dedupe by email ----
   const seen = new Set<string>();
   return recipients.filter((r) => {
     const key = r.email.toLowerCase();
@@ -335,10 +422,20 @@ function buildInternalEmailHtml(params: {
   changedFields: string[];
   noteText: string;
   workflowFileId: string;
+  // True when this email was routed to the shared ops fallback because
+  // the loan_officer field on the file did not match a known LO. When
+  // true, we render a prominent alert at the top so the inbox monitor
+  // knows the file needs reassignment.
+  routedViaFallback: boolean;
+  // The unrecognized loan_officer value as it appears on the file.
+  // Only used when routedViaFallback is true, to tell the monitor
+  // exactly which value needs cleanup.
+  unrecognizedLoanOfficerName: string;
 }): string {
   const {
     eventType, file, recipientName, actorName, actorRole,
     changeDetails, changedFields, noteText, workflowFileId,
+    routedViaFallback, unrecognizedLoanOfficerName,
   } = params;
 
   const status = (file.status || "new_scenario") as WorkflowStatus;
@@ -407,9 +504,30 @@ function buildInternalEmailHtml(params: {
     </div>
   `;
 
+  // Routing alert banner — only rendered when this email landed in the
+  // shared ops fallback because the loan_officer on the file did not
+  // match a known LO after normalized lookup.
+  const routingAlertHtml = routedViaFallback
+    ? `
+      <div style="margin-bottom:18px;padding:16px 18px;border:2px solid #DC2626;background:#FEF2F2;border-radius:14px;">
+        <div style="font-size:13px;font-weight:800;color:#7F1D1D;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;">
+          ⚠ Routing Alert — Unrecognized Loan Officer
+        </div>
+        <div style="font-size:14px;line-height:1.65;color:#7F1D1D;">
+          This file was routed here because the assigned Loan Officer name on the file
+          (<strong>${escapeHtml(unrecognizedLoanOfficerName || "blank")}</strong>) did not match a known
+          loan officer. Please review the file in Workflow Intelligence and correct the Loan Officer
+          assignment so future notifications route correctly.
+        </div>
+      </div>
+    `
+    : "";
+
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
       <h1 style="margin:0 0 18px 0;color:#263366;">${escapeHtml(eventTitle)}</h1>
+
+      ${routingAlertHtml}
 
       <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
         <p style="line-height:1.8;margin-top:0;">Hello ${escapeHtml(recipientName || "Team")},</p>
@@ -659,27 +777,46 @@ export async function POST(request: NextRequest) {
 
     // ---- INTERNAL TEAM (always full content + deep-link CTA + do-not-reply) ----
     for (const recipient of internalRecipients) {
+      // For the email body greeting, use the fallback display name when
+      // the lookup missed — otherwise the email reads "Hello warren wendt"
+      // (the unrecognized typo). For audit-log purposes (further below)
+      // we keep the raw recipient.name so misroutes are traceable.
+      const greetingName = recipient.routedViaFallback
+        ? LOAN_OFFICER_FALLBACK_DISPLAY_NAME
+        : recipient.name;
+
       const html = buildInternalEmailHtml({
         eventType,
         file,
-        recipientName: recipient.name,
+        recipientName: greetingName,
         actorName,
         actorRole,
         changeDetails,
         changedFields,
         noteText,
         workflowFileId,
+        routedViaFallback: recipient.routedViaFallback === true,
+        unrecognizedLoanOfficerName:
+          recipient.routedViaFallback === true && recipient.role === "loan_officer"
+            ? recipient.name
+            : "",
       });
+
+      // When the LO lookup missed and we routed to the shared ops inbox,
+      // prefix the subject with [UNROUTED FILE] so the inbox monitor
+      // immediately sees this is a routing-failure notification, not a
+      // normally-assigned LO email.
+      const fallbackPrefix = recipient.routedViaFallback ? "[UNROUTED FILE] " : "";
 
       let internalSubject = "";
       if (eventType === "created") {
-        internalSubject = `[Workflow] New file created: ${borrowerName || "Borrower"} — ${propertyAddress || fileNumber || "No address"}`;
+        internalSubject = `${fallbackPrefix}[Workflow] New file created: ${borrowerName || "Borrower"} — ${propertyAddress || fileNumber || "No address"}`;
       } else if (eventType === "status_change") {
-        internalSubject = `[Workflow] Status: ${statusLabel} — ${borrowerName || fileNumber}`;
+        internalSubject = `${fallbackPrefix}[Workflow] Status: ${statusLabel} — ${borrowerName || fileNumber}`;
       } else if (eventType === "file_change") {
-        internalSubject = `[Workflow] File updated: ${borrowerName || fileNumber}`;
+        internalSubject = `${fallbackPrefix}[Workflow] File updated: ${borrowerName || fileNumber}`;
       } else {
-        internalSubject = `[Workflow] Internal note: ${borrowerName || fileNumber}`;
+        internalSubject = `${fallbackPrefix}[Workflow] Internal note: ${borrowerName || fileNumber}`;
       }
 
       const emailResult = await sendResendEmail({
@@ -687,6 +824,13 @@ export async function POST(request: NextRequest) {
         subject: internalSubject,
         html,
       });
+
+      // Tag the audit row when this delivery was via the LO fallback so
+      // misrouted files can be queried out of workflow_notifications later
+      // (e.g. SELECT ... WHERE message_body LIKE '%LO fallback%').
+      const auditMessageBody = recipient.routedViaFallback
+        ? `Internal team notification — ${eventType} — routed via LO fallback (unrecognized loan_officer="${recipient.name}")`
+        : `Internal team notification — ${eventType}`;
 
       await logNotification({
         workflowFileId,
@@ -707,7 +851,7 @@ export async function POST(request: NextRequest) {
           : "failed",
         providerMessageId: emailResult.providerMessageId,
         messageSubject: internalSubject,
-        messageBody: `Internal team notification — ${eventType}`,
+        messageBody: auditMessageBody,
       });
 
       results.push({
@@ -716,6 +860,7 @@ export async function POST(request: NextRequest) {
         channel: "email",
         recipient: recipient.email,
         success: emailResult.ok,
+        routedViaFallback: recipient.routedViaFallback === true,
       });
     }
 
