@@ -729,6 +729,68 @@ function isIncomeTypeAgencyCompatible(incomeType: string): boolean {
   return normalized === "full_doc" || normalized === "express_doc";
 }
 
+// -----------------------------------------------------------------------------
+// Program-name-derived restrictions (Step 2.5)
+// -----------------------------------------------------------------------------
+//
+// `global_guidelines` does not have columns for property_types, transaction_types,
+// or per-program eligible_states. Many programs in that table (Manufactured
+// Housing, Co-op Share Loan, Texas Section 50(a)(6), FHA-Insured, VA-Guaranteed,
+// RD Section 502, HUD Section 184) carry their restrictions only in the program
+// name. This helper pattern-matches the program_name and returns whatever
+// borrower-side conflicts can be derived from it.
+//
+// Two classes of restriction:
+//   1. Hard conflicts (property type, single state) — the borrower's input
+//      directly contradicts the program. Eliminate.
+//   2. Government programs (FHA / VA / USDA / Section 184) — borrower wasn't
+//      asked which agency they want; LO will decide in Pro Mode. Demote with a
+//      targeted concern so it's still visible but no longer cluttering strong.
+//
+// When `global_guidelines` gains structured columns for these restrictions,
+// migrate this logic into proper field checks and delete this helper.
+//
+type ProgramRestrictions = {
+  requiresPropertyType?: string[];
+  propertyTypeLabel?: string;
+  requiresState?: string;
+  governmentProgram?: "FHA" | "VA" | "USDA" | "Section 184";
+};
+
+function deriveProgramRestrictions(programName: string): ProgramRestrictions {
+  const restrictions: ProgramRestrictions = {};
+  const name = programName || "";
+
+  // Property-type-restricted programs (eliminate on mismatch)
+  if (/manufactured housing|\bmh advantage\b|\bstandard mh\b|\bmh\b/i.test(name)) {
+    restrictions.requiresPropertyType = ["manufactured", "manufactured_housing", "manufactured home"];
+    restrictions.propertyTypeLabel = "manufactured housing";
+  } else if (/co-?op\b|cooperative/i.test(name)) {
+    restrictions.requiresPropertyType = ["cooperative", "co_op", "coop", "co-op"];
+    restrictions.propertyTypeLabel = "cooperative (co-op)";
+  }
+
+  // State-restricted programs (eliminate on mismatch)
+  if (/texas section 50/i.test(name)) {
+    restrictions.requiresState = "TX";
+  }
+
+  // Government programs (demote with targeted concern; do not eliminate)
+  // Order matters — Section 184 and Section 502 are checked before generic
+  // FHA/VA so HUD-Guaranteed Section 184 doesn't accidentally tag as something else.
+  if (/section 184|hud-?guaranteed section 184/i.test(name)) {
+    restrictions.governmentProgram = "Section 184";
+  } else if (/section 502|rd-?guaranteed|\brd\b\s*section/i.test(name)) {
+    restrictions.governmentProgram = "USDA";
+  } else if (/^va-|va-guaranteed|\bva\b mortgage/i.test(name)) {
+    restrictions.governmentProgram = "VA";
+  } else if (/^fha-|fha-insured|\bfha\b mortgage/i.test(name)) {
+    restrictions.governmentProgram = "FHA";
+  }
+
+  return restrictions;
+}
+
 function evaluateAgencyProgramForLender(
   agencyGuideline: GlobalGuidelineRow,
   lender: LenderRow,
@@ -745,6 +807,7 @@ function evaluateAgencyProgramForLender(
   const subjectState = String(payload.subject_state || "").trim().toUpperCase();
   const occupancyType = String(payload.occupancy_type || "").trim();
   const incomeType = String(payload.income_type || "").trim();
+  const propertyType = String(payload.property_type || "").trim();
   const creditScore = toNumber(payload.credit_score);
   const ltv = toNumber(payload.ltv);
   const dti = toNumber(payload.dti);
@@ -756,6 +819,72 @@ function evaluateAgencyProgramForLender(
   const lenderName = lender.name || "Unknown Lender";
   const agencyDisplay = agencyGuideline.agency;
   const programDisplay = `${agencyGuideline.program_name} (${agencyDisplay})`;
+
+  // -----------------------------------------------------------------------
+  // Program-name-derived restrictions (Step 2.5)
+  // Hard conflicts (property type, single-state) eliminate immediately.
+  // Government programs (FHA/VA/USDA/Section 184) demote to conditional
+  // with a targeted concern so the LO can confirm in Pro Mode.
+  // -----------------------------------------------------------------------
+  const restrictions = deriveProgramRestrictions(agencyGuideline.program_name);
+
+  // Property-type restriction — eliminate on mismatch
+  if (restrictions.requiresPropertyType && propertyType) {
+    const normalizedInput = normalizeToken(propertyType);
+    const propertyMatches = restrictions.requiresPropertyType.some(
+      (allowed) => normalizeToken(allowed) === normalizedInput
+    );
+    if (!propertyMatches) {
+      blockers.push(
+        `${programDisplay} is restricted to ${restrictions.propertyTypeLabel} — borrower property type is ${propertyType.replace(/_/g, " ")}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${programDisplay} requires a ${restrictions.propertyTypeLabel} property, which does not match the borrower's ${propertyType.replace(/_/g, " ")}.`,
+      };
+    }
+    strengths.push(`Property type (${propertyType.replace(/_/g, " ")}) matches the program's eligibility (${restrictions.propertyTypeLabel}).`);
+  }
+
+  // State restriction — eliminate on mismatch
+  if (restrictions.requiresState && subjectState && restrictions.requiresState !== subjectState) {
+    blockers.push(
+      `${programDisplay} is restricted to ${restrictions.requiresState} only — borrower subject state is ${subjectState}.`
+    );
+    return {
+      bucket: "eliminated",
+      score: 0,
+      blockers,
+      concerns,
+      strengths,
+      missingItems,
+      explanation: `${programDisplay} is a ${restrictions.requiresState}-only product and cannot be placed in ${subjectState}.`,
+    };
+  }
+
+  // Government program — demote with targeted concern (do not eliminate)
+  if (restrictions.governmentProgram) {
+    const govConcernMessages: Record<NonNullable<ProgramRestrictions["governmentProgram"]>, string> = {
+      "FHA": `${programDisplay} is an FHA program — confirm with borrower whether they want this path versus conventional.`,
+      "VA": `${programDisplay} is a VA program — requires the borrower to be a current/former military service member or eligible spouse. Confirm veteran status.`,
+      "USDA": `${programDisplay} is a USDA Rural Development program — requires a rural-eligible property and household income within USDA limits. Confirm both with borrower.`,
+      "Section 184": `${programDisplay} is a HUD Section 184 program — requires a Native American/Alaska Native borrower and tribal trust land. Confirm eligibility.`,
+    };
+    const govMissingItems: Record<NonNullable<ProgramRestrictions["governmentProgram"]>, string> = {
+      "FHA": "Borrower preference for FHA versus conventional not confirmed",
+      "VA": "Veteran status not confirmed",
+      "USDA": "Rural property eligibility and USDA income limits not confirmed",
+      "Section 184": "Section 184 borrower and property eligibility not confirmed",
+    };
+    concerns.push(govConcernMessages[restrictions.governmentProgram]);
+    missingItems.push(govMissingItems[restrictions.governmentProgram]);
+    score -= 10;
+  }
 
   // State eligibility check
   if (subjectState) {
