@@ -1361,6 +1361,36 @@ export async function POST(req: Request) {
       const candidateGuidelines = activeGuidelines.filter(hasSufficientGuidelineData);
       if (candidateGuidelines.length === 0) continue;
 
+      // Pre-filter: prefer guideline rows whose occupancy + transaction arrays
+      // cover the borrower's scenario. For multi-row programs (FNBA's FlexFirst
+      // HELOC etc.), this routes the evaluation to the guideline row that
+      // actually represents the borrower's case — so the LO sees the right
+      // elimination reason (e.g., "LTV too high on the investment row") instead
+      // of an irrelevant one ("occupancy mismatch on the primary row").
+      // If no rows fit the scenario, fall back to evaluating all candidates so
+      // the program still surfaces a meaningful elimination explanation.
+      const occupancyType = String(payload.occupancy_type || "").trim();
+      const transactionType = String(payload.transaction_type || "").trim();
+
+      const scenarioRelevantGuidelines = candidateGuidelines.filter((g) => {
+        const occArr = toStringArray(g.occupancy_types);
+        const txnArr = toStringArray(g.transaction_types);
+        const occMatches =
+          !occupancyType ||
+          occArr.length === 0 ||
+          arrayContainsNormalized(occArr, occupancyType, "occupancy");
+        const txnMatches =
+          !transactionType ||
+          txnArr.length === 0 ||
+          arrayContainsNormalized(txnArr, transactionType);
+        return occMatches && txnMatches;
+      });
+
+      const guidelinesToEvaluate =
+        scenarioRelevantGuidelines.length > 0
+          ? scenarioRelevantGuidelines
+          : candidateGuidelines;
+
       const stateEligibility = stateByLender.get(lenderId) || null;
 
       // Evaluate every active+sufficient guideline row and keep the best fit.
@@ -1370,7 +1400,7 @@ export async function POST(req: Request) {
       let bestEvaluation: EvaluationResult | null = null;
       let bestGuideline: GuidelineRow | null = null;
 
-      for (const candidate of candidateGuidelines) {
+      for (const candidate of guidelinesToEvaluate) {
         const evaluation = evaluateLenderProgram(
           candidate,
           payload,
