@@ -423,8 +423,8 @@ function evaluateLenderProgram(
   if (occupancyType) {
     const occupancyTypes = toStringArray(guideline.occupancy_types);
     if (occupancyTypes.length === 0) {
-      concerns.push(`${programName} does not document allowed occupancy types — confirm directly with the lender.`);
-      missingItems.push(`${programName}: occupancy types not documented`);
+      concerns.push(`${programName} did not specify eligible occupancy types — verify with lender that ${occupancyType.replace(/_/g, " ")} is permitted.`);
+      missingItems.push("Eligible occupancy types not specified");
     } else if (!arrayContainsNormalized(occupancyTypes, occupancyType, "occupancy")) {
       blockers.push(`${programName} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`);
       return {
@@ -446,8 +446,8 @@ function evaluateLenderProgram(
   if (transactionType) {
     const transactionTypes = toStringArray(guideline.transaction_types);
     if (transactionTypes.length === 0) {
-      concerns.push(`${programName} does not document allowed transaction types — confirm directly with the lender.`);
-      missingItems.push(`${programName}: transaction types not documented`);
+      concerns.push(`${programName} did not specify eligible transaction types — verify with lender that ${transactionType.replace(/_/g, " ")} is permitted.`);
+      missingItems.push("Eligible transaction types not specified");
     } else if (!arrayContainsNormalized(transactionTypes, transactionType)) {
       blockers.push(`${programName} does not allow transaction type: ${transactionType.replace(/_/g, " ")}.`);
       return {
@@ -469,8 +469,8 @@ function evaluateLenderProgram(
   if (incomeType) {
     const incomeTypes = toStringArray(guideline.income_types);
     if (incomeTypes.length === 0) {
-      concerns.push(`${programName} does not document accepted income types — confirm directly with the lender.`);
-      missingItems.push(`${programName}: income types not documented`);
+      concerns.push(`${programName} did not specify accepted income types — verify with lender that ${incomeType.replace(/_/g, " ")} is accepted.`);
+      missingItems.push("Accepted income types not specified");
     } else if (!arrayContainsNormalized(incomeTypes, incomeType)) {
       blockers.push(`${programName} does not accept income type: ${incomeType.replace(/_/g, " ")}.`);
       return {
@@ -492,8 +492,8 @@ function evaluateLenderProgram(
   if (propertyType) {
     const propertyTypes = toStringArray(guideline.property_types);
     if (propertyTypes.length === 0) {
-      concerns.push(`${programName} does not document allowed property types — confirm directly with the lender.`);
-      missingItems.push(`${programName}: property types not documented`);
+      concerns.push(`${programName} did not specify eligible property types — verify with lender that ${propertyType.replace(/_/g, " ")} is permitted.`);
+      missingItems.push("Eligible property types not specified");
     } else if (!arrayContainsNormalized(propertyTypes, propertyType)) {
       blockers.push(`${programName} does not allow property type: ${propertyType.replace(/_/g, " ")}.`);
       return {
@@ -825,8 +825,8 @@ function evaluateAgencyProgramForLender(
   if (occupancyType) {
     const occupancyArr = toStringArray(agencyGuideline.occupancy);
     if (occupancyArr.length === 0) {
-      concerns.push(`${programDisplay} does not document allowed occupancy types — confirm directly with the lender.`);
-      missingItems.push(`${programDisplay}: occupancy types not documented`);
+      concerns.push(`${programDisplay} did not specify eligible occupancy types — verify against agency selling guide that ${occupancyType.replace(/_/g, " ")} is permitted.`);
+      missingItems.push("Eligible occupancy types not specified");
     } else if (!arrayContainsNormalized(occupancyArr, occupancyType, "occupancy")) {
       blockers.push(`${programDisplay} does not allow occupancy: ${occupancyType.replace(/_/g, " ")}.`);
       return {
