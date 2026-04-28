@@ -1223,6 +1223,28 @@ function buildNextQuestion(
 }
 
 // -----------------------------------------------------------------------------
+// Evaluation comparator (Step D2 fix)
+// -----------------------------------------------------------------------------
+//
+// When a lender program has multiple active guideline rows (e.g., FNBA's
+// FlexFirst HELOC has separate rows for primary / second_home / investment
+// occupancy), the matcher needs to evaluate each row and keep the one that
+// best fits the borrower's scenario. This comparator ranks evaluation results
+// by bucket (strong > conditional > eliminated) and uses score as tiebreaker.
+//
+function isBetterEvaluation(a: EvaluationResult, b: EvaluationResult): boolean {
+  const bucketRank: Record<EvaluationResult["bucket"], number> = {
+    strong: 3,
+    conditional: 2,
+    eliminated: 1,
+  };
+  const rankA = bucketRank[a.bucket];
+  const rankB = bucketRank[b.bucket];
+  if (rankA !== rankB) return rankA > rankB;
+  return a.score > b.score;
+}
+
+// -----------------------------------------------------------------------------
 // POST handler
 // -----------------------------------------------------------------------------
 
@@ -1336,19 +1358,37 @@ export async function POST(req: Request) {
 
       if (activeGuidelines.length === 0) continue;
 
-      const guideline = activeGuidelines.find(hasSufficientGuidelineData);
-      if (!guideline) continue;
+      const candidateGuidelines = activeGuidelines.filter(hasSufficientGuidelineData);
+      if (candidateGuidelines.length === 0) continue;
 
       const stateEligibility = stateByLender.get(lenderId) || null;
 
-      const evaluation = evaluateLenderProgram(
-        guideline,
-        payload,
-        stateEligibility,
-        lenderName,
-        programName,
-        program.loan_category
-      );
+      // Evaluate every active+sufficient guideline row and keep the best fit.
+      // Programs with one guideline row behave exactly as before; programs
+      // with multiple rows (FNBA's multi-occupancy / multi-transaction design)
+      // now correctly choose the row that matches the borrower scenario.
+      let bestEvaluation: EvaluationResult | null = null;
+      let bestGuideline: GuidelineRow | null = null;
+
+      for (const candidate of candidateGuidelines) {
+        const evaluation = evaluateLenderProgram(
+          candidate,
+          payload,
+          stateEligibility,
+          lenderName,
+          programName,
+          program.loan_category
+        );
+        if (!bestEvaluation || isBetterEvaluation(evaluation, bestEvaluation)) {
+          bestEvaluation = evaluation;
+          bestGuideline = candidate;
+        }
+      }
+
+      if (!bestEvaluation || !bestGuideline) continue;
+
+      const guideline = bestGuideline;
+      const evaluation = bestEvaluation;
 
       const bucketEntry: MatchBucket = {
         lender_name: lenderName,
