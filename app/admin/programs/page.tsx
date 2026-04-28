@@ -26,6 +26,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isAdminSignedIn } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import AdminNav from "@/app/components/AdminNav";
 
 type LenderOption = {
   id: string;
@@ -274,6 +275,8 @@ export default async function AdminProgramsPage({
       }}
     >
       <div style={{ maxWidth: 1380, margin: "0 auto", padding: 24 }}>
+        <AdminNav />
+
         <div
           style={{
             display: "flex",
