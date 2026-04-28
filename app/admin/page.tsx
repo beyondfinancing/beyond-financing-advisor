@@ -29,6 +29,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import SiteHeader from "@/app/components/SiteHeader";
+import AdminNav from "@/app/components/AdminNav";
 import { SiteLanguage } from "@/app/components/site-header-translations";
 import { US_STATES } from "@/lib/us-states";
 
@@ -592,6 +593,8 @@ export default function AdminPage() {
           language={language}
           onLanguageChange={setLanguage}
         />
+
+        <AdminNav language={language} />
 
         <section style={styles.hero}>
           <div className="bf-admin-hero-grid" style={styles.heroGrid}>
