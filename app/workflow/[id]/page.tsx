@@ -181,6 +181,20 @@ function toDateInputValue(value: string) {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeCurrencyInput(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
+// Display formatter for the amount input.
+// Takes a digits-only string ("612000") and returns it with thousand
+// separators ("612,000") for display in the input. No dollar sign —
+// the goal is to show the number cleanly without the currency symbol.
+function formatAmountWithCommas(digits: string) {
+  const cleaned = digits.replace(/[^\d]/g, "");
+  if (!cleaned) return "";
+  return new Intl.NumberFormat("en-US").format(Number(cleaned));
+}
+
 function getStatusLabel(status: WorkflowStatus) {
   switch (status) {
     case "new_scenario":
@@ -1047,9 +1061,11 @@ export default function WorkflowFileDetailPage() {
 
               <label style={styles.label}>Amount</label>
               <input
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                value={formatAmountWithCommas(amount)}
+                onChange={(e) => setAmount(normalizeCurrencyInput(e.target.value))}
                 style={styles.input}
+                placeholder="612,000"
+                inputMode="numeric"
               />
 
               <label style={styles.label}>Loan officer</label>
