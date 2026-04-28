@@ -199,6 +199,61 @@ function arrayContainsNormalized(
   return false;
 }
 
+// -----------------------------------------------------------------------------
+// Borrower status normalization (Step 3A)
+// -----------------------------------------------------------------------------
+//
+// The data convention used in `program_guidelines.borrower_statuses` (across
+// both ClearEdge and FNBA, and presumably future lender ingestions) is the
+// short canonical form: `citizen`, `permanent_resident`, `non_permanent_resident`,
+// `itin_borrower`, `daca`, `foreign_national`.
+//
+// Borrower-facing forms and conversation flows often emit longer-form synonyms
+// (`us_citizen`, `green_card`, `lpr`, `dreamer`, etc.). Rather than migrate the
+// data or hunt down every form value, we fold synonyms into the canonical form
+// here. This means the matcher works correctly regardless of which variant a
+// caller sends, and future synonyms can be absorbed by adding a single line.
+//
+const BORROWER_STATUS_ALIASES: Record<string, string> = {
+  // U.S. Citizen → citizen
+  us_citizen: "citizen",
+  u_s_citizen: "citizen",
+  united_states_citizen: "citizen",
+  american_citizen: "citizen",
+
+  // Green Card / LPR → permanent_resident
+  green_card: "permanent_resident",
+  green_card_holder: "permanent_resident",
+  lpr: "permanent_resident",
+  lawful_permanent_resident: "permanent_resident",
+  permanent_resident_alien: "permanent_resident",
+
+  // Non-Permanent Resident
+  npr: "non_permanent_resident",
+  non_perm_resident: "non_permanent_resident",
+  non_permanent_resident_alien: "non_permanent_resident",
+  temporary_resident: "non_permanent_resident",
+
+  // ITIN
+  itin: "itin_borrower",
+  itin_only: "itin_borrower",
+  itin_holder: "itin_borrower",
+
+  // DACA
+  dreamer: "daca",
+  daca_recipient: "daca",
+
+  // Foreign National
+  foreign_borrower: "foreign_national",
+  non_resident_alien: "foreign_national",
+};
+
+function normalizeBorrowerStatus(value: string): string {
+  if (!value) return "";
+  const normalized = normalizeToken(value);
+  return BORROWER_STATUS_ALIASES[normalized] || normalized;
+}
+
 function borrowerStatusMatches(
   borrowerStatuses: string[],
   inputStatus: string,
@@ -206,11 +261,11 @@ function borrowerStatusMatches(
 ): boolean {
   if (!inputStatus) return true;
 
-  const normalizedInput = normalizeToken(inputStatus);
+  const normalizedInput = normalizeBorrowerStatus(inputStatus);
 
   if (borrowerStatuses.length > 0) {
     for (const item of borrowerStatuses) {
-      if (normalizeToken(item) === normalizedInput) return true;
+      if (normalizeBorrowerStatus(item) === normalizedInput) return true;
     }
   }
 
