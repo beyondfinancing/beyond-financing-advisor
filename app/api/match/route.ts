@@ -765,6 +765,11 @@ function evaluateLenderProgram(
   // assignment so the bucket reflects the tier-adjusted score.
   score += getCategoryTierBonus(loanCategory);
 
+  // Clamp to 100. Tier bonuses can push a high base score above the visible
+  // ceiling (e.g. 81 + 20 agency bonus = 101). Bucket thresholds are 60 / 75
+  // so clamping here changes the displayed value only, never the bucket.
+  score = Math.min(score, 100);
+
   let bucket: "strong" | "conditional" = "conditional";
   if (score >= 75 && concerns.length === 0 && missingItems.length <= 1) {
     bucket = "strong";
@@ -1249,6 +1254,11 @@ function evaluateAgencyProgramForLender(
   // margin-based scoring but BEFORE bucket assignment so the bucket reflects
   // the tier-adjusted score. This is the +20 from getCategoryTierBonus("agency").
   score += 20;
+
+  // Clamp to 100. A high base score plus the +20 agency bonus can overshoot
+  // the visible ceiling (e.g. 81 + 20 = 101). Bucket thresholds are 60 / 75
+  // so clamping here changes the displayed value only, never the bucket.
+  score = Math.min(score, 100);
 
   let bucket: "strong" | "conditional" = "conditional";
   if (score >= 75 && concerns.length === 0 && missingItems.length <= 1) {
