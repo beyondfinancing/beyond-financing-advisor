@@ -113,6 +113,8 @@ type RoutingPayload = {
   currentState?: string;
   targetState?: string;
   borrowerPath?: string;
+  realtorStatus?: string;
+  intakeSessionId?: string;
 
   // Team command center fields
   source?: string;
@@ -159,6 +161,27 @@ function safeString(value: unknown): string {
 
 function hasValue(value?: string): boolean {
   return Boolean(value && value.trim().length > 0);
+}
+
+// Split a single "Full Name" field into first / last on the first space.
+// "Sandro Pansini" -> { first: "Sandro", last: "Pansini" }
+// "Maria del Carmen Lopez" -> { first: "Maria", last: "del Carmen Lopez" }
+// "Madonna" -> { first: "Madonna", last: null }
+function splitName(full: string): { first: string | null; last: string | null } {
+  const t = full.trim();
+  if (!t) return { first: null, last: null };
+  const idx = t.indexOf(" ");
+  if (idx === -1) return { first: t, last: null };
+  return { first: t.slice(0, idx), last: t.slice(idx + 1).trim() || null };
+}
+
+// Validate a UUID string. We never trust client-provided ids without a check —
+// a malformed value would throw on the Postgres uuid column. Treat as missing.
+function isUuid(value: string | null | undefined): value is string {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value
+  );
 }
 
 function normalizeMessages(messages: unknown): IncomingMessage[] {
@@ -708,6 +731,125 @@ async function callClaude(
 }
 
 // -----------------------------------------------------------------------------
+// Persistence — write the borrower conversation to borrower_intake_sessions.
+// -----------------------------------------------------------------------------
+//
+// Best-effort. If anything goes wrong, we log the error and return null —
+// the chat reply is sacred and must never be blocked by a DB hiccup.
+//
+// Behavior:
+//   - team_command stage is the /finley professional flow; skip persistence
+//     (those land in professional_chat_sessions in a future step).
+//   - If routing.intakeSessionId is a valid UUID, UPDATE that row.
+//   - Otherwise INSERT a new row and return its id.
+//   - Status is always 'submitted' from creation: there is no chat turn that
+//     happens before Run Preliminary Review in the borrower flow.
+//
+async function persistConversation(
+  stage: string | undefined,
+  routing: RoutingPayload | undefined,
+  reply: string
+): Promise<string | null> {
+  if (stage === "team_command") return null;
+  if (!routing) return null;
+
+  try {
+    const sessionId = isUuid(routing.intakeSessionId)
+      ? (routing.intakeSessionId as string)
+      : null;
+
+    // routing.conversation is the full borrower/assistant history sent up
+    // by the client. We append the freshly-generated assistant reply and
+    // overwrite the row's messages JSONB with the result. Client state is
+    // the source of truth — this is a mirror.
+    const ts = new Date().toISOString();
+    const incoming = Array.isArray(routing.conversation)
+      ? routing.conversation
+          .filter(
+            (m) =>
+              m &&
+              typeof m.content === "string" &&
+              (m.role === "user" || m.role === "assistant")
+          )
+          .map((m) => ({ role: m.role, content: m.content, ts }))
+      : [];
+    const fullMessages = [
+      ...incoming,
+      { role: "assistant", content: reply, ts },
+    ];
+
+    const borrower = routing.borrower ?? {};
+    const realtor = routing.selectedRealtor ?? null;
+    const officer = routing.selectedOfficer ?? null;
+    const { first: firstName, last: lastName } = splitName(
+      safeString(borrower.name)
+    );
+    const language = (() => {
+      const l = safeString(routing.language).toLowerCase();
+      return l === "pt" || l === "es" ? l : "en";
+    })();
+
+    const extractedPayload = {
+      borrower,
+      scenario: routing.scenario ?? {},
+      borrowerPath: routing.borrowerPath ?? null,
+      targetState: routing.targetState ?? null,
+      currentState: routing.currentState ?? null,
+      realtorStatus: routing.realtorStatus ?? null,
+      selectedOfficer: officer,
+      selectedRealtor: realtor,
+    };
+
+    const baseRow = {
+      status: "submitted" as const,
+      language,
+      borrower_first_name: firstName,
+      borrower_last_name: lastName,
+      borrower_email: safeString(borrower.email) || null,
+      borrower_phone: null as string | null,
+      borrower_state: safeString(routing.targetState) || null,
+      has_realtor: realtor !== null && realtor !== undefined,
+      realtor_name: realtor ? safeString(realtor.name) || null : null,
+      realtor_email: realtor ? safeString(realtor.email) || null : null,
+      realtor_phone: realtor ? safeString(realtor.phone) || null : null,
+      loan_officer_id:
+        officer && isUuid(officer.id) ? (officer.id as string) : null,
+      lo_assistant_id: null as string | null,
+      messages: fullMessages,
+      extracted_payload: extractedPayload,
+    };
+
+    if (sessionId) {
+      const { error } = await supabaseAdmin
+        .from("borrower_intake_sessions")
+        .update(baseRow)
+        .eq("id", sessionId);
+
+      if (error) {
+        console.error("persistConversation: UPDATE failed", error);
+        return null;
+      }
+      return sessionId;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("borrower_intake_sessions")
+      .insert(baseRow)
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      console.error("persistConversation: INSERT failed", error);
+      return null;
+    }
+    return (data as { id: string }).id;
+  } catch (err) {
+    console.error("persistConversation: unexpected error", err);
+    return null;
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Route handler
 // -----------------------------------------------------------------------------
 
@@ -772,6 +914,7 @@ export async function POST(req: Request) {
         model: modelUsed,
         catalogProgramCount: catalog?.programCount || 0,
         catalogLenderCount: catalog?.lenderCount || 0,
+        intakeSessionId: await persistConversation(stage, routing, reply),
       },
     });
   } catch (error) {
