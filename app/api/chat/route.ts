@@ -753,6 +753,29 @@ async function persistConversation(
   if (stage === "team_command") return null;
   if (!routing) return null;
 
+  // ---------------------------------------------------------------------------
+  // TEMPORARY DIAGNOSTIC — REMOVE AFTER ROOT-CAUSING THE EMPTY-TABLE ISSUE.
+  // Logs env-var presence/shape and runtime stage. Never logs the actual key.
+  // JWTs always start with "eyJ"; anon and service_role JWTs differ in payload,
+  // not prefix, so length is the cheaper signal than first chars (anon ~200,
+  // service_role ~210 ish — they're close but not identical).
+  // ---------------------------------------------------------------------------
+  const srk = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  console.log("[persist-diag] entry", {
+    stage,
+    hasServiceRoleKey: Boolean(srk),
+    serviceRoleKeyLength: srk ? srk.length : 0,
+    serviceRoleKeyPrefix: srk ? srk.slice(0, 6) : "(none)",
+    hasUrl: Boolean(url),
+    urlSuffix: url ? url.slice(-20) : "(none)",
+    hasAnonKey: Boolean(anon),
+    anonKeyLength: anon ? anon.length : 0,
+    serviceRoleEqualsAnon:
+      srk && anon ? srk === anon : false,
+  });
+
   try {
     const sessionId = isUuid(routing.intakeSessionId)
       ? (routing.intakeSessionId as string)
@@ -826,9 +849,17 @@ async function persistConversation(
         .eq("id", sessionId);
 
       if (error) {
-        console.error("persistConversation: UPDATE failed", error);
+        // TEMPORARY DIAGNOSTIC — full error breakdown.
+        console.error("[persist-diag] UPDATE failed", {
+          code: error?.code,
+          message: error?.message,
+          details: error?.details,
+          hint: error?.hint,
+          sessionId,
+        });
         return null;
       }
+      console.log("[persist-diag] UPDATE ok", { sessionId });
       return sessionId;
     }
 
@@ -839,12 +870,26 @@ async function persistConversation(
       .single();
 
     if (error || !data) {
-      console.error("persistConversation: INSERT failed", error);
+      // TEMPORARY DIAGNOSTIC — full error breakdown.
+      console.error("[persist-diag] INSERT failed", {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        rowKeys: Object.keys(baseRow),
+        hasData: Boolean(data),
+      });
       return null;
     }
+    console.log("[persist-diag] INSERT ok", { id: (data as { id: string }).id });
     return (data as { id: string }).id;
   } catch (err) {
-    console.error("persistConversation: unexpected error", err);
+    // TEMPORARY DIAGNOSTIC — full thrown-error breakdown.
+    console.error("[persist-diag] unexpected error", {
+      name: err instanceof Error ? err.name : typeof err,
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack?.split("\n").slice(0, 5).join(" | ") : undefined,
+    });
     return null;
   }
 }
