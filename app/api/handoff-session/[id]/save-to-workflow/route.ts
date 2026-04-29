@@ -1,19 +1,50 @@
 // app/api/handoff-session/[id]/save-to-workflow/route.ts
 //
-// Step 6 Phase 6.1 — NEW endpoint.
+// Step 6 Phase 6.1 (Polish v1) — Pro Mode summary endpoint.
 //
-// Generates an AI summary of the Pro Mode session (borrower scenario +
-// matcher results + pro chat transcript) and persists it as a workflow_feed
-// row on a target workflow file the calling Loan Officer is assigned to.
+// =============================================================================
+// CHANGES IN POLISH V1
+// =============================================================================
+//
+// Hybrid template: deterministic data is now assembled by CODE; the AI
+// produces ONLY the prose-judgment bullets (Key Pro Chat Takeaways and
+// Recommended Next Action).
+//
+// Why: the prior all-AI version was observed having gpt-4o-mini hallucinate
+// numeric counts and the top-recommendation string even when given exact
+// values in the context. Concrete example from production:
+//   Matcher returned: 576 strong / 23 conditional / 0 eliminated, top rec
+//                     "AGENCY Connect ... with ClearEdge Lending"
+//   AI wrote:         310 strong / 78 conditional / 211 eliminated, top rec
+//                     "Standard Conforming Manual Underwriting with Newrez"
+// The AI also mislabeled the Debt field as "Reserves" because the prompt
+// template asked for a Reserves field that wasn't in the context.
+//
+// These outputs become permanent file records — factual fidelity matters.
+// Prompt-tightening alone did not eliminate the drift in earlier tests.
+//
+// The AI now returns JSON ({ takeaways[], next_action }) via OpenAI's
+// response_format=json_object. The route handler assembles the final
+// summary text from that JSON plus the structured ScenarioFields and
+// MatchSummary produced by code-side helpers. Counts, top recommendation,
+// and field labels can never drift.
+//
+// Other changes:
+//   - Field label "Credit / Income / Reserves" → "Credit / Monthly income /
+//     Monthly debt" (matches the actual data we pass).
+//   - Scenario rendering tightened: occupancy + state + home price grouped
+//     on a single Property line; loan amount + path + LTV + down payment
+//     grouped on a single Loan line. Same information, fewer disjointed
+//     bullets.
+//   - Defensive fallbacks if AI returns empty takeaways or next_action.
+//
+// =============================================================================
 //
 // Request:
 //   POST /api/handoff-session/<intakeSessionId>/save-to-workflow
 //   Body: {
-//     targetWorkflowFileId: string,   // UUID of workflow_files row, REQUIRED
-//     proSessionId?: string           // optional UUID; if omitted, picks the
-//                                     // most recent pro chat session for
-//                                     // this intake belonging to the
-//                                     // calling team user
+//     targetWorkflowFileId: string,   // UUID, REQUIRED
+//     proSessionId?: string           // optional UUID
 //   }
 //
 // Auth (matches sibling handoff-session/[id] routes):
@@ -23,30 +54,15 @@
 //
 // Access control:
 //   - Calling user MUST be workflow_files.loan_officer_id on the target.
-//     Otherwise 403. The /finley dropdown also filters by this; the API
-//     enforces it as defense in depth.
-//
-// Behavior:
-//   1. Auth gate
-//   2. Validate [id] + body
-//   3. Verify ownership of target workflow file
-//   4. Load borrower_intake_sessions row (scenario + match_results)
-//   5. Load professional_chat_sessions row (most-recent for caller OR explicit)
-//   6. Build OpenAI prompt + call gpt-4o-mini
-//   7. INSERT into workflow_feed with update_type='pro_mode_summary'
-//   8. Return { success, feedId, persistedAt, summary }
-//
-// On INSERT, the workflow_feed_touch_activity trigger fires and bumps
-// workflow_files.last_activity_at — same as "Add Internal Update".
 //
 // Failure modes:
 //   - 401 no/invalid session
-//   - 403 inactive, wrong role, not the assigned LO on target file, or
-//         pro session does not belong to caller
-//   - 400 invalid [id] or body, or pro session belongs to different intake
+//   - 403 inactive, wrong role, not the assigned LO, or pro session belongs
+//         to different caller
+//   - 400 invalid [id] / body / pro session belongs to different intake
 //   - 404 intake session, target workflow file, or explicit pro session
 //         not found
-//   - 502 OpenAI call failed (distinct from 500 so the caller can retry)
+//   - 502 OpenAI call failed
 //   - 500 INSERT failed
 
 import { NextResponse } from "next/server";
@@ -65,12 +81,12 @@ const PROFESSIONAL_ROLES = new Set([
   "Processor",
 ]);
 
-const TRANSCRIPT_TURN_CAP = 30; // last 30 turns of pro chat fed to summarizer
+const TRANSCRIPT_TURN_CAP = 30;
 const OPENAI_MODEL = "gpt-4o-mini";
-const OPENAI_TEMPERATURE = 0.2; // low — structured summary, not creative prose
+const OPENAI_TEMPERATURE = 0.2;
 
 // =============================================================================
-// Types (defensive shapes — only fields we read)
+// Types — defensive shapes (only fields we read)
 // =============================================================================
 
 type ChatMessage = {
@@ -139,8 +155,37 @@ type MatcherResponse = {
   };
 };
 
+// === Polish v1 — structured data the code controls directly =================
+
+type ScenarioFields = {
+  borrowerName: string;
+  loanAmount: string;       // formatted, e.g. "$560,000" or "—"
+  homePrice: string;        // formatted, e.g. "$700,000" or "—"
+  downPayment: string;      // formatted, e.g. "$140,000" or "—"
+  ltv: string;              // formatted with %, e.g. "80%" or "—"
+  occupancy: string;
+  state: string;
+  path: string;
+  credit: string;
+  income: string;           // monthly, formatted
+  debt: string;             // monthly, formatted
+};
+
+type MatchSummary = {
+  available: boolean;       // false if matcher has not been run
+  strongCount: number;
+  conditionalCount: number;
+  eliminatedCount: number;
+  topRecommendation: string;
+};
+
+type AIBullets = {
+  takeaways: string[];
+  nextAction: string;
+};
+
 // =============================================================================
-// Helpers — context block builders
+// Helpers — formatting
 // =============================================================================
 
 function fmtPlain(v: unknown): string {
@@ -158,12 +203,23 @@ function fmtCurrency(v: unknown): string {
   return `$${n.toLocaleString("en-US")}`;
 }
 
-function buildScenarioBlock(intake: IntakeRow): string {
+function fmtLtv(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const s = String(v).trim();
+  if (!s) return "—";
+  return /%$/.test(s) ? s : `${s}%`;
+}
+
+// =============================================================================
+// Code-side extraction — single source of truth for scenario + match values
+// =============================================================================
+
+function getScenarioFields(intake: IntakeRow): ScenarioFields {
   const payload = (intake.extracted_payload ?? {}) as ExtractedPayload;
   const b = payload.borrower ?? {};
   const s = payload.scenario ?? {};
 
-  const fullName =
+  const borrowerName =
     [intake.borrower_first_name, intake.borrower_last_name]
       .filter(Boolean)
       .join(" ")
@@ -171,65 +227,115 @@ function buildScenarioBlock(intake: IntakeRow): string {
     b.name ||
     "—";
 
-  const state = b.targetState || intake.borrower_state || "—";
-  const occupancy = s.occupancy || "—";
-  const path = payload.borrowerPath || "—";
-
-  return [
-    `Borrower: ${fullName}`,
-    `Path: ${path}`,
-    `Target state: ${state}`,
-    `Occupancy: ${occupancy}`,
-    `Home price: ${fmtCurrency(s.homePrice)}`,
-    `Down payment: ${fmtCurrency(s.downPayment)}`,
-    `Estimated loan: ${fmtCurrency(s.estimatedLoanAmount)}`,
-    `Estimated LTV: ${fmtPlain(s.estimatedLtv)}`,
-    `Credit: ${fmtPlain(b.credit)}`,
-    `Income (monthly): ${fmtCurrency(b.income)}`,
-    `Debt (monthly): ${fmtCurrency(b.debt)}`,
-  ].join("\n");
+  return {
+    borrowerName,
+    loanAmount: fmtCurrency(s.estimatedLoanAmount),
+    homePrice: fmtCurrency(s.homePrice),
+    downPayment: fmtCurrency(s.downPayment),
+    ltv: fmtLtv(s.estimatedLtv),
+    occupancy: s.occupancy || "—",
+    state: b.targetState || intake.borrower_state || "—",
+    path: payload.borrowerPath || "—",
+    credit: fmtPlain(b.credit),
+    income: fmtCurrency(b.income),
+    debt: fmtCurrency(b.debt),
+  };
 }
 
-function buildMatchBlock(intake: IntakeRow): string {
+function getMatchSummary(intake: IntakeRow): {
+  summary: MatchSummary;
+  raw: MatcherResponse | null;
+} {
   const m = (intake.match_results ?? null) as MatcherResponse | null;
   if (!m || m.success !== true) {
-    return "No matcher run on file yet.";
+    return {
+      summary: {
+        available: false,
+        strongCount: 0,
+        conditionalCount: 0,
+        eliminatedCount: 0,
+        topRecommendation: "",
+      },
+      raw: null,
+    };
   }
 
   const sCount =
-    m.summary?.strong_count ?? (m.strong_matches?.length ?? 0);
+    typeof m.summary?.strong_count === "number"
+      ? m.summary.strong_count
+      : (m.strong_matches?.length ?? 0);
   const cCount =
-    m.summary?.conditional_count ?? (m.conditional_matches?.length ?? 0);
+    typeof m.summary?.conditional_count === "number"
+      ? m.summary.conditional_count
+      : (m.conditional_matches?.length ?? 0);
   const eCount =
-    m.summary?.eliminated_count ?? (m.eliminated_paths?.length ?? 0);
+    typeof m.summary?.eliminated_count === "number"
+      ? m.summary.eliminated_count
+      : (m.eliminated_paths?.length ?? 0);
 
-  const top = m.top_recommendation?.trim() || "—";
+  return {
+    summary: {
+      available: true,
+      strongCount: sCount,
+      conditionalCount: cCount,
+      eliminatedCount: eCount,
+      topRecommendation: (m.top_recommendation || "").trim(),
+    },
+    raw: m,
+  };
+}
 
-  const topStrong = (m.strong_matches ?? [])
-    .slice(0, 5)
-    .map((b) => {
-      const lender = b.lender_name ?? "?";
-      const program = b.program_name ?? "?";
-      const score =
-        typeof b.score === "number" ? ` (score ${b.score})` : "";
-      return `  - ${lender} / ${program}${score}`;
-    })
-    .join("\n");
+// =============================================================================
+// Context block builders — strings sent to the AI (not the final output)
+// =============================================================================
 
+function buildScenarioContextBlock(s: ScenarioFields): string {
   return [
-    `Counts: ${sCount} strong, ${cCount} conditional, ${eCount} eliminated`,
-    `Top recommendation: ${top}`,
-    topStrong ? `Top strong matches:\n${topStrong}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    `Borrower: ${s.borrowerName}`,
+    `Path: ${s.path}`,
+    `Target state: ${s.state}`,
+    `Occupancy: ${s.occupancy}`,
+    `Home price: ${s.homePrice}`,
+    `Down payment: ${s.downPayment}`,
+    `Loan amount: ${s.loanAmount}`,
+    `Estimated LTV: ${s.ltv}`,
+    `Credit: ${s.credit}`,
+    `Monthly income: ${s.income}`,
+    `Monthly debt: ${s.debt}`,
+  ].join("\n");
+}
+
+function buildMatchContextBlock(
+  summary: MatchSummary,
+  raw: MatcherResponse | null
+): string {
+  if (!summary.available) {
+    return "No matcher run on file yet.";
+  }
+  const lines: string[] = [
+    `Counts: ${summary.strongCount} strong, ${summary.conditionalCount} conditional, ${summary.eliminatedCount} eliminated`,
+    `Top recommendation: ${summary.topRecommendation || "—"}`,
+  ];
+  if (raw) {
+    const topStrong = (raw.strong_matches ?? [])
+      .slice(0, 5)
+      .map((b) => {
+        const lender = b.lender_name ?? "?";
+        const program = b.program_name ?? "?";
+        const score =
+          typeof b.score === "number" ? ` (score ${b.score})` : "";
+        return `  - ${lender} / ${program}${score}`;
+      })
+      .join("\n");
+    if (topStrong) lines.push(`Top strong matches:\n${topStrong}`);
+  }
+  return lines.join("\n");
 }
 
 function buildTranscriptBlock(messages: unknown): string {
   if (!Array.isArray(messages) || messages.length === 0) {
     return "(No pro chat conversation yet.)";
   }
-
   const turns = (messages as ChatMessage[])
     .filter(
       (m) =>
@@ -238,11 +344,9 @@ function buildTranscriptBlock(messages: unknown): string {
         typeof m.content === "string"
     )
     .slice(-TRANSCRIPT_TURN_CAP);
-
   if (turns.length === 0) {
     return "(No pro chat conversation yet.)";
   }
-
   return turns
     .map((m) => {
       const tag = m.role === "user" ? "LO" : "ProMode";
@@ -252,57 +356,33 @@ function buildTranscriptBlock(messages: unknown): string {
 }
 
 // =============================================================================
-// OpenAI summarization
+// AI — JSON-mode, prose-only output
 // =============================================================================
 
-async function generateSummary(args: {
+async function generateAIBullets(args: {
   scenarioBlock: string;
   matchBlock: string;
   transcriptBlock: string;
-  todayHuman: string;
-}): Promise<string> {
+  matchAvailable: boolean;
+  hasTranscript: boolean;
+}): Promise<AIBullets> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
   const systemPrompt = [
-    "You are a senior mortgage advisor's assistant generating a file-quality summary of a Pro Mode session for the loan file record.",
-    "Output PLAIN TEXT only. No markdown, no asterisks for bold, no emoji.",
-    "Use the EXACT structure provided in the user prompt, with the exact section headers and the exact bullet character (•).",
-    "Be factual, specific, and brief. Never invent details that are not present in the context.",
-    "If a field is unknown, write '—'.",
-    "The 'Key Pro Chat Takeaways' section must contain 3-5 bullets drawn ONLY from the pro chat transcript. If the transcript is empty, write '• No pro mode conversation yet.' as the only bullet in that section.",
-    "The 'Recommended Next Action' section must be ONE concise line.",
+    "You produce ONLY the prose-judgment portion of a Pro Mode mortgage summary.",
+    'Output a single valid JSON object with exactly this shape: { "takeaways": [string, ...], "next_action": string }.',
+    "No prose outside the JSON. No markdown. No code fences.",
+    "takeaways: 3 to 5 short sentences. Each is one factual observation drawn from the pro chat transcript and the scenario/matcher context provided. Never invent details that are not in the context.",
+    'If the pro chat transcript is empty, return takeaways = ["No pro mode conversation yet — observations drawn from scenario and matcher results only."].',
+    "next_action: ONE concise sentence describing what the loan officer should do next. Specific and grounded in the context provided.",
+    "If the matcher has not been run, do not invent matcher results. Frame next_action around running the matcher or completing missing qualification facts.",
+    "Do NOT include any matcher counts, top-recommendation strings, lender names, or program names in takeaways or next_action unless those exact values appear verbatim in the [MATCHER RESULTS] block.",
   ].join(" ");
 
-  const userPrompt = `Today's date: ${args.todayHuman}
-
-Generate a Pro Mode summary using EXACTLY this structure (preserve headers and the • bullet character):
-
-PRO MODE SUMMARY — saved ${args.todayHuman}
-
-Scenario
-• Borrower: ...
-• Loan: ...
-• Property: ...
-• Credit / Income / Reserves: ...
-
-Matcher Outcome
-• N strong, N conditional, N eliminated
-• Top recommendation: ...
-
-Key Pro Chat Takeaways
-• ...
-• ...
-• ...
-
-Recommended Next Action
-• ...
-
-==== CONTEXT ====
-
-[BORROWER SCENARIO]
+  const userPrompt = `[BORROWER SCENARIO]
 ${args.scenarioBlock}
 
 [MATCHER RESULTS]
@@ -310,7 +390,8 @@ ${args.matchBlock}
 
 [PRO CHAT TRANSCRIPT — last ${TRANSCRIPT_TURN_CAP} turns]
 ${args.transcriptBlock}
-`;
+
+Generate the JSON now.`;
 
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -321,6 +402,7 @@ ${args.transcriptBlock}
     body: JSON.stringify({
       model: OPENAI_MODEL,
       temperature: OPENAI_TEMPERATURE,
+      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -336,11 +418,107 @@ ${args.transcriptBlock}
   const data = (await resp.json()) as {
     choices?: { message?: { content?: string } }[];
   };
-  const summary = data.choices?.[0]?.message?.content?.trim();
-  if (!summary) {
+  const raw = data.choices?.[0]?.message?.content?.trim();
+  if (!raw) {
     throw new Error("OpenAI returned no content.");
   }
-  return summary;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("OpenAI returned non-JSON despite json_object format.");
+  }
+
+  const obj = (parsed ?? {}) as { takeaways?: unknown; next_action?: unknown };
+  const takeaways = Array.isArray(obj.takeaways)
+    ? obj.takeaways
+        .map((t) => (typeof t === "string" ? t.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 5)
+    : [];
+  const nextAction =
+    typeof obj.next_action === "string" ? obj.next_action.trim() : "";
+
+  // Defensive fallbacks if AI returns empty
+  const finalTakeaways =
+    takeaways.length > 0
+      ? takeaways
+      : [
+          args.hasTranscript
+            ? "Pro chat session reviewed; see transcript for full context."
+            : "No pro mode conversation yet — observations drawn from scenario and matcher results only.",
+        ];
+
+  const finalNextAction =
+    nextAction ||
+    (args.matchAvailable
+      ? "Review the matcher's top recommendation and confirm the next missing qualification fact with the borrower."
+      : "Run the qualification matcher with the available scenario data to identify viable lender-program paths.");
+
+  return {
+    takeaways: finalTakeaways,
+    nextAction: finalNextAction,
+  };
+}
+
+// =============================================================================
+// Final assembly — pure code, deterministic structure
+// =============================================================================
+
+function assembleFinalSummary(args: {
+  todayHuman: string;
+  scenario: ScenarioFields;
+  match: MatchSummary;
+  bullets: AIBullets;
+}): string {
+  const { todayHuman, scenario: s, match, bullets } = args;
+
+  // Property line — combine occupancy + state + home price gracefully when
+  // any field is missing.
+  const propertyDetails = [s.occupancy, s.state]
+    .filter((x) => x && x !== "—")
+    .join(" in ");
+  const propertyLine = propertyDetails
+    ? `• Property: ${propertyDetails}, ${s.homePrice}`
+    : `• Property: ${s.homePrice}`;
+
+  // Loan line — combine path + amount + LTV + down. Suffixes drop cleanly
+  // when their fields are missing.
+  const ltvSuffix = s.ltv !== "—" ? ` at ${s.ltv} LTV` : "";
+  const downSuffix =
+    s.downPayment !== "—" ? ` with ${s.downPayment} down` : "";
+  const loanPathPrefix = s.path !== "—" ? `${s.path}, ` : "";
+  const loanLine = `• Loan: ${loanPathPrefix}${s.loanAmount}${ltvSuffix}${downSuffix}`;
+
+  // Matcher Outcome lines — pulled from structured MatchSummary, never from AI
+  const matchLines = match.available
+    ? [
+        `• ${match.strongCount} strong, ${match.conditionalCount} conditional, ${match.eliminatedCount} eliminated`,
+        `• Top recommendation: ${match.topRecommendation || "—"}`,
+      ]
+    : ["• Matcher has not been run on this file yet."];
+
+  const takeawayLines = bullets.takeaways.map((t) => `• ${t}`);
+
+  return [
+    `PRO MODE SUMMARY — saved ${todayHuman}`,
+    "",
+    "Scenario",
+    `• Borrower: ${s.borrowerName}`,
+    propertyLine,
+    loanLine,
+    `• Credit / Monthly income / Monthly debt: ${s.credit} / ${s.income} / ${s.debt}`,
+    "",
+    "Matcher Outcome",
+    ...matchLines,
+    "",
+    "Key Pro Chat Takeaways",
+    ...takeawayLines,
+    "",
+    "Recommended Next Action",
+    `• ${bullets.nextAction}`,
+  ].join("\n");
 }
 
 // =============================================================================
@@ -354,7 +532,7 @@ export async function POST(
   const { id: intakeSessionId } = await context.params;
 
   // ---------------------------------------------------------------------------
-  // 1. Auth — same pattern as /api/handoff-session/[id]/persist-match
+  // 1. Auth
   // ---------------------------------------------------------------------------
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE)?.value;
@@ -535,17 +713,20 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     proSession = (data as unknown as ProSessionRow | null) ?? null;
-    // It's OK if no pro chat exists — we summarize what we have. The
-    // transcript block will report "(No pro chat conversation yet.)" and
-    // the AI is instructed to output the corresponding fallback bullet.
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Build context blocks + call OpenAI
+  // 6. Extract structured data + build context blocks
   // ---------------------------------------------------------------------------
-  const scenarioBlock = buildScenarioBlock(intakeRow);
-  const matchBlock = buildMatchBlock(intakeRow);
+  const scenario = getScenarioFields(intakeRow);
+  const { summary: match, raw: matchRaw } = getMatchSummary(intakeRow);
   const transcriptBlock = buildTranscriptBlock(proSession?.messages ?? []);
+  const scenarioBlock = buildScenarioContextBlock(scenario);
+  const matchBlock = buildMatchContextBlock(match, matchRaw);
+
+  const hasTranscript =
+    Array.isArray(proSession?.messages) &&
+    (proSession?.messages as unknown[]).length > 0;
 
   const todayHuman = new Date().toLocaleDateString("en-US", {
     year: "numeric",
@@ -553,13 +734,17 @@ export async function POST(
     day: "numeric",
   });
 
-  let summary: string;
+  // ---------------------------------------------------------------------------
+  // 7. AI generates ONLY takeaways + next_action (JSON mode)
+  // ---------------------------------------------------------------------------
+  let bullets: AIBullets;
   try {
-    summary = await generateSummary({
+    bullets = await generateAIBullets({
       scenarioBlock,
       matchBlock,
       transcriptBlock,
-      todayHuman,
+      matchAvailable: match.available,
+      hasTranscript,
     });
   } catch (e) {
     console.error("[save-to-workflow] OpenAI failed", {
@@ -575,8 +760,17 @@ export async function POST(
   }
 
   // ---------------------------------------------------------------------------
-  // 7. INSERT into workflow_feed
-  //    Fires workflow_feed_touch_activity trigger → bumps last_activity_at
+  // 8. Assemble final summary text deterministically
+  // ---------------------------------------------------------------------------
+  const summary = assembleFinalSummary({
+    todayHuman,
+    scenario,
+    match,
+    bullets,
+  });
+
+  // ---------------------------------------------------------------------------
+  // 9. INSERT into workflow_feed
   // ---------------------------------------------------------------------------
   const author = String(teamUser.full_name ?? "").trim() || "Team User";
 
@@ -611,6 +805,7 @@ export async function POST(
     teamUserId: session.userId,
     feedId: (feedRow as { id: string }).id,
     summaryChars: summary.length,
+    matchAvailable: match.available,
     proSessionUsed: proSession?.id ?? null,
   });
 
