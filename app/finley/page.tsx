@@ -182,6 +182,15 @@ type ChatMessage = {
   content: string;
 };
 
+// Borrower-side transcript turn shape. Roles can include values beyond
+// user/assistant (the borrower flow may persist system or tool turns),
+// so we keep role as a permissive string and filter when rendering.
+type TranscriptTurn = {
+  role: string;
+  content: string;
+  ts?: string | null;
+};
+
 const PROFESSIONAL_LOGIN_PATH = "/team";
 const BORROWER_MODE_PATH = "/borrower";
 const SUMMARY_ROUTE = "/api/chat-summary";
@@ -638,6 +647,27 @@ function FinleyPageInner() {
   const [handoffBorrowerName, setHandoffBorrowerName] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
+  // Step 4 (Drop 2) — Pro Mode tabbed right column state.
+  //
+  // proSessionId / proMessages / borrowerTranscript come from the same
+  // hydrate call that pre-fills the form (already shipped in Drop 1).
+  // activeRightTab toggles the right-column conversation area between the
+  // LO's private chat with Finley about this file and the verbatim borrower
+  // transcript. proInput / proSending / proError manage the live send loop.
+  // None of this state is touched when ?session= is absent — direct visits
+  // to /finley render the existing UX unchanged.
+  // ---------------------------------------------------------------------------
+  const [proSessionId, setProSessionId] = useState<string | null>(null);
+  const [proMessages, setProMessages] = useState<ChatMessage[]>([]);
+  const [borrowerTranscript, setBorrowerTranscript] = useState<TranscriptTurn[]>([]);
+  const [activeRightTab, setActiveRightTab] = useState<
+    "pro_chat" | "borrower_transcript"
+  >("pro_chat");
+  const [proInput, setProInput] = useState("");
+  const [proSending, setProSending] = useState(false);
+  const [proError, setProError] = useState("");
+
+  // ---------------------------------------------------------------------------
   // Auth — verify cookie session via /api/team-auth/me, then guard by role.
   // Real Estate Agents are explicitly excluded from the Professional Thinking
   // Layer; they should not see lender or program matching.
@@ -727,6 +757,11 @@ function FinleyPageInner() {
               estimatedLoanAmount?: string | null;
             };
           };
+          transcript?: TranscriptTurn[] | null;
+          proSession?: {
+            id?: string;
+            messages?: ChatMessage[] | null;
+          };
         };
 
         if (cancelled) return;
@@ -769,6 +804,19 @@ function FinleyPageInner() {
         }));
 
         setHandoffBorrowerName(sess.borrowerName ?? null);
+
+        // Drop 2: capture pro session id, prior pro messages, and the
+        // verbatim borrower transcript so the right-column tabs render
+        // immediately on mount instead of waiting for first interaction.
+        // Drop 1 already returns these fields — we just stopped discarding
+        // them.
+        const proSess = data.proSession ?? {};
+        setProSessionId(proSess.id ?? null);
+        setProMessages(Array.isArray(proSess.messages) ? proSess.messages : []);
+        setBorrowerTranscript(
+          Array.isArray(data.transcript) ? data.transcript : []
+        );
+
         setHandoffHydrated(true);
       } catch (err) {
         console.error("[finley] hydrate from handoff failed", err);
@@ -951,6 +999,65 @@ function FinleyPageInner() {
     ]);
 
     setChatInput("");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 4 (Drop 2) — Pro Mode chat send handler.
+  //
+  // Appends the LO's message optimistically, POSTs to the dedicated
+  // /api/handoff-chat/<proSessionId> endpoint (which also persists both
+  // turns server-side), then appends the assistant reply on success.
+  // On failure, the user turn stays visible and an error bubble is appended
+  // so the LO doesn't lose context. Cmd/Ctrl+Enter in the textarea also fires
+  // this — useful for fast back-and-forth while reviewing the file.
+  //
+  // Request body shape: { message: string }. If /api/handoff-chat expects a
+  // different field name, that's the only line to patch.
+  // ---------------------------------------------------------------------------
+  async function sendToProChat() {
+    const trimmed = proInput.trim();
+    if (!trimmed || !proSessionId || proSending) return;
+
+    setProSending(true);
+    setProError("");
+
+    setProMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    setProInput("");
+
+    try {
+      const res = await fetch(
+        `/api/handoff-chat/${encodeURIComponent(proSessionId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: trimmed }),
+        }
+      );
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Pro chat request failed.");
+      }
+
+      setProMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply || "" },
+      ]);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unexpected error sending message.";
+      setProError(message);
+      setProMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `(Could not get a reply from Finley right now. ${message})`,
+        },
+      ]);
+    } finally {
+      setProSending(false);
+    }
   }
 
   async function emailMySummary() {
@@ -1489,6 +1596,42 @@ function FinleyPageInner() {
           </div>
         )}
 
+        {handoffHydrated && handoffBorrowerName ? (
+          <section
+            style={{
+              background: "linear-gradient(90deg, #5CB2D8 0%, #1EA6E0 100%)",
+              borderRadius: 18,
+              padding: "14px 18px",
+              color: "#ffffff",
+              marginBottom: 18,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              lineHeight: 1.5,
+            }}
+          >
+            <span
+              style={{
+                fontWeight: 700,
+                fontSize: 12,
+                letterSpacing: 0.6,
+                background: "rgba(255,255,255,0.22)",
+                borderRadius: 999,
+                padding: "4px 10px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              PRO MODE
+            </span>
+            <span style={{ fontSize: 15, flex: 1, minWidth: 0 }}>
+              You are reviewing <strong>{handoffBorrowerName}</strong>&apos;s
+              borrower file. Pre-filled scenario is on the left. The borrower
+              transcript and your private chat with Finley are on the right.
+            </span>
+          </section>
+        ) : null}
+
         <div
           style={{
             display: "grid",
@@ -1912,68 +2055,369 @@ function FinleyPageInner() {
               </div>
             )}
 
-            {chatMessages.length > 0 && (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                  marginBottom: 18,
-                }}
-              >
-                {chatMessages.map((msg, index) => (
+            {handoffHydrated ? (
+              <>
+                {/* Drop 2: Tab strip — Pro Chat (private LO↔Finley about this
+                    file) vs Borrower Transcript (read-only, verbatim). Shown
+                    only in handoff mode; direct visits to /finley render the
+                    legacy chatMessages flow below. */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 0,
+                    borderBottom: "2px solid #e7eef8",
+                    marginBottom: 16,
+                  }}
+                >
+                  {(
+                    [
+                      { key: "pro_chat", label: "Pro Chat" },
+                      {
+                        key: "borrower_transcript",
+                        label: "Borrower Transcript",
+                      },
+                    ] as const
+                  ).map((tab) => {
+                    const active = activeRightTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setActiveRightTab(tab.key)}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          borderBottom: active
+                            ? "3px solid #0096C7"
+                            : "3px solid transparent",
+                          padding: "10px 16px",
+                          marginBottom: -2,
+                          fontWeight: 700,
+                          fontSize: 15,
+                          color: active ? "#0096C7" : "#4b5d7a",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {tab.label}
+                        {tab.key === "borrower_transcript" &&
+                          borrowerTranscript.length > 0 && (
+                            <span
+                              style={{
+                                marginLeft: 8,
+                                background: active ? "#e6f7fc" : "#eef4fb",
+                                color: active ? "#0096C7" : "#4b5d7a",
+                                borderRadius: 999,
+                                padding: "2px 8px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {borrowerTranscript.length}
+                            </span>
+                          )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {activeRightTab === "pro_chat" ? (
+                  <>
+                    {proMessages.length === 0 ? (
+                      <div
+                        style={{
+                          background: "#f8fbff",
+                          border: "1px dashed #c7d7eb",
+                          borderRadius: 18,
+                          padding: 18,
+                          color: "#4b5d7a",
+                          lineHeight: 1.6,
+                          marginBottom: 16,
+                        }}
+                      >
+                        Ask Finley anything about this borrower&apos;s scenario —
+                        program fit, missing items, structuring options, lender
+                        overlays. This conversation is private to you and is
+                        never shown to the borrower.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                          marginBottom: 18,
+                          maxHeight: 480,
+                          overflowY: "auto",
+                          paddingRight: 4,
+                        }}
+                      >
+                        {proMessages.map((msg, index) => (
+                          <div
+                            key={`pro-${index}`}
+                            style={{
+                              alignSelf:
+                                msg.role === "user" ? "flex-end" : "stretch",
+                              background:
+                                msg.role === "user" ? "#263366" : "#f8fbff",
+                              color:
+                                msg.role === "user" ? "#ffffff" : "#263366",
+                              border:
+                                msg.role === "user"
+                                  ? "none"
+                                  : "1px solid #cfe0f6",
+                              borderRadius: 18,
+                              padding: "14px 16px",
+                              maxWidth: msg.role === "user" ? "85%" : "100%",
+                              lineHeight: 1.6,
+                              whiteSpace: "pre-wrap",
+                            }}
+                          >
+                            {msg.content}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {proError && (
+                      <div
+                        style={{
+                          background: "#fdecec",
+                          border: "1px solid #f5a4a4",
+                          color: "#b42318",
+                          borderRadius: 14,
+                          padding: "10px 14px",
+                          marginBottom: 12,
+                          fontSize: 14,
+                        }}
+                      >
+                        {proError}
+                      </div>
+                    )}
+
+                    <textarea
+                      value={proInput}
+                      onChange={(e) => setProInput(e.target.value)}
+                      placeholder={
+                        proSending
+                          ? "Sending..."
+                          : "Ask Finley about this file..."
+                      }
+                      disabled={proSending}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          void sendToProChat();
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        minHeight: 110,
+                        resize: "vertical",
+                        borderRadius: 16,
+                        border: "1px solid #c7d7eb",
+                        padding: 16,
+                        fontSize: 16,
+                        outline: "none",
+                        marginBottom: 16,
+                        color: "#263366",
+                        background: proSending ? "#f3f6fb" : "#ffffff",
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={sendToProChat}
+                      disabled={
+                        proSending || !proInput.trim() || !proSessionId
+                      }
+                      style={{
+                        background: "#0096C7",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: 16,
+                        padding: "14px 20px",
+                        fontWeight: 700,
+                        cursor:
+                          proSending || !proInput.trim() || !proSessionId
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity:
+                          proSending || !proInput.trim() || !proSessionId
+                            ? 0.6
+                            : 1,
+                      }}
+                    >
+                      {proSending ? "Sending..." : "Send to Finley"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {borrowerTranscript.length === 0 ? (
+                      <div
+                        style={{
+                          background: "#f8fbff",
+                          border: "1px dashed #c7d7eb",
+                          borderRadius: 18,
+                          padding: 18,
+                          color: "#4b5d7a",
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        No borrower transcript was captured for this intake
+                        session.
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "#4b5d7a",
+                            marginBottom: 12,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Verbatim conversation between{" "}
+                          {handoffBorrowerName || "the borrower"} and Finley
+                          Beyond. Read-only.
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                            maxHeight: 600,
+                            overflowY: "auto",
+                            paddingRight: 4,
+                            background: "#fbfcfe",
+                            border: "1px solid #e7eef8",
+                            borderRadius: 18,
+                            padding: 16,
+                          }}
+                        >
+                          {borrowerTranscript
+                            .filter(
+                              (t) =>
+                                t.role === "user" || t.role === "assistant"
+                            )
+                            .map((turn, index) => (
+                              <div
+                                key={`bt-${index}`}
+                                style={{
+                                  alignSelf:
+                                    turn.role === "user"
+                                      ? "flex-end"
+                                      : "stretch",
+                                  background:
+                                    turn.role === "user"
+                                      ? "#eef4fb"
+                                      : "#ffffff",
+                                  color: "#263366",
+                                  border:
+                                    turn.role === "user"
+                                      ? "1px solid #c7d7eb"
+                                      : "1px solid #e7eef8",
+                                  borderRadius: 16,
+                                  padding: "12px 14px",
+                                  maxWidth:
+                                    turn.role === "user" ? "85%" : "100%",
+                                  lineHeight: 1.6,
+                                  whiteSpace: "pre-wrap",
+                                  fontSize: 14,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: 0.4,
+                                    color:
+                                      turn.role === "user"
+                                        ? "#4b5d7a"
+                                        : "#0096C7",
+                                    marginBottom: 4,
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  {turn.role === "user"
+                                    ? handoffBorrowerName || "Borrower"
+                                    : "Finley"}
+                                </div>
+                                {turn.content}
+                              </div>
+                            ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {chatMessages.length > 0 && (
                   <div
-                    key={index}
                     style={{
-                      alignSelf: msg.role === "user" ? "flex-end" : "stretch",
-                      background: msg.role === "user" ? "#263366" : "#f8fbff",
-                      color: msg.role === "user" ? "#ffffff" : "#263366",
-                      border: msg.role === "user" ? "none" : "1px solid #cfe0f6",
-                      borderRadius: 18,
-                      padding: "14px 16px",
-                      maxWidth: msg.role === "user" ? "85%" : "100%",
-                      lineHeight: 1.6,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                      marginBottom: 18,
                     }}
                   >
-                    {msg.content}
+                    {chatMessages.map((msg, index) => (
+                      <div
+                        key={index}
+                        style={{
+                          alignSelf: msg.role === "user" ? "flex-end" : "stretch",
+                          background: msg.role === "user" ? "#263366" : "#f8fbff",
+                          color: msg.role === "user" ? "#ffffff" : "#263366",
+                          border: msg.role === "user" ? "none" : "1px solid #cfe0f6",
+                          borderRadius: 18,
+                          padding: "14px 16px",
+                          maxWidth: msg.role === "user" ? "85%" : "100%",
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {msg.content}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Continue the qualification conversation here..."
+                  style={{
+                    width: "100%",
+                    minHeight: 110,
+                    resize: "vertical",
+                    borderRadius: 16,
+                    border: "1px solid #c7d7eb",
+                    padding: 16,
+                    fontSize: 16,
+                    outline: "none",
+                    marginBottom: 16,
+                    color: "#263366",
+                  }}
+                />
+
+                <button
+                  type="button"
+                  onClick={sendToFinley}
+                  style={{
+                    background: "#0096C7",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 16,
+                    padding: "14px 20px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Send to Finley
+                </button>
+              </>
             )}
-
-            <textarea
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Continue the qualification conversation here..."
-              style={{
-                width: "100%",
-                minHeight: 110,
-                resize: "vertical",
-                borderRadius: 16,
-                border: "1px solid #c7d7eb",
-                padding: 16,
-                fontSize: 16,
-                outline: "none",
-                marginBottom: 16,
-                color: "#263366",
-              }}
-            />
-
-            <button
-              type="button"
-              onClick={sendToFinley}
-              style={{
-                background: "#0096C7",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: 16,
-                padding: "14px 20px",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Send to Finley
-            </button>
 
             <div style={{ marginTop: 24, color: "#4b5d7a", lineHeight: 1.7 }}>
               <div>
