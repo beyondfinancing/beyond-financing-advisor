@@ -34,6 +34,26 @@ function normalizeStateArray(value: unknown): string[] {
   );
 }
 
+const ALLOWED_AUS_METHODS = new Set(["du", "lpa", "manual"]);
+
+// Phase 7.1b — AUS Methods Filtering on create.
+//
+// Same semantics as the helper in app/api/admin/lenders/[id]/route.ts.
+// Accepts a payload like ["du","lpa","manual"] (case-insensitive), returns
+// a deduped, lowercased subset filtered to allowed values. Invalid values
+// are dropped silently. Empty array is returned as-is.
+function normalizeAusMethods(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item ?? "").trim().toLowerCase())
+        .filter((item) => ALLOWED_AUS_METHODS.has(item))
+    )
+  ).sort();
+}
+
 function normalizeNotes(value: unknown): string {
   return String(value ?? "").trim();
 }
@@ -202,7 +222,16 @@ export async function POST(request: NextRequest) {
     new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
   );
 
-  const insertPayload = {
+  // Phase 7.1b — AUS Methods on create.
+  //
+  // If the body explicitly includes an `ausMethods` field, we honor what
+  // the caller sent (after normalization, including an explicit empty
+  // array meaning "accepts no AUS methods"). If the field is absent from
+  // the request entirely (e.g., legacy callers built before this column
+  // existed), we OMIT aus_methods from the insert so the DB default
+  // ['du','lpa'] kicks in. The new LendersClient form always sends an
+  // explicit array, so the omit branch is purely defensive.
+  const baseInsert: Record<string, unknown> = {
     name,
     channel: channels,
     states: combinedStates,
@@ -210,6 +239,11 @@ export async function POST(request: NextRequest) {
     product_assignments: productAssignments,
     custom_product_types: customProductTypes,
   };
+
+  const insertPayload =
+    body?.ausMethods !== undefined
+      ? { ...baseInsert, aus_methods: normalizeAusMethods(body.ausMethods) }
+      : baseInsert;
 
   const { data: insertedLender, error: lenderInsertError } = await supabaseAdmin
     .from("lenders")
