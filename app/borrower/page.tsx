@@ -924,6 +924,8 @@ Respond in ${
       estimatedCreditScore: intakeForm.credit,
       monthlyIncome: intakeForm.income,
       monthlyDebt: intakeForm.debt,
+      // Step 2 of Pro Handoff: lets chat-summary issue/reuse the magic link.
+      intakeSessionId,
     },
     selectedOfficer: activeOfficer,
     selectedRealtor:
@@ -968,6 +970,8 @@ Respond in ${
           ? `${Math.round(estimatedLtv * 100)}%`
           : "",
     },
+    // Step 2 of Pro Handoff: lets borrower-intake issue the magic link.
+    intakeSessionId,
   });
 
   const confirmOfficerSelection = () => {
