@@ -115,6 +115,10 @@ type FeedItem = {
   role: string;
   text: string;
   created_at: string;
+  // Step 6 Phase 6.0 — discriminator for distinct rendering of Pro Mode
+  // summaries written by /api/handoff-session/[id]/save-to-workflow.
+  // null/undefined = regular internal update (existing rows).
+  update_type?: string | null;
 };
 
 type WorkflowRouteRole =
@@ -395,6 +399,13 @@ export default function WorkflowFileDetailPage() {
 
   const [file, setFile] = useState<WorkflowFile | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  // Step 6 Phase 6.3 — set of feed item IDs the user has manually collapsed.
+  // Pro Mode summaries default to expanded; clicking "Show less" on a long
+  // one adds it to this set, "Show more" removes it. Plain feed items are
+  // never affected by this state.
+  const [collapsedProSummaries, setCollapsedProSummaries] = useState<
+    Set<string>
+  >(new Set());
   const [loading, setLoading] = useState(true);
 
   const [loanNumber, setLoanNumber] = useState("");
@@ -1020,17 +1031,77 @@ export default function WorkflowFileDetailPage() {
                     No internal updates yet for this file.
                   </div>
                 ) : (
-                  feed.map((item) => (
-                    <div key={item.id} style={styles.feedCard}>
-                      <div style={styles.feedHeader}>
-                        <div style={styles.feedAuthor}>{item.author}</div>
-                        <div style={styles.feedMeta}>
-                          {item.role} · {formatFeedTime(item.created_at)}
+                  feed.map((item) => {
+                    // Step 6 Phase 6.3 — distinct rendering for Pro Mode
+                    // summaries (workflow_feed.update_type='pro_mode_summary').
+                    // Plain feed items keep their original treatment.
+                    const isProSummary =
+                      item.update_type === "pro_mode_summary";
+
+                    if (!isProSummary) {
+                      return (
+                        <div key={item.id} style={styles.feedCard}>
+                          <div style={styles.feedHeader}>
+                            <div style={styles.feedAuthor}>{item.author}</div>
+                            <div style={styles.feedMeta}>
+                              {item.role} · {formatFeedTime(item.created_at)}
+                            </div>
+                          </div>
+                          <div style={styles.feedText}>{item.text}</div>
                         </div>
+                      );
+                    }
+
+                    // Pro Mode summary branch — light-tint card, accent
+                    // border-left, "PRO MODE SUMMARY" badge, pre-wrap body
+                    // (preserves the AI's bullet structure), inline
+                    // chronological placement (per locked decision A).
+                    const isLong = item.text.length > 800;
+                    const isCollapsed = collapsedProSummaries.has(item.id);
+                    const displayedText =
+                      isLong && isCollapsed
+                        ? item.text.slice(0, 320).trimEnd() + "…"
+                        : item.text;
+
+                    return (
+                      <div
+                        key={item.id}
+                        style={styles.feedCardProSummary}
+                      >
+                        <div style={styles.proSummaryBadge}>
+                          PRO MODE SUMMARY
+                        </div>
+                        <div style={styles.feedHeader}>
+                          <div style={styles.feedAuthor}>{item.author}</div>
+                          <div style={styles.feedMeta}>
+                            {item.role} · {formatFeedTime(item.created_at)}
+                          </div>
+                        </div>
+                        <div style={styles.feedTextProSummary}>
+                          {displayedText}
+                        </div>
+                        {isLong && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCollapsedProSummaries((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(item.id)) {
+                                  next.delete(item.id);
+                                } else {
+                                  next.add(item.id);
+                                }
+                                return next;
+                              });
+                            }}
+                            style={styles.proSummaryToggleButton}
+                          >
+                            {isCollapsed ? "Show full summary" : "Show less"}
+                          </button>
+                        )}
                       </div>
-                      <div style={styles.feedText}>{item.text}</div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -1579,6 +1650,50 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#526581",
     fontSize: 15,
     lineHeight: 1.7,
+  },
+  // ---------------------------------------------------------------------------
+  // Step 6 Phase 6.3 — Pro Mode summary visual treatment.
+  // Light tint background + 4px left accent border (#1EA6E0) + small-caps
+  // badge in brand navy (#243F7C). Body preserves whitespace so the AI's
+  // bullet (•) structure renders as authored.
+  // ---------------------------------------------------------------------------
+  feedCardProSummary: {
+    borderRadius: 20,
+    border: "1px solid #BEE2F4",
+    borderLeft: "4px solid #1EA6E0",
+    backgroundColor: "#f8fbff",
+    padding: 16,
+  },
+  proSummaryBadge: {
+    display: "inline-block",
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    color: "#243F7C",
+    backgroundColor: "#E6F4FB",
+    padding: "4px 10px",
+    borderRadius: 999,
+    marginBottom: 12,
+  },
+  feedTextProSummary: {
+    color: "#2D3B78",
+    fontSize: 14.5,
+    lineHeight: 1.7,
+    whiteSpace: "pre-wrap",
+    fontFamily:
+      "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  },
+  proSummaryToggleButton: {
+    marginTop: 12,
+    background: "transparent",
+    border: "1px solid #BEE2F4",
+    color: "#0096C7",
+    borderRadius: 12,
+    padding: "8px 14px",
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+    fontFamily: "inherit",
   },
   deleteButton: {
     width: "100%",
