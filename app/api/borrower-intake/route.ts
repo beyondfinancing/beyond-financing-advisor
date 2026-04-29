@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getOrCreateHandoffToken, buildHandoffLink, isUuid } from '@/lib/handoff';
 
 type RealtorPayload = {
   hasRealtor?: boolean;
@@ -38,6 +39,11 @@ type IntakePayload = {
     estimatedLoanAmount?: string;
     estimatedLtv?: string;
   };
+  // The id of the borrower_intake_sessions row already created by /api/chat
+  // during this borrower flow. Required to issue a handoff token. If absent
+  // (e.g. /api/chat persistence hiccupped), we still send the email but
+  // without the magic link.
+  intakeSessionId?: string;
 };
 
 type ResolvedOfficerRow = {
@@ -100,6 +106,7 @@ function buildLoanOfficerEmail(args: {
   preferredLanguage: string;
   realtor?: RealtorPayload;
   scenario?: IntakePayload['scenario'];
+  handoffLink?: string;
 }) {
   const r = args.realtor;
   const realtorBlock = r?.hasRealtor
@@ -130,6 +137,30 @@ function buildLoanOfficerEmail(args: {
     `
       : '';
 
+  // Professional handoff link. Only renders if a token was successfully
+  // generated upstream. Brand styling: navy heading, deep accent on button.
+  const handoffBlock = args.handoffLink
+    ? `
+      <div style="background:#F0F9FF;border:1px solid #0096C7;border-radius:12px;padding:18px;margin-top:16px;">
+        <h3 style="margin:0 0 8px 0;color:#243F7C;font-size:16px;">Open this conversation in Professional Mode</h3>
+        <p style="margin:0 0 14px 0;line-height:1.6;color:#243F7C;font-size:14px;">
+          Pro Mode loads the borrower's full transcript and intake in /finley
+          with Finley's program suggestions ready. The link works for you,
+          your assistant, and your Branch Manager. Expires in 14 days.
+        </p>
+        <p style="margin:0;">
+          <a href="${escapeHtml(args.handoffLink)}"
+             style="display:inline-block;background:#0096C7;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:14px;">
+            Open in Professional Mode →
+          </a>
+        </p>
+        <p style="margin:12px 0 0 0;font-size:12px;color:#475569;word-break:break-all;">
+          ${escapeHtml(args.handoffLink)}
+        </p>
+      </div>
+    `
+    : '';
+
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:720px;margin:0 auto;padding:20px;">
       <h1 style="margin:0 0 12px 0;color:#263366;font-size:22px;">New Borrower Intake</h1>
@@ -149,6 +180,7 @@ function buildLoanOfficerEmail(args: {
 
       ${realtorBlock}
       ${scenarioBlock}
+      ${handoffBlock}
 
       <p style="margin-top:16px;line-height:1.6;font-size:13px;color:#475569;">
         Beyond Intelligence™ — Routed to ${escapeHtml(args.officerName)}.
@@ -286,6 +318,17 @@ export async function POST(req: Request) {
     const officerPhone = officer?.mobile ?? officer?.phone ?? '';
     const officerAssistant = officer?.assistant_email ?? null;
 
+    // Issue or reuse a Professional Handoff token for this intake session.
+    // Best-effort — null result means email goes out without the magic link
+    // (e.g. session row not yet persisted, or DB hiccup).
+    const intakeSessionId = body.intakeSessionId?.trim() || '';
+    const handoffTokenId = isUuid(intakeSessionId)
+      ? await getOrCreateHandoffToken(supabase, intakeSessionId)
+      : null;
+    const handoffLink = handoffTokenId
+      ? buildHandoffLink(handoffTokenId)
+      : undefined;
+
     const notificationStatus = {
       loan_officer: 'pending' as 'pending' | 'sent' | 'error',
       realtor: 'skipped' as 'pending' | 'sent' | 'error' | 'skipped',
@@ -307,6 +350,7 @@ export async function POST(req: Request) {
         preferredLanguage,
         realtor,
         scenario: body.scenario,
+        handoffLink,
       }),
     });
     if (loEmailRes.ok) {
@@ -365,6 +409,8 @@ export async function POST(req: Request) {
         officer_nmls: officerNmls,
         notifications: notificationStatus,
         scenario: body.scenario ?? null,
+        intake_session_id: intakeSessionId || null,
+        handoff_token_id: handoffTokenId,
       },
     });
 
