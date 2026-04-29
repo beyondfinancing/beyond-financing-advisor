@@ -731,6 +731,40 @@ async function callClaude(
 }
 
 // -----------------------------------------------------------------------------
+// Resolve a borrower-picker email to a real team_users.id.
+// -----------------------------------------------------------------------------
+//
+// The borrower picker surfaces officers from a different identity space than
+// the team_users table where our FK points (legacy: users / employees / etc).
+// So we cannot trust the id the client hands us — instead we resolve by email,
+// which IS unique on team_users. If no match, return null and let the caller
+// store loan_officer_id as null. The full picker payload still survives on
+// extracted_payload.selectedOfficer for downstream reference.
+//
+// Best-effort: any DB hiccup returns null. Persistence path is non-blocking.
+//
+async function resolveTeamUserIdByEmail(
+  email: string | null | undefined
+): Promise<string | null> {
+  const e = safeString(email).toLowerCase();
+  if (!e) return null;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("team_users")
+      .select("id")
+      .eq("email", e)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return (data as { id: string }).id;
+  } catch {
+    return null;
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Persistence — write the borrower conversation to borrower_intake_sessions.
 // -----------------------------------------------------------------------------
 //
@@ -752,29 +786,6 @@ async function persistConversation(
 ): Promise<string | null> {
   if (stage === "team_command") return null;
   if (!routing) return null;
-
-  // ---------------------------------------------------------------------------
-  // TEMPORARY DIAGNOSTIC — REMOVE AFTER ROOT-CAUSING THE EMPTY-TABLE ISSUE.
-  // Logs env-var presence/shape and runtime stage. Never logs the actual key.
-  // JWTs always start with "eyJ"; anon and service_role JWTs differ in payload,
-  // not prefix, so length is the cheaper signal than first chars (anon ~200,
-  // service_role ~210 ish — they're close but not identical).
-  // ---------------------------------------------------------------------------
-  const srk = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  console.log("[persist-diag] entry", {
-    stage,
-    hasServiceRoleKey: Boolean(srk),
-    serviceRoleKeyLength: srk ? srk.length : 0,
-    serviceRoleKeyPrefix: srk ? srk.slice(0, 6) : "(none)",
-    hasUrl: Boolean(url),
-    urlSuffix: url ? url.slice(-20) : "(none)",
-    hasAnonKey: Boolean(anon),
-    anonKeyLength: anon ? anon.length : 0,
-    serviceRoleEqualsAnon:
-      srk && anon ? srk === anon : false,
-  });
 
   try {
     const sessionId = isUuid(routing.intakeSessionId)
@@ -812,6 +823,18 @@ async function persistConversation(
       return l === "pt" || l === "es" ? l : "en";
     })();
 
+    // Resolve picker ids to real team_users.id values via email lookup.
+    // The picker's officer.id comes from a different identity space and
+    // would violate the FK. We trust the email instead. If no match → null,
+    // and we still persist the row (full picker object survives on
+    // extracted_payload.selectedOfficer).
+    const officerEmail = officer ? safeString(officer.email) : "";
+    const assistantEmail = officer ? safeString(officer.assistantEmail) : "";
+    const [resolvedOfficerId, resolvedAssistantId] = await Promise.all([
+      resolveTeamUserIdByEmail(officerEmail),
+      resolveTeamUserIdByEmail(assistantEmail),
+    ]);
+
     const extractedPayload = {
       borrower,
       scenario: routing.scenario ?? {},
@@ -835,9 +858,8 @@ async function persistConversation(
       realtor_name: realtor ? safeString(realtor.name) || null : null,
       realtor_email: realtor ? safeString(realtor.email) || null : null,
       realtor_phone: realtor ? safeString(realtor.phone) || null : null,
-      loan_officer_id:
-        officer && isUuid(officer.id) ? (officer.id as string) : null,
-      lo_assistant_id: null as string | null,
+      loan_officer_id: resolvedOfficerId,
+      lo_assistant_id: resolvedAssistantId,
       messages: fullMessages,
       extracted_payload: extractedPayload,
     };
@@ -849,17 +871,9 @@ async function persistConversation(
         .eq("id", sessionId);
 
       if (error) {
-        // TEMPORARY DIAGNOSTIC — full error breakdown.
-        console.error("[persist-diag] UPDATE failed", {
-          code: error?.code,
-          message: error?.message,
-          details: error?.details,
-          hint: error?.hint,
-          sessionId,
-        });
+        console.error("persistConversation: UPDATE failed", error);
         return null;
       }
-      console.log("[persist-diag] UPDATE ok", { sessionId });
       return sessionId;
     }
 
@@ -870,26 +884,12 @@ async function persistConversation(
       .single();
 
     if (error || !data) {
-      // TEMPORARY DIAGNOSTIC — full error breakdown.
-      console.error("[persist-diag] INSERT failed", {
-        code: error?.code,
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        rowKeys: Object.keys(baseRow),
-        hasData: Boolean(data),
-      });
+      console.error("persistConversation: INSERT failed", error);
       return null;
     }
-    console.log("[persist-diag] INSERT ok", { id: (data as { id: string }).id });
     return (data as { id: string }).id;
   } catch (err) {
-    // TEMPORARY DIAGNOSTIC — full thrown-error breakdown.
-    console.error("[persist-diag] unexpected error", {
-      name: err instanceof Error ? err.name : typeof err,
-      message: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack?.split("\n").slice(0, 5).join(" | ") : undefined,
-    });
+    console.error("persistConversation: unexpected error", err);
     return null;
   }
 }
