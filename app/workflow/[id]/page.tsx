@@ -33,6 +33,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import SiteHeader from "@/app/components/SiteHeader";
 import TeamLoginCard from "@/app/components/TeamLoginCard";
@@ -374,10 +375,19 @@ function buildChangedFieldsSummary(params: {
 }
 
 export default function WorkflowFileDetailPage() {
+  // Read the dynamic [id] segment via Next.js's official hook. This is
+  // synchronized with the active route on every render — no SSR/hydration
+  // mismatch and no soft-navigation race that can happen when reading
+  // window.location.pathname directly. Defensive Array.isArray branch
+  // covers Next.js's typed return for catch-all/optional routes; for the
+  // /workflow/[id] route specifically, params.id is always a string.
+  const params = useParams();
   const fileId =
-    typeof window !== "undefined"
-      ? window.location.pathname.split("/").filter(Boolean).pop() || ""
-      : "";
+    typeof params?.id === "string"
+      ? params.id
+      : Array.isArray(params?.id)
+        ? params.id[0] ?? ""
+        : "";
 
   const [language, setLanguage] = useState<SiteLanguage>("en");
   const [activeUser, setActiveUser] = useState<TeamUser | null>(null);
