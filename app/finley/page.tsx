@@ -49,7 +49,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type BorrowerStatus =
   | ""
@@ -621,6 +621,19 @@ export default function FinleyPage() {
   const [expandedPrograms, setExpandedPrograms] = useState<Record<string, boolean>>({});
 
   // ---------------------------------------------------------------------------
+  // Step 4 (Drop 1) of Pro Handoff — when /finley is opened with ?session=<uuid>
+  // (typically via the /handoff/[token] receiver), hydrate the qualification
+  // form with whatever the borrower already provided. Drop 1 only pre-fills
+  // the form — Drop 2 adds the borrower transcript panel and pro chat UI on
+  // top. The pro chat session is upserted server-side regardless so it's
+  // ready when Drop 2 lands.
+  // ---------------------------------------------------------------------------
+  const searchParams = useSearchParams();
+  const handoffSessionId = searchParams.get("session");
+  const [handoffHydrated, setHandoffHydrated] = useState(false);
+  const [handoffBorrowerName, setHandoffBorrowerName] = useState<string | null>(null);
+
+  // ---------------------------------------------------------------------------
   // Auth — verify cookie session via /api/team-auth/me, then guard by role.
   // Real Estate Agents are explicitly excluded from the Professional Thinking
   // Layer; they should not see lender or program matching.
@@ -673,6 +686,96 @@ export default function FinleyPage() {
 
     void verifySession();
   }, [router]);
+
+  // ---------------------------------------------------------------------------
+  // Step 4 (Drop 1) — pre-fill the qualification form from a borrower intake
+  // session. Only direct-correspondence fields get mapped (state, transaction
+  // type, loan amount, ltv). All other fields are inferred during the live
+  // borrower conversation rather than explicitly captured, so they stay
+  // blank for the LO to verify and complete.
+  //
+  // Runs once after auth passes and only when ?session= is present. Refuses
+  // to overwrite fields the LO has already started editing if they navigated
+  // to the URL directly with the form already populated.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!handoffSessionId) return;
+    if (handoffHydrated) return;
+
+    let cancelled = false;
+    const hydrate = async () => {
+      try {
+        const res = await fetch(
+          `/api/handoff-session/${encodeURIComponent(handoffSessionId)}`
+        );
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          session?: {
+            borrowerName?: string | null;
+            borrowerState?: string | null;
+          };
+          extractedPayload?: {
+            borrowerPath?: string | null;
+            scenario?: {
+              homePrice?: string | number | null;
+              downPayment?: string | number | null;
+              estimatedLoanAmount?: string | null;
+            };
+          };
+        };
+
+        if (cancelled) return;
+
+        const sess = data.session ?? {};
+        const ext = data.extractedPayload ?? {};
+        const scenario = ext.scenario ?? {};
+
+        // Map borrowerPath → transaction_type. Borrower's "Investment" is
+        // a purchase that's investment-occupancy; treat as purchase here.
+        const tx =
+          ext.borrowerPath === "Refinance"
+            ? "rate_term_refinance"
+            : ext.borrowerPath === "Purchase" ||
+                ext.borrowerPath === "Investment"
+              ? "purchase"
+              : "";
+
+        // Derive numeric loan amount + LTV from scenario when both home
+        // price and down payment are present.
+        const home = Number(scenario.homePrice || 0);
+        const down = Number(scenario.downPayment || 0);
+        const loanAmt =
+          home > 0 && down >= 0 && down <= home
+            ? Math.round(home - down)
+            : Number(scenario.estimatedLoanAmount || 0) || 0;
+        const ltvPct =
+          home > 0 && loanAmt > 0
+            ? Math.min(100, Math.round((loanAmt / home) * 100))
+            : 0;
+
+        setForm((prev) => ({
+          ...prev,
+          subject_state: prev.subject_state || sess.borrowerState || "",
+          transaction_type:
+            prev.transaction_type ||
+            (tx as QualificationInput["transaction_type"]),
+          loan_amount: prev.loan_amount || (loanAmt > 0 ? String(loanAmt) : ""),
+          ltv: prev.ltv || (ltvPct > 0 ? String(ltvPct) : ""),
+        }));
+
+        setHandoffBorrowerName(sess.borrowerName ?? null);
+        setHandoffHydrated(true);
+      } catch (err) {
+        console.error("[finley] hydrate from handoff failed", err);
+      }
+    };
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [authChecked, handoffSessionId, handoffHydrated]);
 
   const hasResults =
     strongMatches.length > 0 ||
@@ -1407,6 +1510,27 @@ export default function FinleyPage() {
               Use this screen to gather decisive qualification facts, eliminate
               ineligible paths, and surface lender and program combinations still in play.
             </p>
+
+            {handoffHydrated && handoffBorrowerName ? (
+              <div
+                style={{
+                  marginTop: 14,
+                  background: "#f0f9ff",
+                  border: "1px solid #0096C7",
+                  borderRadius: 18,
+                  padding: 18,
+                  color: "#243F7C",
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong style={{ color: "#243F7C" }}>
+                  Pre-filled from borrower intake:
+                </strong>{" "}
+                {handoffBorrowerName}&apos;s submitted scenario has been mapped
+                into the form below. Verify the pre-filled fields, complete any
+                missing items, and run the qualification match.
+              </div>
+            ) : null}
 
             <div
               style={{
