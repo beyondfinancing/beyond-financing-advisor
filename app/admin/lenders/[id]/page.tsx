@@ -25,6 +25,7 @@ type LenderRow = {
   does_fha: boolean | null;
   does_va: boolean | null;
   does_usda: boolean | null;
+  aus_methods: unknown;
 };
 
 type LenderStateEligibilityRow = {
@@ -171,7 +172,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
     supabaseAdmin
       .from("lenders")
       .select(
-        "id, name, channel, states, created_at, notes, product_assignments, custom_product_types, does_conventional, does_fha, does_va, does_usda"
+        "id, name, channel, states, created_at, notes, product_assignments, custom_product_types, does_conventional, does_fha, does_va, does_usda, aus_methods"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -255,6 +256,17 @@ export default async function LenderDetailPage({ params }: PageProps) {
   const doesFha = Boolean(lenderRow.does_fha);
   const doesVa = Boolean(lenderRow.does_va);
   const doesUsda = Boolean(lenderRow.does_usda);
+
+  // Phase 7.1a — AUS Methods. Defaults to ['du','lpa'] for any lender row
+  // that somehow has a null/missing aus_methods column (shouldn't happen
+  // since the column is NOT NULL with default, but defensive).
+  const ausMethodsRaw = normalizeStringArray(lenderRow.aus_methods).map((m) =>
+    m.toLowerCase()
+  );
+  const ausMethods =
+    ausMethodsRaw.length > 0
+      ? ausMethodsRaw.filter((m) => m === "du" || m === "lpa" || m === "manual")
+      : ["du", "lpa"];
 
   return (
     <main
@@ -379,6 +391,7 @@ export default async function LenderDetailPage({ params }: PageProps) {
                 initialDoesFha={doesFha}
                 initialDoesVa={doesVa}
                 initialDoesUsda={doesUsda}
+                initialAusMethods={ausMethods}
               />
             </div>
 
