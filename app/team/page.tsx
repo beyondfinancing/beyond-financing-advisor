@@ -269,7 +269,35 @@ export default function TeamPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMessage, setForgotMessage] = useState("");
 
+  // Step 3 of Pro Handoff: read ?next= from the URL when the team page is
+  // entered as an auth gate (e.g. an LO clicked /handoff/<token> while
+  // signed out). After successful login (or if already logged in) we
+  // bounce them to the deep-link instead of the dashboard.
+  // SAFETY: only honor same-origin paths. Reject anything that doesn't
+  // start with "/" or that starts with "//" (protocol-relative URLs are
+  // a classic open-redirect vector). Defense in depth — even though our
+  // own emails build the link from server-known UUIDs, we still validate.
+  const [nextPath, setNextPath] = useState<string | null>(null);
+
   const t = COPY[language];
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("next");
+    if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
+      setNextPath(raw);
+    }
+  }, []);
+
+  // Whenever an authenticated user is present AND a valid next path is
+  // pending, redirect. Fires both on initial-load auth check (already
+  // logged in) and on post-login activeUser update.
+  useEffect(() => {
+    if (activeUser && nextPath) {
+      window.location.replace(nextPath);
+    }
+  }, [activeUser, nextPath]);
 
   useEffect(() => {
     const loadUser = async () => {
