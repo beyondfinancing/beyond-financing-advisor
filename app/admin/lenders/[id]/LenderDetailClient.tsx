@@ -43,6 +43,7 @@ type Props = {
   initialDoesFha?: boolean;
   initialDoesVa?: boolean;
   initialDoesUsda?: boolean;
+  initialAusMethods?: string[];
 };
 
 const CHANNEL_OPTIONS = ["Retail", "Wholesale", "Correspondent"];
@@ -131,6 +132,7 @@ export default function LenderDetailClient({
   initialDoesFha = false,
   initialDoesVa = false,
   initialDoesUsda = false,
+  initialAusMethods,
 }: Props) {
   const [name, setName] = useState(initialName);
   const [channels, setChannels] = useState<string[]>(
@@ -155,6 +157,32 @@ export default function LenderDetailClient({
   const [doesFha, setDoesFha] = useState<boolean>(initialDoesFha);
   const [doesVa, setDoesVa] = useState<boolean>(initialDoesVa);
   const [doesUsda, setDoesUsda] = useState<boolean>(initialDoesUsda);
+
+  // Phase 7.1a — AUS Methods. Source of truth is the lenders.aus_methods
+  // text[] column. Pre-populate with what the row already has; if the
+  // server gave us an empty array we fall back to the sensible default
+  // ['du','lpa'] so the form doesn't silently render as "lender accepts
+  // nothing" on first load.
+  const initialAusFromServer = Array.isArray(initialAusMethods)
+    ? initialAusMethods
+        .map((m) => String(m ?? "").trim().toLowerCase())
+        .filter((m) => m === "du" || m === "lpa" || m === "manual")
+    : [];
+  const [ausMethods, setAusMethods] = useState<string[]>(
+    initialAusFromServer.length > 0 ? initialAusFromServer : ["du", "lpa"]
+  );
+
+  function toggleAusMethod(method: "du" | "lpa" | "manual", checked: boolean) {
+    setAusMethods((prev) => {
+      const set = new Set(prev);
+      if (checked) {
+        set.add(method);
+      } else {
+        set.delete(method);
+      }
+      return Array.from(set).sort();
+    });
+  }
 
   const [exclusiveProducts, setExclusiveProducts] = useState<ExclusiveProductInput[]>(
     (initialCustomProductTypes || []).map((item) => ({
@@ -403,6 +431,7 @@ export default function LenderDetailClient({
         doesFha,
         doesVa,
         doesUsda,
+        ausMethods,
       };
 
       const response = await fetch(`/api/admin/lenders/${lenderId}`, {
@@ -626,6 +655,65 @@ export default function LenderDetailClient({
             onChange={(e) => setDoesUsda(e.target.checked)}
           />
           <span style={{ fontWeight: 800, color: "#263366" }}>Does USDA</span>
+        </label>
+      </div>
+
+      {/* Phase 7.1a — AUS Methods Accepted.
+          Lender-side filter for which underwriting paths this wholesale
+          lender funds. Most modern wholesale lenders are AUS-only (DU + LPA)
+          and reject Manual Underwriting. The matcher (Phase 7.5) reads this
+          column to exclude (lender × program) pairings where the program
+          requires an AUS method this lender does not accept. */}
+      <div
+        style={{
+          border: "1px solid #D9E1EC",
+          borderRadius: 22,
+          padding: 18,
+          display: "grid",
+          gap: 14,
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 16, color: "#263366" }}>
+          AUS Methods Accepted
+        </h3>
+        <div style={helperStyle}>
+          Check every underwriting method this wholesale lender will fund.
+          Most wholesale lenders accept DU and LPA but do not accept Manual
+          Underwriting. Programs requiring an AUS method this lender does not
+          accept will be filtered out of the matcher results for this lender.
+        </div>
+
+        <label style={productRowStyle}>
+          <input
+            type="checkbox"
+            checked={ausMethods.includes("du")}
+            onChange={(e) => toggleAusMethod("du", e.target.checked)}
+          />
+          <span style={{ fontWeight: 800, color: "#263366" }}>
+            DU — Fannie Mae Desktop Underwriter
+          </span>
+        </label>
+
+        <label style={productRowStyle}>
+          <input
+            type="checkbox"
+            checked={ausMethods.includes("lpa")}
+            onChange={(e) => toggleAusMethod("lpa", e.target.checked)}
+          />
+          <span style={{ fontWeight: 800, color: "#263366" }}>
+            LPA — Freddie Mac Loan Product Advisor
+          </span>
+        </label>
+
+        <label style={productRowStyle}>
+          <input
+            type="checkbox"
+            checked={ausMethods.includes("manual")}
+            onChange={(e) => toggleAusMethod("manual", e.target.checked)}
+          />
+          <span style={{ fontWeight: 800, color: "#263366" }}>
+            Manual Underwriting
+          </span>
         </label>
       </div>
 
