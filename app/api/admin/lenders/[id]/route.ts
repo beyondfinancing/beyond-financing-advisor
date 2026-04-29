@@ -35,6 +35,7 @@ type JsonPayload = {
   doesFha?: unknown;
   doesVa?: unknown;
   doesUsda?: unknown;
+  ausMethods?: unknown;
 };
 
 type EligibilityExistingRow = {
@@ -108,6 +109,28 @@ function normalizeStateArray(value: unknown): string[] {
       value
         .map((item) => String(item ?? "").trim().toUpperCase())
         .filter(Boolean)
+    )
+  ).sort();
+}
+
+const ALLOWED_AUS_METHODS = new Set(["du", "lpa", "manual"]);
+
+// Phase 7.1a — AUS Methods Filtering.
+//
+// Accepts a payload like ["du","lpa","manual"] (case-insensitive) and returns
+// a deduped, lowercased subset filtered to the allowed values. Invalid values
+// are dropped silently. Empty array is returned as-is (specialty edge case
+// for lenders that accept no AUS — rare but valid). The DB column has a
+// default of ['du','lpa'] which only kicks in on INSERT when the field is
+// omitted; this helper always returns an explicit array for UPDATE writes.
+function normalizeAusMethods(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item ?? "").trim().toLowerCase())
+        .filter((item) => ALLOWED_AUS_METHODS.has(item))
     )
   ).sort();
 }
@@ -206,6 +229,8 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
     const doesVa = normalizeBoolean(body.doesVa);
     const doesUsda = normalizeBoolean(body.doesUsda);
 
+    const ausMethods = normalizeAusMethods(body.ausMethods);
+
     if (!name) {
       return NextResponse.json(
         { error: "Lender name is required." },
@@ -236,6 +261,7 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
         does_fha: doesFha,
         does_va: doesVa,
         does_usda: doesUsda,
+        aus_methods: ausMethods,
       })
       .eq("id", id);
 
@@ -353,6 +379,7 @@ async function saveLenderDetail(req: Request, context: RouteContext) {
         doesFha,
         doesVa,
         doesUsda,
+        ausMethods,
       },
     });
   } catch (error) {
