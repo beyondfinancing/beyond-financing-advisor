@@ -173,7 +173,9 @@ export async function POST(
     );
   }
 
-  const pro = proRow as ProSessionRow;
+  // TS Gotcha #2: double-cast through unknown when the .select() column
+  // list is even slightly complex enough to confuse Supabase inference.
+  const pro = proRow as unknown as ProSessionRow;
 
   // -------------------------------------------------------------------------
   // 3. Defense in depth: ensure this LO owns this thread.
