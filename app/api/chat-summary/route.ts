@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getOrCreateHandoffToken, buildHandoffLink, isUuid } from '@/lib/handoff';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -25,6 +26,9 @@ type LeadPayload = {
   loanOfficerId?: string;      // new: team_users.id
   loanOfficerQuery?: string;   // new: name or NMLS as typed
   assignedEmail?: string;      // optional override
+  // The borrower_intake_sessions row id from /api/chat. Used to issue/reuse
+  // a Professional Handoff token so the LO email contains the Pro Mode link.
+  intakeSessionId?: string;
 };
 
 type SummaryPayload = {
@@ -343,6 +347,51 @@ ${messages
 
     const transcriptHtml = buildTranscriptHtml(messages);
 
+    // Issue or reuse a Professional Handoff token for this intake session.
+    // Best-effort — null result means email goes out without the magic link.
+    const intakeSessionId = lead.intakeSessionId?.trim() || '';
+    let handoffTokenId: string | null = null;
+    if (
+      isUuid(intakeSessionId) &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    ) {
+      const supabaseForToken = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+      );
+      handoffTokenId = await getOrCreateHandoffToken(
+        supabaseForToken,
+        intakeSessionId,
+      );
+    }
+    const handoffLink = handoffTokenId
+      ? buildHandoffLink(handoffTokenId)
+      : null;
+
+    // Pro Mode link block. Brand: navy heading, deep accent button.
+    const handoffBlock = handoffLink
+      ? `
+        <div style="background:#F0F9FF;border:1px solid #0096C7;border-radius:16px;padding:18px;margin-bottom:18px;">
+          <h2 style="margin:0 0 8px 0;color:#243F7C;font-size:20px;">Open this conversation in Professional Mode</h2>
+          <p style="margin:0 0 14px 0;line-height:1.6;color:#243F7C;font-size:14px;">
+            Pro Mode loads the borrower's full transcript and intake in /finley
+            with Finley's program suggestions ready. The link works for you,
+            your assistant, and your Branch Manager. Expires in 14 days.
+          </p>
+          <p style="margin:0;">
+            <a href="${escapeHtml(handoffLink)}"
+               style="display:inline-block;background:#0096C7;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:14px;">
+              Open in Professional Mode →
+            </a>
+          </p>
+          <p style="margin:12px 0 0 0;font-size:12px;color:#475569;word-break:break-all;">
+            ${escapeHtml(handoffLink)}
+          </p>
+        </div>
+      `
+      : '';
+
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:900px;margin:0 auto;padding:24px;">
         <h1 style="margin:0 0 18px 0;color:#263366;">Conversation Summary - Finley Beyond Advisor</h1>
@@ -359,6 +408,8 @@ ${messages
           <p><strong>Assigned Email:</strong> ${escapeHtml(selectedEmail)}</p>
           <p><strong>Trigger:</strong> ${escapeHtml(trigger)}</p>
         </div>
+
+        ${handoffBlock}
 
         <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
           <h2 style="margin:0 0 12px 0;font-size:20px;">Borrower Summary</h2>
