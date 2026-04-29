@@ -949,6 +949,25 @@ function FinleyPageInner() {
       setNextQuestion(resolvedNextQuestion);
       setSuccessMessage("Match analysis completed successfully.");
 
+      // Step 5 Drop B (Component 2) — persist match results to the borrower
+      // intake row when running in handoff mode. Fire-and-forget; failures
+      // are logged client-side and do not surface to the LO. The matcher's
+      // own response is the source of truth for the UI; this persistence
+      // path only feeds Pro Mode's MATCH RESULTS context block on the
+      // /api/handoff-chat side.
+      if (handoffSessionId) {
+        fetch(
+          `/api/handoff-session/${encodeURIComponent(handoffSessionId)}/persist-match`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          }
+        ).catch((err) => {
+          console.error("[finley] persist-match failed", err);
+        });
+      }
+
       const assistantSummary = buildChatSummary({
         ...data,
         strong_matches: normalizedStrong,
