@@ -48,7 +48,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type BorrowerStatus =
@@ -592,7 +592,11 @@ function buildSummaryPayload(args: {
   };
 }
 
-export default function FinleyPage() {
+// Inner component holds all the page logic. Wrapped in <Suspense> by the
+// default export below — required by Next.js 15+ when using useSearchParams,
+// because that hook opts the subtree out of static prerender and Next needs
+// a fallback boundary to prerender around it.
+function FinleyPageInner() {
   const router = useRouter();
 
   const [authChecked, setAuthChecked] = useState(false);
@@ -2066,6 +2070,19 @@ export default function FinleyPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+// Default export — wraps the inner component in <Suspense>. Next.js 15+
+// requires this when any descendant uses useSearchParams (or other dynamic
+// APIs that depend on URL state), because those bail out of static prerender
+// and need a boundary to fall back through. Fallback is null so the auth
+// gate renders its own empty state during the brief client-side resolve.
+export default function FinleyPage() {
+  return (
+    <Suspense fallback={null}>
+      <FinleyPageInner />
+    </Suspense>
   );
 }
 
