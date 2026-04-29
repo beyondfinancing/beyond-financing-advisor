@@ -108,6 +108,23 @@ export default function LendersClient({ initialLenders }: Props) {
   const [ownerOccupiedStates, setOwnerOccupiedStates] = useState<string[]>([]);
   const [nonOwnerOccupiedStates, setNonOwnerOccupiedStates] = useState<string[]>([]);
 
+  // Phase 7.1b — AUS Methods Accepted (create flow).
+  // Pre-populate with sensible default DU + LPA. Most wholesale lenders
+  // accept these two and reject Manual Underwriting.
+  const [ausMethods, setAusMethods] = useState<string[]>(["du", "lpa"]);
+
+  function toggleAusMethod(method: "du" | "lpa" | "manual", checked: boolean) {
+    setAusMethods((prev) => {
+      const set = new Set(prev);
+      if (checked) {
+        set.add(method);
+      } else {
+        set.delete(method);
+      }
+      return Array.from(set).sort();
+    });
+  }
+
   const [loanProductTypes, setLoanProductTypes] =
     useState<LoanProductType[]>(DEFAULT_PRODUCT_TYPES);
 
@@ -248,6 +265,7 @@ export default function LendersClient({ initialLenders }: Props) {
         customProductTypes: loanProductTypes.filter(
           (item) => !DEFAULT_PRODUCT_TYPES.some((base) => base.id === item.id)
         ),
+        ausMethods,
       };
 
       const response = await fetch("/api/admin/lenders", {
@@ -277,6 +295,7 @@ export default function LendersClient({ initialLenders }: Props) {
       setProductAssignments([]);
       setCustomProductName("");
       setCustomProductCategory("non_qm");
+      setAusMethods(["du", "lpa"]);
       setSuccessMessage("Lender created successfully.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create lender.");
@@ -609,6 +628,98 @@ export default function LendersClient({ initialLenders }: Props) {
                 }}
               >
                 Total unique states selected: <strong>{totalStatesSelected}</strong>
+              </div>
+
+              {/* Phase 7.1b — AUS Methods Accepted (create flow).
+                  Mirrors the same card on the lender detail page. Most
+                  wholesale lenders accept DU and LPA and do not accept
+                  Manual Underwriting. The matcher (Phase 7.5) will use
+                  this column to filter (lender × program) pairings. */}
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: 16,
+                  borderRadius: 18,
+                  border: "1px solid #D9E1EC",
+                  background: "#FFFFFF",
+                }}
+              >
+                <h3
+                  style={{
+                    margin: "0 0 8px",
+                    fontSize: 16,
+                    color: "#263366",
+                  }}
+                >
+                  AUS Methods Accepted
+                </h3>
+                <div
+                  style={{
+                    ...helperTextStyle,
+                    marginTop: 0,
+                    marginBottom: 12,
+                  }}
+                >
+                  Check every underwriting method this wholesale lender
+                  will fund. Most accept DU + LPA but not Manual UW.
+                </div>
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontWeight: 800,
+                    color: "#263366",
+                    cursor: "pointer",
+                    padding: "8px 0",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={ausMethods.includes("du")}
+                    onChange={(e) => toggleAusMethod("du", e.target.checked)}
+                  />
+                  <span>DU — Fannie Mae Desktop Underwriter</span>
+                </label>
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontWeight: 800,
+                    color: "#263366",
+                    cursor: "pointer",
+                    padding: "8px 0",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={ausMethods.includes("lpa")}
+                    onChange={(e) => toggleAusMethod("lpa", e.target.checked)}
+                  />
+                  <span>LPA — Freddie Mac Loan Product Advisor</span>
+                </label>
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontWeight: 800,
+                    color: "#263366",
+                    cursor: "pointer",
+                    padding: "8px 0",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={ausMethods.includes("manual")}
+                    onChange={(e) => toggleAusMethod("manual", e.target.checked)}
+                  />
+                  <span>Manual Underwriting</span>
+                </label>
               </div>
 
               {renderProductSection(
