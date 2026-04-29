@@ -137,7 +137,9 @@ export async function GET(
     );
   }
 
-  const intake = intakeRow as IntakeSessionRow;
+  // TS Gotcha #2 from project notes: multi-line .select() concatenations
+  // confuse Supabase's type inference. Double-cast through unknown.
+  const intake = intakeRow as unknown as IntakeSessionRow;
 
   // -------------------------------------------------------------------------
   // 4. UPSERT pro chat session for (intake_session_id, team_user_id)
@@ -169,7 +171,7 @@ export async function GET(
     .select("id, intake_session_id, team_user_id, language, messages, created_at, updated_at")
     .maybeSingle();
 
-  let proSession = (proRow as ProSessionRow | null) ?? null;
+  let proSession = (proRow as unknown as ProSessionRow | null) ?? null;
 
   // ignoreDuplicates means an existing row returns null. Look it up.
   if (!proSession) {
@@ -192,7 +194,7 @@ export async function GET(
         { status: 500 }
       );
     }
-    proSession = existingRow as ProSessionRow;
+    proSession = existingRow as unknown as ProSessionRow;
   }
 
   // -------------------------------------------------------------------------
