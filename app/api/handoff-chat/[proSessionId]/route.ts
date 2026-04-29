@@ -122,8 +122,29 @@ type CatalogProgram = {
 type CatalogLender = {
   id: string;
   name: string;
-  lender_type: string;
+  lender_type: string | null;
+  does_conventional: boolean | null;
+  does_fha: boolean | null;
+  does_va: boolean | null;
+  does_usda: boolean | null;
   programs: CatalogProgram[];
+};
+
+type AgencyProgram = {
+  id: string;
+  agency: string;
+  product_family: string | null;
+  program_name: string;
+  occupancy: string[] | null;
+  min_credit: number | null;
+  max_ltv: number | null;
+  max_dti: number | null;
+  max_units: number | null;
+};
+
+type Catalog = {
+  lenders: CatalogLender[];
+  agencyPrograms: AgencyProgram[];
 };
 
 type ContextBlocks = {
@@ -173,7 +194,11 @@ The system context that follows includes four runtime blocks for the file in que
 1. BORROWER SCENARIO — structured intake. Ground truth.
 2. BORROWER TRANSCRIPT — recent borrower-facing conversation. Borrower's own words; useful for intent, hesitations, unstated context.
 3. MATCH RESULTS — matcher output, or a flag that the matcher has not been run.
-4. WHOLESALE LENDER × PROGRAM CATALOG — every active wholesale/correspondent lender with active programs. THIS IS THE ONLY VALID SET OF RECOMMENDATIONS. Do not name a lender or program that is not in this list.
+4. WHOLESALE LENDER × PROGRAM CATALOG — three sections:
+   (a) Wholesale lenders with their capability flags (Conventional / FHA / VA / USDA).
+   (b) Lender-specific programs — products owned by individual wholesale lenders (e.g. ClearEdge's Agency Connect, FNBA's Alt-A). These can only be recommended for the named lender.
+   (c) Agency programs — Fannie Mae / FHA / VA / USDA / HUD selling guides. These are placeable by ANY wholesale lender in section (a) that has the matching capability flag. When recommending an agency program, name it together with one or more lenders from section (a) that can place it.
+   THIS IS THE ONLY VALID SET OF RECOMMENDATIONS. Do not name a lender or program that is not in this list.
 
 # When MATCH RESULTS says "not yet run"
 
@@ -334,28 +359,133 @@ function summarizeMatchResults(matchResults: unknown): string {
   return `${header}\nMatch results present:\n${json}`;
 }
 
-function formatCatalogBlock(catalog: CatalogLender[]): string {
+function formatCatalogBlock(catalog: Catalog): string {
   const header = "=== WHOLESALE LENDER × PROGRAM CATALOG ===";
-  if (catalog.length === 0) {
-    return `${header}\n(No active wholesale lenders configured.)`;
-  }
-
   const lines: string[] = [header];
-  for (const lender of catalog) {
-    lines.push(`${lender.name} (${lender.lender_type}):`);
-    for (const p of lender.programs) {
-      const constraints = [
-        p.loan_category ? p.loan_category : null,
-        p.min_credit != null ? `min credit ${p.min_credit}` : null,
-        p.max_ltv != null ? `max LTV ${p.max_ltv}` : null,
-        p.max_dti != null ? `max DTI ${p.max_dti}` : null,
-        p.occupancy ? `occupancy ${p.occupancy}` : null,
-      ].filter((x): x is string => Boolean(x));
-      const tail = constraints.length ? ` — ${constraints.join(", ")}` : "";
-      lines.push(`  • ${p.name}${tail}`);
+
+  // ---------------------------------------------------------------------------
+  // Section 1: Wholesale lenders + capability flags
+  // ---------------------------------------------------------------------------
+  if (catalog.lenders.length === 0) {
+    lines.push("(No active wholesale lenders configured.)");
+  } else {
+    lines.push("");
+    lines.push(`# Wholesale Lenders (${catalog.lenders.length})`);
+    for (const l of catalog.lenders) {
+      const caps: string[] = [];
+      if (l.does_conventional) caps.push("Conventional");
+      if (l.does_fha) caps.push("FHA");
+      if (l.does_va) caps.push("VA");
+      if (l.does_usda) caps.push("USDA");
+      const capStr = caps.length
+        ? ` — capabilities: ${caps.join(", ")}`
+        : " — capabilities: (not flagged)";
+      lines.push(`${l.name}${capStr}`);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Section 2: Lender-specific programs
+  // ---------------------------------------------------------------------------
+  const lendersWithPrograms = catalog.lenders.filter(
+    (l) => l.programs.length > 0
+  );
+  if (lendersWithPrograms.length > 0) {
+    const totalPrograms = lendersWithPrograms.reduce(
+      (sum, l) => sum + l.programs.length,
+      0
+    );
+    lines.push("");
+    lines.push(`# Lender-specific programs (${totalPrograms})`);
+    for (const lender of lendersWithPrograms) {
+      lines.push(`${lender.name}:`);
+      for (const p of lender.programs) {
+        const constraints = [
+          p.loan_category ? p.loan_category : null,
+          p.min_credit != null ? `min credit ${p.min_credit}` : null,
+          p.max_ltv != null ? `max LTV ${p.max_ltv}` : null,
+          p.max_dti != null ? `max DTI ${p.max_dti}` : null,
+          p.occupancy ? `occupancy ${p.occupancy}` : null,
+        ].filter((x): x is string => Boolean(x));
+        const tail = constraints.length ? ` — ${constraints.join(", ")}` : "";
+        lines.push(`  • ${p.name}${tail}`);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section 3: Agency programs grouped by agency
+  // ---------------------------------------------------------------------------
+  if (catalog.agencyPrograms.length > 0) {
+    const byAgency = new Map<string, AgencyProgram[]>();
+    for (const ap of catalog.agencyPrograms) {
+      const list = byAgency.get(ap.agency);
+      if (list) list.push(ap);
+      else byAgency.set(ap.agency, [ap]);
+    }
+
+    lines.push("");
+    lines.push(
+      `# Agency programs (${catalog.agencyPrograms.length}) — placeable by any wholesale lender above with the matching capability`
+    );
+
+    // Stable ordering: Fannie Mae first, then alphabetical
+    const sortedAgencies = Array.from(byAgency.keys()).sort((a, b) => {
+      if (a === "Fannie Mae") return -1;
+      if (b === "Fannie Mae") return 1;
+      return a.localeCompare(b);
+    });
+
+    for (const agency of sortedAgencies) {
+      const programs = byAgency.get(agency) ?? [];
+      const capabilityHint = agencyCapabilityHint(agency);
+      lines.push(
+        `${agency} (${programs.length} programs)${capabilityHint ? ` — typically requires ${capabilityHint} capability` : ""}:`
+      );
+      // Sort programs alphabetically within agency
+      const sortedPrograms = [...programs].sort((a, b) =>
+        a.program_name.localeCompare(b.program_name)
+      );
+      for (const ap of sortedPrograms) {
+        const occList = Array.isArray(ap.occupancy) ? ap.occupancy.join(", ") : null;
+        const constraints = [
+          ap.product_family ? ap.product_family : null,
+          ap.min_credit != null ? `min credit ${ap.min_credit}` : null,
+          ap.max_ltv != null ? `max LTV ${ap.max_ltv}` : null,
+          ap.max_dti != null ? `max DTI ${ap.max_dti}` : null,
+          ap.max_units != null ? `max units ${ap.max_units}` : null,
+          occList ? `occupancy ${occList}` : null,
+        ].filter((x): x is string => Boolean(x));
+        const tail = constraints.length ? ` — ${constraints.join(", ")}` : "";
+        lines.push(`  • ${ap.program_name}${tail}`);
+      }
+    }
+  }
+
   return lines.join("\n");
+}
+
+// Map agency name → which lender capability flag is typically needed.
+// Conservative — when in doubt, omit the hint and let Finley reason from
+// agency-name + lender capability flags directly.
+function agencyCapabilityHint(agency: string): string | null {
+  switch (agency) {
+    case "Fannie Mae":
+    case "Freddie Mac":
+      return "Conventional";
+    case "FHA":
+      return "FHA";
+    case "VA":
+      return "VA";
+    case "USDA":
+      return "USDA";
+    case "HUD":
+      // Section 184 is HUD-administered but generally tracked under FHA-capable
+      // wholesale lenders. Conservative hint.
+      return "FHA";
+    default:
+      return null;
+  }
 }
 
 // =============================================================================
@@ -415,27 +545,36 @@ async function loadLoanOfficerName(
   return (data as { full_name?: string | null }).full_name ?? null;
 }
 
-async function loadCatalog(): Promise<CatalogLender[]> {
-  // Lenders: wholesale-eligible types only. Fannie/Freddie are tagged
-  // 'agency' and excluded from this list — those are investors, not lenders.
+async function loadCatalog(): Promise<Catalog> {
+  // Lenders: filter matches `/api/match` exactly — anything that isn't tagged
+  // as an agency (Fannie Mae, Freddie Mac, etc.) is a placement option.
+  // Pull capability flags so Pro Mode can reason about which agency programs
+  // each lender can actually place.
   const { data: lenderRows, error: lenderError } = await supabaseAdmin
     .from("lenders")
-    .select("id, name, lender_type")
-    .in("lender_type", ["wholesale_lender", "correspondent_lender", "both"]);
+    .select(
+      "id, name, lender_type, does_conventional, does_fha, does_va, does_usda"
+    )
+    .or("lender_type.is.null,lender_type.neq.agency");
 
   if (lenderError || !lenderRows || lenderRows.length === 0) {
     if (lenderError) console.error("[handoff-chat] lender load failed", lenderError);
-    return [];
+    return { lenders: [], agencyPrograms: [] };
   }
 
   const lenders = lenderRows as unknown as Array<{
     id: string;
     name: string;
-    lender_type: string;
+    lender_type: string | null;
+    does_conventional: boolean | null;
+    does_fha: boolean | null;
+    does_va: boolean | null;
+    does_usda: boolean | null;
   }>;
 
   const lenderIds = lenders.map((l) => l.id);
 
+  // Lender-specific active programs
   const { data: programRows, error: programError } = await supabaseAdmin
     .from("programs")
     .select(
@@ -444,12 +583,11 @@ async function loadCatalog(): Promise<CatalogLender[]> {
     .in("lender_id", lenderIds)
     .eq("is_active", true);
 
-  if (programError || !programRows) {
-    if (programError) console.error("[handoff-chat] program load failed", programError);
-    return [];
+  if (programError) {
+    console.error("[handoff-chat] program load failed", programError);
   }
 
-  const programs = programRows as unknown as CatalogProgram[];
+  const programs = (programRows ?? []) as unknown as CatalogProgram[];
 
   const programsByLender = new Map<string, CatalogProgram[]>();
   for (const p of programs) {
@@ -457,21 +595,41 @@ async function loadCatalog(): Promise<CatalogLender[]> {
     if (list) list.push(p);
     else programsByLender.set(p.lender_id, [p]);
   }
-
-  // Sort programs alphabetically within each lender for stable output.
   for (const list of programsByLender.values()) {
     list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }
 
-  return lenders
-    .filter((l) => programsByLender.has(l.id))
+  const catalogLenders: CatalogLender[] = lenders
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((l) => ({
       id: l.id,
       name: l.name,
       lender_type: l.lender_type,
+      does_conventional: l.does_conventional,
+      does_fha: l.does_fha,
+      does_va: l.does_va,
+      does_usda: l.does_usda,
       programs: programsByLender.get(l.id) ?? [],
     }));
+
+  // Agency programs from global_guidelines — same source the matcher reads.
+  // Fields kept compact for the prompt; richer notes live on each row but
+  // would blow the token budget if injected wholesale.
+  const { data: agencyRows, error: agencyError } = await supabaseAdmin
+    .from("global_guidelines")
+    .select(
+      "id, agency, product_family, program_name, occupancy, min_credit, max_ltv, max_dti, max_units"
+    )
+    .eq("is_active", true);
+
+  if (agencyError) {
+    console.error("[handoff-chat] agency guideline load failed", agencyError);
+    return { lenders: catalogLenders, agencyPrograms: [] };
+  }
+
+  const agencyPrograms = (agencyRows ?? []) as unknown as AgencyProgram[];
+
+  return { lenders: catalogLenders, agencyPrograms };
 }
 
 // =============================================================================
@@ -656,7 +814,8 @@ export async function POST(
     matchBytes: blocks.matchResults.length,
     catalogBytes: blocks.catalog.length,
     systemPromptChars: systemPrompt.length,
-    catalogLenders: catalog.length,
+    catalogLenders: catalog.lenders.length,
+    catalogAgencyPrograms: catalog.agencyPrograms.length,
     matchPresent: blocks.matchResults.includes("Match results present"),
   });
 
