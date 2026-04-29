@@ -668,6 +668,34 @@ function FinleyPageInner() {
   const [proError, setProError] = useState("");
 
   // ---------------------------------------------------------------------------
+  // Step 6 Phase 6.2b — "Save Summary to Workflow File" state.
+  //
+  // myWorkflowFiles is the list of workflow_files where the calling LO is
+  // the assigned loan_officer_id, fetched from /api/workflow/my-files when
+  // ?session= is present. Powers the target-file dropdown.
+  //
+  // selectedTargetFileId is the UUID the LO has chosen in the dropdown.
+  // savingToWorkflow is true while POST /api/handoff-session/[id]/save-to-workflow
+  // is in flight. savedFeedId / saveError surface the result inline.
+  //
+  // The whole UI block hides when myWorkflowFiles.length === 0 (per locked
+  // decision: no auto-create).
+  // ---------------------------------------------------------------------------
+  type MyWorkflowFile = {
+    id: string;
+    file_number: string | null;
+    borrower_name: string | null;
+    status: string | null;
+    last_activity_at: string | null;
+  };
+  const [myWorkflowFiles, setMyWorkflowFiles] = useState<MyWorkflowFile[]>([]);
+  const [loadingMyFiles, setLoadingMyFiles] = useState(false);
+  const [selectedTargetFileId, setSelectedTargetFileId] = useState<string>("");
+  const [savingToWorkflow, setSavingToWorkflow] = useState(false);
+  const [savedFeedId, setSavedFeedId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string>("");
+
+  // ---------------------------------------------------------------------------
   // Auth — verify cookie session via /api/team-auth/me, then guard by role.
   // Real Estate Agents are explicitly excluded from the Professional Thinking
   // Layer; they should not see lender or program matching.
@@ -828,6 +856,42 @@ function FinleyPageInner() {
       cancelled = true;
     };
   }, [authChecked, handoffSessionId, handoffHydrated]);
+
+  // ---------------------------------------------------------------------------
+  // Step 6 Phase 6.2b — Load the LO's workflow files for the
+  // "Save Summary to Workflow File" dropdown. Only runs in handoff mode
+  // (?session= present). On success, populates myWorkflowFiles. On failure,
+  // logs to console and leaves the list empty — the UI block self-hides.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!handoffSessionId) return;
+
+    let cancelled = false;
+    setLoadingMyFiles(true);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/workflow/my-files");
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          success?: boolean;
+          files?: MyWorkflowFile[];
+        };
+        if (cancelled) return;
+        const files = Array.isArray(data?.files) ? data.files : [];
+        setMyWorkflowFiles(files);
+      } catch (err) {
+        console.error("[finley] my-files load failed", err);
+      } finally {
+        if (!cancelled) setLoadingMyFiles(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authChecked, handoffSessionId]);
 
   const hasResults =
     strongMatches.length > 0 ||
@@ -1125,6 +1189,59 @@ function FinleyPageInner() {
       setError(message);
     } finally {
       setEmailingSummary(false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 6 Phase 6.2b — POST the AI-generated Pro Mode summary to the LO's
+  // selected workflow file. Server-side, this calls OpenAI to summarize the
+  // pro chat + match_results, then INSERTs into workflow_feed with
+  // update_type='pro_mode_summary'. Trigger bumps last_activity_at.
+  //
+  // proSessionId is sent when known so the server uses the LO's exact pro
+  // session. If omitted (older sessions hydrated before proSessionId was
+  // captured), the server picks the most recent pro chat for this intake
+  // belonging to the calling user.
+  // ---------------------------------------------------------------------------
+  async function saveSummaryToWorkflow() {
+    if (!handoffSessionId || !selectedTargetFileId || savingToWorkflow) return;
+
+    setSavingToWorkflow(true);
+    setSaveError("");
+    setSavedFeedId(null);
+
+    try {
+      const body: { targetWorkflowFileId: string; proSessionId?: string } = {
+        targetWorkflowFileId: selectedTargetFileId,
+      };
+      if (proSessionId) body.proSessionId = proSessionId;
+
+      const res = await fetch(
+        `/api/handoff-session/${encodeURIComponent(handoffSessionId)}/save-to-workflow`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      const data = (await res.json().catch(() => null)) as {
+        success?: boolean;
+        feedId?: string;
+        error?: string;
+      } | null;
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Could not save summary to workflow file.");
+      }
+
+      setSavedFeedId(data.feedId ?? "saved");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unexpected error saving summary.";
+      setSaveError(message);
+    } finally {
+      setSavingToWorkflow(false);
     }
   }
 
@@ -2076,6 +2193,164 @@ function FinleyPageInner() {
 
             {handoffHydrated ? (
               <>
+                {/* Step 6 Phase 6.2b — Save Summary to Workflow File.
+                    Renders only when the calling LO has at least one
+                    workflow file assigned (per locked decision: hide if
+                    no linked file — no auto-create). Sits above the tab
+                    strip so it's visible from both Pro Chat and Borrower
+                    Transcript tabs — the action summarizes both. */}
+                {myWorkflowFiles.length > 0 && (
+                  <div
+                    style={{
+                      background: "#f8fbff",
+                      border: "1px solid #c7d7eb",
+                      borderRadius: 18,
+                      padding: 16,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "#243F7C",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Save Pro Mode Summary to a Workflow File
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#4b5d7a",
+                        marginBottom: 12,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Generates an AI summary of this Pro Mode session
+                      (scenario, matcher results, and pro chat takeaways)
+                      and appends it to the selected file&apos;s activity
+                      feed.
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <select
+                        value={selectedTargetFileId}
+                        onChange={(e) => {
+                          setSelectedTargetFileId(e.target.value);
+                          setSavedFeedId(null);
+                          setSaveError("");
+                        }}
+                        disabled={savingToWorkflow}
+                        style={{
+                          flex: "1 1 240px",
+                          minWidth: 220,
+                          borderRadius: 12,
+                          border: "1px solid #c7d7eb",
+                          padding: "10px 12px",
+                          fontSize: 14,
+                          background: "#ffffff",
+                          color: "#263366",
+                          fontFamily: "inherit",
+                          cursor: savingToWorkflow ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        <option value="">— Select target workflow file —</option>
+                        {myWorkflowFiles.map((f) => {
+                          const label = `${f.file_number || "(no #)"} — ${
+                            f.borrower_name || "Unnamed"
+                          }${f.status ? ` [${f.status}]` : ""}`;
+                          return (
+                            <option key={f.id} value={f.id}>
+                              {label}
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={saveSummaryToWorkflow}
+                        disabled={!selectedTargetFileId || savingToWorkflow}
+                        style={{
+                          background:
+                            !selectedTargetFileId || savingToWorkflow
+                              ? "#c7d7eb"
+                              : "#243F7C",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: 12,
+                          padding: "11px 18px",
+                          fontWeight: 700,
+                          fontSize: 14,
+                          cursor:
+                            !selectedTargetFileId || savingToWorkflow
+                              ? "not-allowed"
+                              : "pointer",
+                          fontFamily: "inherit",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {savingToWorkflow
+                          ? "Saving..."
+                          : "Save Summary to Workflow File"}
+                      </button>
+                    </div>
+
+                    {savedFeedId && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: "10px 14px",
+                          background: "#e8f7ee",
+                          color: "#157347",
+                          borderRadius: 12,
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        ✓ Summary saved. It now appears in the workflow
+                        file&apos;s activity feed.
+                      </div>
+                    )}
+
+                    {saveError && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: "10px 14px",
+                          background: "#fdecec",
+                          color: "#b42318",
+                          borderRadius: 12,
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {saveError}
+                      </div>
+                    )}
+
+                    {loadingMyFiles && myWorkflowFiles.length === 0 && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: 12,
+                          color: "#4b5d7a",
+                        }}
+                      >
+                        Loading your workflow files...
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Drop 2: Tab strip — Pro Chat (private LO↔Finley about this
                     file) vs Borrower Transcript (read-only, verbatim). Shown
                     only in handoff mode; direct visits to /finley render the
