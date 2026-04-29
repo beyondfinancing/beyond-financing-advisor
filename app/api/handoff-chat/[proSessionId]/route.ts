@@ -48,7 +48,7 @@ const PROFESSIONAL_ROLES = new Set([
 
 const MAX_MESSAGE_LENGTH = 8000;
 const TRANSCRIPT_TURN_CAP = 50;
-const MATCH_RESULTS_DUMP_CAP = 8000; // chars; defensive truncation
+const STRONG_TOP_N = 10; // top-N strong matches injected into the prompt
 
 // =============================================================================
 // Types
@@ -145,6 +145,46 @@ type AgencyProgram = {
 type Catalog = {
   lenders: CatalogLender[];
   agencyPrograms: AgencyProgram[];
+};
+
+// Shape mirroring /api/match's MatchBucket. Defensive — we only read fields
+// we actually use, so an upstream change to the matcher won't break us as
+// long as the core fields stay.
+type MatchBucket = {
+  lender_name?: string;
+  lender_id?: string;
+  program_name?: string;
+  program_slug?: string | null;
+  loan_category?: string | null;
+  guideline_id?: string;
+  notes?: string[];
+  missing_items?: string[];
+  blockers?: string[];
+  strengths?: string[];
+  concerns?: string[];
+  explanation?: string;
+  score?: number;
+  required_reserves_months?: number | null;
+};
+
+type MatcherResponse = {
+  success?: boolean;
+  top_recommendation?: string;
+  next_question?: string;
+  strong_matches?: MatchBucket[];
+  conditional_matches?: MatchBucket[];
+  eliminated_paths?: MatchBucket[];
+  lender_summary?: {
+    active_lender_count?: number;
+    active_lenders_checked?: string[];
+    matched_lenders_in_results?: string[];
+  };
+  summary?: {
+    total_guidelines_checked?: number;
+    strong_count?: number;
+    conditional_count?: number;
+    eliminated_count?: number;
+  };
 };
 
 type ContextBlocks = {
@@ -332,6 +372,7 @@ function formatTranscriptBlock(messages: unknown, cap: number): string {
 function summarizeMatchResults(matchResults: unknown): string {
   const header = "=== MATCH RESULTS ===";
 
+  // Null / empty / not-yet-run cases
   if (
     matchResults === null ||
     matchResults === undefined ||
@@ -343,20 +384,131 @@ function summarizeMatchResults(matchResults: unknown): string {
     return `${header}\nMatcher has not been run on this file.`;
   }
 
-  // Drop A: defensive raw dump. Drop B will replace this with a structured
-  // summarizer (top-N strong, bucket counts, top elimination reasons) once
-  // we lock the persisted shape coming from /api/match.
-  let json: string;
-  try {
-    json = JSON.stringify(matchResults);
-  } catch {
-    return `${header}\n(Match results present but not serializable.)`;
+  // Validate it looks like a matcher response. If it's some other JSON shape
+  // (e.g. someone manually populated the column with non-matcher data), fall
+  // back to a flag rather than a raw dump that could blow context.
+  if (typeof matchResults !== "object" || matchResults === null) {
+    return `${header}\nMatch results present but not in the expected shape.`;
+  }
+  const m = matchResults as MatcherResponse;
+  if (
+    !Array.isArray(m.strong_matches) &&
+    !Array.isArray(m.conditional_matches) &&
+    !Array.isArray(m.eliminated_paths)
+  ) {
+    return `${header}\nMatch results present but not in the expected shape.`;
   }
 
-  if (json.length > MATCH_RESULTS_DUMP_CAP) {
-    return `${header}\nMatch results present (${json.length} chars total — truncated):\n${json.slice(0, MATCH_RESULTS_DUMP_CAP)}\n[truncated]`;
+  const strong = Array.isArray(m.strong_matches) ? m.strong_matches : [];
+  const conditional = Array.isArray(m.conditional_matches)
+    ? m.conditional_matches
+    : [];
+  const eliminated = Array.isArray(m.eliminated_paths) ? m.eliminated_paths : [];
+
+  // Sort strong descending by score (defensive — matcher already does this,
+  // but a manual SQL UPDATE could land them out of order).
+  const strongSorted = [...strong].sort(
+    (a, b) => (b.score ?? 0) - (a.score ?? 0)
+  );
+  const topStrong = strongSorted.slice(0, STRONG_TOP_N);
+
+  const lines: string[] = [header];
+
+  if (m.top_recommendation && m.top_recommendation.trim().length > 0) {
+    lines.push(`Top recommendation: ${m.top_recommendation.trim()}`);
+    lines.push("");
   }
-  return `${header}\nMatch results present:\n${json}`;
+
+  // Bucket counts
+  lines.push(
+    `Strong: ${strong.length} | Conditional: ${conditional.length} | Eliminated: ${eliminated.length}`
+  );
+
+  // Lender pool summary if present
+  if (m.lender_summary) {
+    const ls = m.lender_summary;
+    if (typeof ls.active_lender_count === "number") {
+      lines.push(`Active lenders checked: ${ls.active_lender_count}`);
+    }
+    if (
+      Array.isArray(ls.matched_lenders_in_results) &&
+      ls.matched_lenders_in_results.length > 0
+    ) {
+      lines.push(
+        `Lenders surfacing in results: ${ls.matched_lenders_in_results.join(", ")}`
+      );
+    }
+  }
+
+  lines.push("");
+
+  // Top N strong matches (lender × program × score)
+  if (topStrong.length > 0) {
+    lines.push(
+      `Top ${topStrong.length} strong matches (sorted by score desc):`
+    );
+    topStrong.forEach((b, idx) => {
+      const lender = b.lender_name || "Unknown lender";
+      const program = b.program_name || "Unknown program";
+      const score =
+        typeof b.score === "number" ? `score ${b.score}` : "score n/a";
+      const category = b.loan_category ? ` [${b.loan_category}]` : "";
+      lines.push(`  ${idx + 1}. ${lender} × ${program}${category} — ${score}`);
+    });
+    lines.push("");
+  }
+
+  // Conditional bucket — show count + a few representative concerns/blockers
+  if (conditional.length > 0) {
+    const conditionalSorted = [...conditional].sort(
+      (a, b) => (b.score ?? 0) - (a.score ?? 0)
+    );
+    const topConditional = conditionalSorted.slice(0, 5);
+    lines.push(
+      `Conditional bucket: ${conditional.length} match(es). Top by score:`
+    );
+    topConditional.forEach((b, idx) => {
+      const lender = b.lender_name || "Unknown lender";
+      const program = b.program_name || "Unknown program";
+      const score =
+        typeof b.score === "number" ? `score ${b.score}` : "score n/a";
+      const concernCount =
+        Array.isArray(b.concerns) && b.concerns.length > 0
+          ? ` — ${b.concerns.length} concern(s)`
+          : "";
+      lines.push(
+        `  ${idx + 1}. ${lender} × ${program} — ${score}${concernCount}`
+      );
+    });
+    lines.push("");
+  }
+
+  // Top elimination reasons — most-frequent blocker strings
+  if (eliminated.length > 0) {
+    const blockerCounts = new Map<string, number>();
+    for (const b of eliminated) {
+      const blockers = Array.isArray(b.blockers) ? b.blockers : [];
+      for (const blk of blockers) {
+        if (typeof blk === "string" && blk.trim()) {
+          const key = blk.trim();
+          blockerCounts.set(key, (blockerCounts.get(key) ?? 0) + 1);
+        }
+      }
+    }
+    const topReasons = Array.from(blockerCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    lines.push(`Eliminated bucket: ${eliminated.length} path(s).`);
+    if (topReasons.length > 0) {
+      lines.push("Top elimination reasons (frequency):");
+      topReasons.forEach(([reason, count]) => {
+        lines.push(`  • (${count}×) ${reason}`);
+      });
+    }
+  }
+
+  return lines.join("\n").trimEnd();
 }
 
 function formatCatalogBlock(catalog: Catalog): string {
@@ -816,7 +968,7 @@ export async function POST(
     systemPromptChars: systemPrompt.length,
     catalogLenders: catalog.lenders.length,
     catalogAgencyPrograms: catalog.agencyPrograms.length,
-    matchPresent: blocks.matchResults.includes("Match results present"),
+    matchPresent: !blocks.matchResults.includes("has not been run"),
   });
 
   // -------------------------------------------------------------------------
