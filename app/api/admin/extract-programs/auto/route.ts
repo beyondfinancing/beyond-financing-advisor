@@ -1,5 +1,36 @@
 // =============================================================================
-// PHASE 7.5e — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
+// PHASE 7.5f — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
+//
+// Changes vs Phase 7.5e:
+//   1. maxDuration bumped from 300s to 800s (Vercel Pro plan max).
+//      Rationale: Sonnet extraction on dense ~370-page PDF chunks can take
+//      4–10 minutes when the model has to chase deep cross-references and
+//      generate ~20 program records per call. The 300s ceiling was being
+//      hit on Freddie Mac SF Selling Guide Parts 3–8, leaving zombie
+//      "Extracting" rows in the DB because the function got killed before
+//      it could write extraction_status='failed'. 800s gives comfortable
+//      headroom for any single chunk and fits the Vercel Pro plan max.
+//   2. AGENCY_SYSTEM_PROMPT rule 8 expanded from one-liner to detailed
+//      exclusion list with 7 sub-categories (a-g):
+//        a. Servicing-side rules (existing)
+//        b. Rep & warranty / boilerplate (existing)
+//        c. NEW: Suspended/discontinued programs (e.g. High LTV Refinance,
+//           Enhanced Relief Refinance)
+//        d. NEW: Government conduit programs (FHA, VA, Section 184, 502 GRH)
+//        e. NEW: Transaction structures (Single-Closing, Two-Closing, Texas
+//           50(a)(6) eligibility)
+//        f. NEW: Servicing-side seller mechanisms (Seller-Owned Converted/
+//           Modified, Employee Relocation, Resale Restrictions)
+//        g. NEW: Secondary-financing mechanisms (Home Possible with RHS
+//           Leveraged Seconds)
+//      Test: would a borrower walk into a broker's office and ask for this
+//      by name? If no, skip. Targets the noise we saw in Freddie SF Part 2
+//      output — should reduce manual-rejection burden and shorten generation
+//      time per chunk (fewer items to write = less time = fewer timeouts).
+//
+// All other logic (PATH A agency vs PATH B lender, archive strategy, doc-group
+// product family detection, replace strategy, tolerant JSON parser, max_tokens
+// 16000, maxRetries 8, claude-sonnet-4-6 model) is unchanged from 7.5e.
 //
 // Changes vs Phase 7.5d:
 //   1. Extraction model swapped from 'claude-opus-4-7' to 'claude-sonnet-4-6'
@@ -20,13 +51,8 @@
 //      call returns 429. With only 2 default SDK retries (~3s of backoff),
 //      the rate-limit window doesn't have time to clear. maxRetries: 8
 //      gives ~127s of exponential backoff with jitter, which fits inside
-//      maxDuration: 300 and lets the SDK negotiate its own timing with
-//      the rate limiter. The SDK already honors retry-after headers from
-//      the API.
-//
-// All other logic (PATH A agency vs PATH B lender, archive strategy, doc-group
-// product family detection, replace strategy, tolerant JSON parser, max_tokens
-// 16000) is unchanged from 7.5c.
+//      maxDuration (now 800s in 7.5f) and lets the SDK negotiate its own
+//      timing with the rate limiter.
 //
 // Changes vs Phase 7.5:
 //   1. max_tokens bumped from 8000 → 16000 (both PATH A agency and PATH B lender)
@@ -46,7 +72,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { isAdminSignedIn } from '@/lib/admin-auth'
 import { supabaseAdmin } from '@/lib/supabase'
 
-export const maxDuration = 300
+export const maxDuration = 800
 export const runtime = 'nodejs'
 
 // ----------------------------------------------------------------------------
@@ -213,7 +239,15 @@ CRITICAL RULES:
 5. The "programName" should be the canonical name as written in the document (e.g. "HomeReady" not "Home Ready" or "homeready").
 6. For numerical fields, return the most permissive value when conditional rules apply (e.g. if max LTV is 95% for first-time homebuyers but 90% otherwise, return 95 and note the FTHB condition in notes).
 7. If a program has multiple FICO/LTV combinations (e.g. matrices), capture the most permissive minimums (lowest required FICO, highest allowed LTV/DTI) and describe the matrix in notes.
-8. Skip non-program content: servicing rules, rep & warranty chapters, master agreement boilerplate, glossary, table of contents.
+8. Skip non-program content. The following are NOT programs and must NOT be extracted:
+   a. Servicing-side rules and chapters (servicing fees, default management, loss mitigation, post-funding operations).
+   b. Rep & warranty chapters, master agreement boilerplate, glossary, table of contents, definitions chapters.
+   c. SUSPENDED or DISCONTINUED programs — if the text says "not eligible for delivery until further notice", "suspended", "no longer available", "discontinued", or similar, do NOT extract them as active programs. Examples: Fannie High LTV Refinance, Freddie Enhanced Relief Refinance.
+   d. Government conduit programs where the agency only purchases with recourse and the underwriting is governed entirely by the underlying government agency. Do NOT extract: "FHA Mortgages", "VA Mortgages", "Section 184 Indian Housing", "Section 502 GRH / USDA Rural Housing" as standalone Freddie/Fannie programs. These are HUD/VA/USDA programs, not Freddie/Fannie programs.
+   e. Transaction structures, mortgage features, or document classifications that are NOT standalone borrower-facing loan products. Do NOT extract: "Construction-to-Permanent Single-Closing", "Construction-to-Permanent Two-Closing", "Single-Closing transactions", "Two-Closing transactions", "Texas Section 50(a)(6) Loan" (this is a state constitutional eligibility overlay, not a program). DO extract the parent program (e.g. "Construction-to-Permanent Financing") if it is described as a product offering.
+   f. Servicing-side mortgage operations and seller-side post-origination mechanisms. Do NOT extract: "Seller-Owned Converted Mortgages", "Seller-Owned Modified Mortgages", "Mortgages Made Pursuant to Employee Relocation Programs" (this is an underwriting flexibility, not a program), "Mortgages Secured by Properties Subject to Resale Restrictions" (overlay, not a program).
+   g. Mechanisms for combining programs with secondary financing. Do NOT extract: "Home Possible with RHS Leveraged Seconds" as a separate program (the parent is Home Possible).
+   When in doubt: ask "would a borrower walk into a mortgage broker's office and ask for this by name?" If no, skip it.
 9. For "confidence", use "high" only when explicitly stated in tables/matrices, "medium" for clear prose, "low" if you had to interpret.
 10. "sourceQuote" must be a 1-2 sentence verbatim excerpt that supports the extraction.
 
