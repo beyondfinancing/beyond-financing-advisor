@@ -4,14 +4,20 @@ const ADMIN_COOKIE_NAME = "bi_admin_session";
 const ADMIN_COOKIE_VALUE = "verified-admin";
 
 export const ADMIN_EMAIL = "pansini@beyondfinancing.com";
-export const ADMIN_PASSWORD = "BeyondAdmin#2026";
 
 export function getAdminEmail(): string {
   return (process.env.ADMIN_EMAIL || ADMIN_EMAIL).trim().toLowerCase();
 }
 
-export function getAdminPassword(): string {
-  return process.env.ADMIN_PASSWORD || ADMIN_PASSWORD;
+export function getAdminPassword(): string | null {
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) {
+    console.error(
+      "[admin-auth] ADMIN_PASSWORD env var is not set; admin login is disabled"
+    );
+    return null;
+  }
+  return password;
 }
 
 export function isSecureCookie(): boolean {
@@ -53,8 +59,12 @@ export function validateAdminCredentials(
   email: string,
   password: string
 ): boolean {
+  const expectedPassword = getAdminPassword();
+  if (!expectedPassword) {
+    return false;
+  }
   return (
     email.trim().toLowerCase() === getAdminEmail() &&
-    password === getAdminPassword()
+    password === expectedPassword
   );
 }
