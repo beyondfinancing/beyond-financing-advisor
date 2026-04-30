@@ -1,5 +1,21 @@
 // =============================================================================
-// PHASE 7.5c — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
+// PHASE 7.5d — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
+//
+// Changes vs Phase 7.5c:
+//   1. Anthropic SDK client gets explicit maxRetries: 8 (was default 2).
+//      Rationale: When multiple parts of a multi-part Selling Guide upload
+//      kick off extraction in parallel (e.g. 6× Freddie Mac SF parts), the
+//      organization's 450K input-tokens-per-minute rate limit gets hit and
+//      every call returns 429. With only 2 default SDK retries (~3s of
+//      backoff), the rate-limit window doesn't have time to clear.
+//      maxRetries: 8 gives ~127s of exponential backoff with jitter, which
+//      fits inside maxDuration: 300 and lets the SDK negotiate its own
+//      timing with the rate limiter. The SDK already honors retry-after
+//      headers from the API.
+//
+// All other logic (PATH A agency vs PATH B lender, archive strategy, doc-group
+// product family detection, replace strategy, tolerant JSON parser, max_tokens
+// 16000) is unchanged from 7.5c.
 //
 // Changes vs Phase 7.5:
 //   1. max_tokens bumped from 8000 → 16000 (both PATH A agency and PATH B lender)
@@ -12,9 +28,6 @@
 //      On total failure, error message now includes first 500 chars of Claude's
 //      actual response so we can diagnose what went wrong.
 //   3. Both call sites still pass rawResponse on parse failure for visibility.
-//
-// All other logic (PATH A agency vs PATH B lender, archive strategy, doc-group
-// product family detection, replace strategy) is unchanged.
 // =============================================================================
 
 import { NextResponse } from 'next/server'
@@ -548,7 +561,10 @@ export async function POST(req: Request) {
 
   const base64Pdf = Buffer.from(arrayBuffer).toString('base64')
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    maxRetries: 8,
+  })
 
   // ============================================================
   // PATH A — agency Selling Guide → global_guidelines
