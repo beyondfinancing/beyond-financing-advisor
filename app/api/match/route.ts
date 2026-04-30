@@ -102,6 +102,7 @@ type ProgramRow = {
   loan_category: string | null;
   is_active: boolean;
   lender_id: string;
+  underwriting_method: string | null;
   lenders: unknown;
   program_guidelines: unknown;
 };
@@ -157,6 +158,7 @@ type LenderRow = {
   does_fha: boolean | null;
   does_va: boolean | null;
   does_usda: boolean | null;
+  aus_methods: string[] | null;
 };
 
 type GlobalGuidelineRow = {
@@ -174,6 +176,7 @@ type GlobalGuidelineRow = {
   notes: string | null;
   effective_date: string | null;
   is_active: boolean;
+  underwriting_method: string | null;
 };
 
 // -----------------------------------------------------------------------------
@@ -226,6 +229,42 @@ function arrayContainsNormalized(
   }
 
   return false;
+}
+
+// -----------------------------------------------------------------------------
+// AUS / Underwriting method helpers (Phase 7.5)
+// -----------------------------------------------------------------------------
+//
+// Programs declare a required AUS / manual underwriting path via
+// `underwriting_method` (one of 'either' | 'du' | 'lpa' | 'manual'). Lenders
+// declare which AUS pipelines they accept via `aus_methods` (a string array).
+//
+// The matcher gate: if a program's required method is anything other than
+// 'either', the lender must list that method in its aus_methods. Otherwise the
+// pairing is eliminated with a clear blocker.
+//
+function describeAusMethod(method: string | null | undefined): string {
+  switch (method) {
+    case "du":
+      return "DU";
+    case "lpa":
+      return "LPA";
+    case "manual":
+      return "Manual UW";
+    case "either":
+      return "DU/LPA";
+    default:
+      return method || "(unspecified)";
+  }
+}
+
+function lenderAcceptsAusMethod(
+  lenderAusMethods: string[] | null | undefined,
+  requiredMethod: string | null | undefined
+): boolean {
+  if (!requiredMethod || requiredMethod === "either") return true;
+  const accepted = Array.isArray(lenderAusMethods) ? lenderAusMethods : [];
+  return accepted.includes(requiredMethod);
 }
 
 // -----------------------------------------------------------------------------
@@ -1376,6 +1415,7 @@ export async function POST(req: Request) {
         loan_category,
         is_active,
         lender_id,
+        underwriting_method,
         lenders ( id, name, states ),
         program_guidelines ( * )
       `)
@@ -1395,7 +1435,7 @@ export async function POST(req: Request) {
     // which is why agencies should never appear in the candidate pool.
     const { data: lendersData, error: lendersError } = await supabase
       .from("lenders")
-      .select("id, name, lender_type, does_conventional, does_fha, does_va, does_usda")
+      .select("id, name, lender_type, does_conventional, does_fha, does_va, does_usda, aus_methods")
       .or("lender_type.is.null,lender_type.neq.agency");
 
     if (lendersError) {
@@ -1406,6 +1446,14 @@ export async function POST(req: Request) {
     }
 
     const allLenders = (lendersData || []) as LenderRow[];
+
+    // Map for O(1) lookup of full LenderRow by id. Used by the AUS gate in the
+    // lender-program loop where the row's joined `lenders` field only carries
+    // `id, name, states` (not aus_methods).
+    const lendersById = new Map<string, LenderRow>();
+    for (const lender of allLenders) {
+      lendersById.set(lender.id, lender);
+    }
 
     // Pull active agency programs from global_guidelines
     const { data: agencyData, error: agencyError } = await supabase
@@ -1462,6 +1510,42 @@ export async function POST(req: Request) {
       const programName = program.name || "Unknown Program";
 
       activeLenderNames.add(lenderName);
+
+      // -----------------------------------------------------------------------
+      // AUS gate (Phase 7.5)
+      // If the program declares a specific required AUS / underwriting method
+      // and the lender does not accept that method, eliminate the pairing
+      // before any guideline-level evaluation. Skip silently when the program
+      // requires 'either' (no AUS gating).
+      // -----------------------------------------------------------------------
+      const programRequiredAus = program.underwriting_method;
+      if (programRequiredAus && programRequiredAus !== "either") {
+        const fullLender = lendersById.get(lenderId);
+        if (fullLender && !lenderAcceptsAusMethod(fullLender.aus_methods, programRequiredAus)) {
+          const acceptedDisplay =
+            (fullLender.aus_methods || []).map(describeAusMethod).join("/") || "(none)";
+          const requiredDisplay = describeAusMethod(programRequiredAus);
+          eliminatedPaths.push({
+            lender_name: lenderName,
+            lender_id: lenderId,
+            program_name: programName,
+            program_slug: program.slug,
+            loan_category: program.loan_category,
+            guideline_id: "",
+            notes: [],
+            missing_items: [],
+            blockers: [
+              `${lenderName} accepts ${acceptedDisplay} but ${programName} requires ${requiredDisplay}.`,
+            ],
+            strengths: [],
+            concerns: [],
+            explanation: `${programName} via ${lenderName} cannot be placed: lender does not run ${requiredDisplay} and the program requires it.`,
+            score: 0,
+            required_reserves_months: null,
+          });
+          continue;
+        }
+      }
 
       const activeGuidelines = (Array.isArray(program.program_guidelines)
         ? (program.program_guidelines as GuidelineRow[])
@@ -1570,6 +1654,43 @@ export async function POST(req: Request) {
 
       for (const lender of eligibleLenders) {
         activeLenderNames.add(lender.name || "Unknown Lender");
+
+        // ---------------------------------------------------------------------
+        // AUS gate (Phase 7.5)
+        // If the agency program declares a specific required AUS / underwriting
+        // method and the lender does not accept that method, eliminate the
+        // pairing before evaluation. Skip silently when the agency program
+        // requires 'either' (no AUS gating).
+        // ---------------------------------------------------------------------
+        const agencyRequiredAus = agencyGuideline.underwriting_method;
+        if (agencyRequiredAus && agencyRequiredAus !== "either") {
+          if (!lenderAcceptsAusMethod(lender.aus_methods, agencyRequiredAus)) {
+            const lenderNameForBlocker = lender.name || "Unknown Lender";
+            const programDisplay = `${agencyGuideline.program_name} (${agencyGuideline.agency})`;
+            const acceptedDisplay =
+              (lender.aus_methods || []).map(describeAusMethod).join("/") || "(none)";
+            const requiredDisplay = describeAusMethod(agencyRequiredAus);
+            eliminatedPaths.push({
+              lender_name: lenderNameForBlocker,
+              lender_id: lender.id,
+              program_name: programDisplay,
+              program_slug: null,
+              loan_category: `${agencyGuideline.agency} ${agencyGuideline.product_family}`,
+              guideline_id: agencyGuideline.id,
+              notes: [],
+              missing_items: [],
+              blockers: [
+                `${lenderNameForBlocker} accepts ${acceptedDisplay} but ${programDisplay} requires ${requiredDisplay}.`,
+              ],
+              strengths: [],
+              concerns: [],
+              explanation: `${programDisplay} via ${lenderNameForBlocker} cannot be placed: lender does not run ${requiredDisplay} and the program requires it.`,
+              score: 0,
+              required_reserves_months: null,
+            });
+            continue;
+          }
+        }
 
         const stateEligibility = stateByLender.get(lender.id) || null;
 
