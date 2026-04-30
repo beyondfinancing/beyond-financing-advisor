@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { signInAdminSession } from "@/lib/admin-auth";
 
-type EligibilityType = "owner_occupied" | "non_owner_occupied";
-
 type ProductAssignmentInput = {
   productId: string;
   productName: string;
@@ -258,22 +256,33 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const eligibilityRows: Array<{
-    lender_id: string;
-    state: string;
-    eligibility_type: EligibilityType;
-  }> = [
-    ...ownerOccupiedStates.map((state) => ({
-      lender_id: insertedLender.id,
-      state,
-      eligibility_type: "owner_occupied" as EligibilityType,
-    })),
-    ...nonOwnerOccupiedStates.map((state) => ({
-      lender_id: insertedLender.id,
-      state,
-      eligibility_type: "non_owner_occupied" as EligibilityType,
-    })),
-  ];
+  // Bug fix bundled with Phase 7.1b — Repair create flow's eligibility schema.
+  //
+  // The lender_state_eligibility table was migrated to a wide format
+  // (one row per state with boolean flags per occupancy type) but this
+  // create route was never updated to match. The PATCH route in
+  // app/api/admin/lenders/[id]/route.ts already uses the wide format;
+  // we mirror it here so create matches edit.
+  //
+  // Schema: { lender_id, state_code, owner_occupied_allowed,
+  // non_owner_occupied_allowed, second_home_allowed, heloc_allowed, notes }
+  //
+  // The create form only collects ownerOccupiedStates and
+  // nonOwnerOccupiedStates. Second-home and HELOC default to false; admins
+  // can enable those on the lender's detail page after creation.
+  const allStates = Array.from(
+    new Set([...ownerOccupiedStates, ...nonOwnerOccupiedStates])
+  ).sort();
+
+  const eligibilityRows = allStates.map((stateCode) => ({
+    lender_id: insertedLender.id,
+    state_code: stateCode,
+    owner_occupied_allowed: ownerOccupiedStates.includes(stateCode),
+    non_owner_occupied_allowed: nonOwnerOccupiedStates.includes(stateCode),
+    second_home_allowed: false,
+    heloc_allowed: false,
+    notes: null as string | null,
+  }));
 
   if (eligibilityRows.length > 0) {
     const { error: eligibilityInsertError } = await supabaseAdmin
