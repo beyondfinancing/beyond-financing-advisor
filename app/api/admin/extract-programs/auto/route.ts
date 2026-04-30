@@ -1,17 +1,28 @@
 // =============================================================================
-// PHASE 7.5d — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
+// PHASE 7.5e — REPLACEMENT for app/api/admin/extract-programs/auto/route.ts
+//
+// Changes vs Phase 7.5d:
+//   1. Extraction model swapped from 'claude-opus-4-7' to 'claude-sonnet-4-6'
+//      at both call sites (PATH A agency Selling Guide AND PATH B regular
+//      lender). Rationale: Each multi-part Selling Guide chunk tokenizes to
+//      ~200K input tokens. Six concurrent parts blow past Opus's 450K
+//      input-tokens-per-minute org rate limit, and the SDK retry budget
+//      from 7.5d (~127s) wasn't enough headroom for the rate-limit window
+//      to drain. Sonnet has ~2-3× higher rate limits and ~5× lower cost,
+//      and is fully capable for structured JSON extraction from PDFs.
+//      maxRetries: 8 from 7.5d is retained as defense-in-depth.
 //
 // Changes vs Phase 7.5c:
 //   1. Anthropic SDK client gets explicit maxRetries: 8 (was default 2).
 //      Rationale: When multiple parts of a multi-part Selling Guide upload
 //      kick off extraction in parallel (e.g. 6× Freddie Mac SF parts), the
-//      organization's 450K input-tokens-per-minute rate limit gets hit and
-//      every call returns 429. With only 2 default SDK retries (~3s of
-//      backoff), the rate-limit window doesn't have time to clear.
-//      maxRetries: 8 gives ~127s of exponential backoff with jitter, which
-//      fits inside maxDuration: 300 and lets the SDK negotiate its own
-//      timing with the rate limiter. The SDK already honors retry-after
-//      headers from the API.
+//      organization's input-token-per-minute rate limit gets hit and every
+//      call returns 429. With only 2 default SDK retries (~3s of backoff),
+//      the rate-limit window doesn't have time to clear. maxRetries: 8
+//      gives ~127s of exponential backoff with jitter, which fits inside
+//      maxDuration: 300 and lets the SDK negotiate its own timing with
+//      the rate limiter. The SDK already honors retry-after headers from
+//      the API.
 //
 // All other logic (PATH A agency vs PATH B lender, archive strategy, doc-group
 // product family detection, replace strategy, tolerant JSON parser, max_tokens
@@ -586,7 +597,7 @@ Return only the JSON object as instructed.`
 
     try {
       const message = await anthropic.messages.create({
-        model: 'claude-opus-4-7',
+        model: 'claude-sonnet-4-6',
         max_tokens: 16000,
         system: AGENCY_SYSTEM_PROMPT,
         messages: [
@@ -758,7 +769,7 @@ Return only the JSON object as instructed.`
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-7',
+      model: 'claude-sonnet-4-6',
       max_tokens: 16000,
       system: PROGRAM_SYSTEM_PROMPT,
       messages: [
