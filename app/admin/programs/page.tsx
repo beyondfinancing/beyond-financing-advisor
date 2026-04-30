@@ -57,6 +57,7 @@ type ProgramRow = {
   loan_category: string | null;
   is_active: boolean | null;
   source: string | null;
+  underwriting_method: string | null;
   extraction_metadata: ExtractionMetadata;
   created_at: string | null;
   lenders?: {
@@ -70,6 +71,30 @@ const OCCUPANCY_OPTIONS = [
   "Investment",
   "Mixed-Use",
 ];
+
+const UNDERWRITING_METHOD_OPTIONS: Array<{
+  value: 'either' | 'du' | 'lpa' | 'manual';
+  label: string;
+}> = [
+  { value: 'either', label: 'Either DU or LPA (default)' },
+  { value: 'du', label: 'DU only (Fannie Mae Desktop Underwriter)' },
+  { value: 'lpa', label: 'LPA only (Freddie Mac Loan Product Advisor)' },
+  { value: 'manual', label: 'Manual Underwriting only' },
+];
+
+function formatUnderwritingMethod(method: string | null | undefined): string {
+  switch (method) {
+    case 'du':
+      return 'AUS: DU only';
+    case 'lpa':
+      return 'AUS: LPA only';
+    case 'manual':
+      return 'AUS: Manual UW';
+    case 'either':
+    default:
+      return 'AUS: Either';
+  }
+}
 
 type SourceTab = 'all' | 'active' | 'extracted';
 
@@ -505,6 +530,24 @@ export default async function AdminProgramsPage({
 
                 <div>
                   <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
+                    AUS / Underwriting Method
+                  </label>
+                  <select
+                    name="underwriting_method"
+                    defaultValue="either"
+                    required
+                    style={inputStyle()}
+                  >
+                    {UNDERWRITING_METHOD_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", marginBottom: 8, fontWeight: 700 }}>
                     Notes
                   </label>
                   <textarea
@@ -623,6 +666,10 @@ export default async function AdminProgramsPage({
                             {program.occupancy && (
                               <span style={badgeStyle()}>{program.occupancy}</span>
                             )}
+
+                            <span style={badgeStyle('#cffafe', '#155e75')}>
+                              {formatUnderwritingMethod(program.underwriting_method)}
+                            </span>
                           </div>
 
                           <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
@@ -831,6 +878,19 @@ export default async function AdminProgramsPage({
                                 </option>
                               ))}
                             </select>
+
+                            <select
+                              name="underwriting_method"
+                              defaultValue={program.underwriting_method || "either"}
+                              required
+                              style={inputStyle()}
+                            >
+                              {UNDERWRITING_METHOD_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
                           </div>
 
                           <div style={{ marginTop: 12 }}>
@@ -879,6 +939,11 @@ export default async function AdminProgramsPage({
                                 value={program.occupancy || ''}
                               />
                               <input type="hidden" name="notes" value={program.notes || ''} />
+                              <input
+                                type="hidden"
+                                name="underwriting_method"
+                                value={program.underwriting_method || 'either'}
+                              />
                               <input type="hidden" name="is_active" value="true" />
                               <button type="submit" style={buttonApproveStyle()}>
                                 Approve & Activate
