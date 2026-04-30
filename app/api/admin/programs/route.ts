@@ -28,6 +28,23 @@ import { isAdminSignedIn } from '@/lib/admin-auth'
 import { supabaseAdmin } from '@/lib/supabase'
 
 // =============================================================================
+// Phase 7.2 — AUS / underwriting method validation
+// =============================================================================
+const ALLOWED_UNDERWRITING_METHODS = ['either', 'du', 'lpa', 'manual'] as const
+type UnderwritingMethod = (typeof ALLOWED_UNDERWRITING_METHODS)[number]
+
+function normalizeUnderwritingMethod(
+  value: FormDataEntryValue | null
+): UnderwritingMethod {
+  if (value === null || value === undefined) return 'either'
+  const trimmed = String(value).trim().toLowerCase()
+  if ((ALLOWED_UNDERWRITING_METHODS as readonly string[]).includes(trimmed)) {
+    return trimmed as UnderwritingMethod
+  }
+  return 'either'
+}
+
+// =============================================================================
 // GET — list programs (unchanged behavior)
 // =============================================================================
 export async function GET() {
@@ -102,6 +119,9 @@ async function handleCreate(formData: FormData) {
   const maxDti = parseNumberOrNull(formData.get('max_dti'))
   const occupancy = String(formData.get('occupancy') || '').trim() || null
   const notes = String(formData.get('notes') || '').trim() || null
+  const underwritingMethod = normalizeUnderwritingMethod(
+    formData.get('underwriting_method')
+  )
 
   if (!lenderId || !name) {
     return redirectWithError('Lender and Program Name are required.')
@@ -115,6 +135,7 @@ async function handleCreate(formData: FormData) {
     max_dti: maxDti,
     occupancy,
     notes,
+    underwriting_method: underwritingMethod,
     is_active: true,
     source: 'manual',
   })
@@ -137,6 +158,9 @@ async function handleUpdate(formData: FormData) {
   const maxDti = parseNumberOrNull(formData.get('max_dti'))
   const occupancy = String(formData.get('occupancy') || '').trim() || null
   const notes = String(formData.get('notes') || '').trim() || null
+  const underwritingMethod = normalizeUnderwritingMethod(
+    formData.get('underwriting_method')
+  )
 
   if (!lenderId || !name) {
     return redirectWithError('Lender and Program Name are required.')
@@ -150,6 +174,7 @@ async function handleUpdate(formData: FormData) {
     max_dti: maxDti,
     occupancy,
     notes,
+    underwriting_method: underwritingMethod,
   }
 
   // Phase 7.2 hook: Approve & Activate posts is_active=true so drafts go live.
