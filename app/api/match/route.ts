@@ -236,8 +236,11 @@ function arrayContainsNormalized(
 // -----------------------------------------------------------------------------
 //
 // Programs declare a required AUS / manual underwriting path via
-// `underwriting_method` (one of 'either' | 'du' | 'lpa' | 'manual'). Lenders
-// declare which AUS pipelines they accept via `aus_methods` (a string array).
+// `underwriting_method` (one of 'either' | 'du' | 'lpa' | 'manual' |
+// 'lender_box'). Lenders declare which AUS pipelines they accept via
+// `aus_methods` (a string array). 'lender_box' was added in B1 to
+// represent proprietary non-QM credit-box underwriting (Athas, ClearEdge,
+// NQM Funding, etc.) that doesn't run through DU/LPA.
 //
 // The matcher gate: if a program's required method is anything other than
 // 'either', the lender must list that method in its aus_methods. Otherwise the
@@ -251,6 +254,8 @@ function describeAusMethod(method: string | null | undefined): string {
       return "LPA";
     case "manual":
       return "Manual UW";
+    case "lender_box":
+      return "Lender Box";
     case "either":
       return "DU/LPA";
     default:
