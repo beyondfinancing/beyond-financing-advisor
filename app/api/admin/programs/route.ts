@@ -30,7 +30,7 @@ import { supabaseAdmin } from '@/lib/supabase'
 // =============================================================================
 // Phase 7.2 — AUS / underwriting method validation
 // =============================================================================
-const ALLOWED_UNDERWRITING_METHODS = ['either', 'du', 'lpa', 'manual'] as const
+const ALLOWED_UNDERWRITING_METHODS = ['either', 'du', 'lpa', 'manual', 'lender_box'] as const
 type UnderwritingMethod = (typeof ALLOWED_UNDERWRITING_METHODS)[number]
 
 function normalizeUnderwritingMethod(
