@@ -32,7 +32,7 @@ function normalizeStateArray(value: unknown): string[] {
   );
 }
 
-const ALLOWED_AUS_METHODS = new Set(["du", "lpa", "manual"]);
+const ALLOWED_AUS_METHODS = new Set(["du", "lpa", "manual", "lender_box"]);
 
 // Phase 7.1b — AUS Methods Filtering on create.
 //
