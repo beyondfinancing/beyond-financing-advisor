@@ -1,22 +1,38 @@
 // app/api/handoff-session/[id]/route.ts
 //
 // Step 4 (Drop 1) of the Professional Handoff workstream.
+// F3.3 (2/6) — TENANT SCOPING.
+//
 // GET endpoint that hydrates /finley with a borrower's intake session.
 //
 // Flow:
 //   1. Auth-gate: verify bf_team_session cookie, look up team_users row,
 //      check is_active and role in PROFESSIONAL_ROLES (Real Estate Agents
 //      explicitly excluded — same allow-list as /finley page).
-//   2. Validate the [id] route param is a UUID.
-//   3. Load the borrower_intake_sessions row. 404 if not found.
-//   4. UPSERT a professional_chat_sessions row keyed on the unique
+//   2. Resolve viewer's tenant_id via employees lookup by EMAIL.
+//      403 if no matching employees row (means tenant is not configured).
+//   3. Validate the [id] route param is a UUID.
+//   4. Load the borrower_intake_sessions row, scoped to viewer's tenant.
+//      404 if not found OR if it belongs to a different tenant. We do not
+//      distinguish — returning 403 would leak that the row exists.
+//   5. UPSERT a professional_chat_sessions row keyed on the unique
 //      constraint (intake_session_id, team_user_id) — so each LO/LOA gets
-//      their own thread that resumes across visits.
-//   5. Return: { session: {...}, transcript: [...], extractedPayload, proSession }
+//      their own thread that resumes across visits. tenant_id is set
+//      explicitly to viewer's tenant (which equals the intake's tenant
+//      thanks to step 4's filter), future-proofing against F3.7 DROP
+//      DEFAULT.
+//   6. Return: { session: {...}, transcript: [...], extractedPayload, proSession }
 //
-// Security: service-role client (bypasses RLS). The route's own auth check
-// is what gates access. Real Estate Agents who somehow get an intake URL
-// will hit 403 here even if they're logged in.
+// Architecture notes:
+//   - This route auths via team_users (the legacy registry) because the
+//     role allow-list is broader than employees-only roles (Real Estate
+//     Agents are excluded but otherwise the gate is permissive).
+//   - Tenant comes from employees by email, NOT from the session cookie's
+//     userId. team_users.id != employees.id under Phase 5-prep-C. Email
+//     is the canonical join key.
+//
+// Security: service-role client (bypasses RLS). The route's own auth
+// check + tenant filter is what gates access.
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -73,7 +89,7 @@ export async function GET(
   const { id } = await context.params;
 
   // -------------------------------------------------------------------------
-  // 1. Auth gate
+  // 1. Auth gate (team_users)
   // -------------------------------------------------------------------------
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE)?.value;
@@ -88,7 +104,7 @@ export async function GET(
 
   const { data: teamUser, error: teamUserError } = await supabaseAdmin
     .from("team_users")
-    .select("id, role, is_active, preferred_language")
+    .select("id, role, is_active, preferred_language, email")
     .eq("id", session.userId)
     .maybeSingle();
 
@@ -106,7 +122,51 @@ export async function GET(
   }
 
   // -------------------------------------------------------------------------
-  // 2. Validate the id param
+  // 2. Resolve viewer's tenant_id via employees lookup by EMAIL.
+  //    Different table than auth (team_users above). employees is the
+  //    canonical source of tenant assignment under Phase 5-prep-C.
+  // -------------------------------------------------------------------------
+  const viewerEmail = (teamUser as { email?: string | null }).email;
+  if (!viewerEmail) {
+    console.error(
+      "[handoff-session] team_users row has no email — cannot resolve tenant.",
+      { teamUserId: teamUser.id }
+    );
+    return NextResponse.json(
+      { error: "Tenant is not configured for this account." },
+      { status: 403 }
+    );
+  }
+
+  const { data: employee, error: employeeError } = await supabaseAdmin
+    .from("employees")
+    .select("tenant_id")
+    .eq("email", viewerEmail)
+    .maybeSingle();
+
+  if (employeeError) {
+    console.error("[handoff-session] employees lookup failed.", employeeError);
+    return NextResponse.json(
+      { error: "Failed to verify session." },
+      { status: 500 }
+    );
+  }
+
+  if (!employee || !employee.tenant_id) {
+    console.warn(
+      "[handoff-session] employees row missing or has no tenant_id.",
+      { teamUserId: teamUser.id, viewerEmail }
+    );
+    return NextResponse.json(
+      { error: "Tenant is not configured for this account." },
+      { status: 403 }
+    );
+  }
+
+  const viewerTenantId = employee.tenant_id as string;
+
+  // -------------------------------------------------------------------------
+  // 3. Validate the id param
   // -------------------------------------------------------------------------
   if (!isUuid(id)) {
     return NextResponse.json(
@@ -116,7 +176,9 @@ export async function GET(
   }
 
   // -------------------------------------------------------------------------
-  // 3. Load the intake session
+  // 4. Load the intake session, scoped to viewer's tenant.
+  //    Cross-tenant access returns 404 (not 403) to avoid leaking that the
+  //    row exists in another tenant.
   // -------------------------------------------------------------------------
   const { data: intakeRow, error: intakeError } = await supabaseAdmin
     .from("borrower_intake_sessions")
@@ -128,6 +190,7 @@ export async function GET(
         "created_at, updated_at"
     )
     .eq("id", id)
+    .eq("tenant_id", viewerTenantId)
     .maybeSingle();
 
   if (intakeError || !intakeRow) {
@@ -142,9 +205,12 @@ export async function GET(
   const intake = intakeRow as unknown as IntakeSessionRow;
 
   // -------------------------------------------------------------------------
-  // 4. UPSERT pro chat session for (intake_session_id, team_user_id)
+  // 5. UPSERT pro chat session for (intake_session_id, team_user_id).
   //    Default language pulls from team_users.preferred_language; falls
   //    back to intake language if team has none set.
+  //
+  //    tenant_id is set explicitly so this INSERT continues to work after
+  //    F3.7 DROPS the DEFAULT off professional_chat_sessions.tenant_id.
   // -------------------------------------------------------------------------
   const proLanguage =
     (teamUser as { preferred_language?: string | null }).preferred_language ||
@@ -158,6 +224,7 @@ export async function GET(
         intake_session_id: intake.id,
         team_user_id: session.userId,
         language: proLanguage,
+        tenant_id: viewerTenantId,
       },
       {
         onConflict: "intake_session_id,team_user_id",
@@ -198,7 +265,7 @@ export async function GET(
   }
 
   // -------------------------------------------------------------------------
-  // 5. Return everything /finley needs to hydrate
+  // 6. Return everything /finley needs to hydrate
   // -------------------------------------------------------------------------
   return NextResponse.json({
     session: {
