@@ -1,34 +1,38 @@
 // app/api/handoff-chat/[proSessionId]/route.ts
 //
 // Step 5 Drop A — Pro Mode system prompt + scenario/transcript/match/catalog
-// context injection. Replaces the placeholder prompt that shipped in Drop 1.
+// context injection.
+// F3.3 (3/6) — TENANT SCOPING (this revision)
 //
-// What changed vs Drop 1:
-//   - buildSystemPrompt() rewritten as a multi-block runtime prompt:
-//       1. Static Pro Mode rules (audience, tone, regulatory, business model)
-//       2. BORROWER SCENARIO block — built from extracted_payload + intake row
-//       3. BORROWER TRANSCRIPT block — last 50 turns from intake.messages
-//       4. MATCH RESULTS block — summarized match_results, or "not yet run"
-//       5. WHOLESALE LENDER × PROGRAM CATALOG block — live read from
-//          lenders ⨝ programs (wholesale/correspondent/both, programs.is_active=true)
-//   - Loads the borrower_intake_sessions row and the lenders/programs catalog
-//     on every turn (live reads — no cache yet; ~19 lenders × ~26 programs
-//     is small).
-//   - Resolves loan_officer_id → team_users.full_name for "Loan Officer of
-//     record" line in the scenario block.
+// What changed in F3.3:
+//   - Resolve viewer.tenant_id via employees lookup by email (canonical
+//     join key under Phase 5-prep-C dual-write).
+//   - Tenant-scope borrower_intake_sessions reads.
+//   - Tenant-scope professional_chat_sessions reads (defense in depth —
+//     UPSERT in route #2 already sets tenant_id correctly).
+//   - Tenant-scope the lender catalog via tenant_lenders. The agency
+//     programs (global_guidelines) are NOT scoped — selling guides are
+//     shared across all tenants by design.
+//   - Empty tenant_lenders for a tenant returns an empty catalog (no
+//     lenders, no agency programs). The system prompt already handles
+//     "catalog appears thin" gracefully.
 //
 // What did NOT change:
-//   - Auth gate (cookie → role check)
-//   - Pro session load + ownership check
+//   - Auth gate (cookie → role check via team_users)
+//   - Pro session ownership check
 //   - Message validation
-//   - OpenAI call shape (model, temperature, message structure)
-//   - Persistence (messages JSONB update on professional_chat_sessions)
-//   - Response shape ({ success, reply, proSessionId, messageCount })
+//   - OpenAI call shape
+//   - Response shape
+//   - The static Pro Mode prompt prefix
+//   - All formatters (formatScenarioBlock, formatTranscriptBlock, etc.)
 //
-// Drop B (next) will add persistence so /finley's Run Qualification Match
-// writes back to borrower_intake_sessions.match_results — at which point
-// the MATCH RESULTS block will populate with real data instead of the
-// "not yet run" branch.
+// Tenant model notes:
+//   - This route auths via team_users (legacy registry, broad role allow-
+//     list including non-employee roles like Real Estate Agent... wait no,
+//     this route excludes Real Estate Agent. Auth is via team_users; tenant
+//     comes from employees by email.
+//   - borrower_intake_sessions.loan_officer_id references team_users.id
+//     (verified via SQL probe). loadLoanOfficerName stays unchanged.
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -147,9 +151,6 @@ type Catalog = {
   agencyPrograms: AgencyProgram[];
 };
 
-// Shape mirroring /api/match's MatchBucket. Defensive — we only read fields
-// we actually use, so an upstream change to the matcher won't break us as
-// long as the core fields stay.
 type MatchBucket = {
   lender_name?: string;
   lender_id?: string;
@@ -372,7 +373,6 @@ function formatTranscriptBlock(messages: unknown, cap: number): string {
 function summarizeMatchResults(matchResults: unknown): string {
   const header = "=== MATCH RESULTS ===";
 
-  // Null / empty / not-yet-run cases
   if (
     matchResults === null ||
     matchResults === undefined ||
@@ -384,9 +384,6 @@ function summarizeMatchResults(matchResults: unknown): string {
     return `${header}\nMatcher has not been run on this file.`;
   }
 
-  // Validate it looks like a matcher response. If it's some other JSON shape
-  // (e.g. someone manually populated the column with non-matcher data), fall
-  // back to a flag rather than a raw dump that could blow context.
   if (typeof matchResults !== "object" || matchResults === null) {
     return `${header}\nMatch results present but not in the expected shape.`;
   }
@@ -405,8 +402,6 @@ function summarizeMatchResults(matchResults: unknown): string {
     : [];
   const eliminated = Array.isArray(m.eliminated_paths) ? m.eliminated_paths : [];
 
-  // Sort strong descending by score (defensive — matcher already does this,
-  // but a manual SQL UPDATE could land them out of order).
   const strongSorted = [...strong].sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0)
   );
@@ -419,12 +414,10 @@ function summarizeMatchResults(matchResults: unknown): string {
     lines.push("");
   }
 
-  // Bucket counts
   lines.push(
     `Strong: ${strong.length} | Conditional: ${conditional.length} | Eliminated: ${eliminated.length}`
   );
 
-  // Lender pool summary if present
   if (m.lender_summary) {
     const ls = m.lender_summary;
     if (typeof ls.active_lender_count === "number") {
@@ -442,7 +435,6 @@ function summarizeMatchResults(matchResults: unknown): string {
 
   lines.push("");
 
-  // Top N strong matches (lender × program × score)
   if (topStrong.length > 0) {
     lines.push(
       `Top ${topStrong.length} strong matches (sorted by score desc):`
@@ -458,7 +450,6 @@ function summarizeMatchResults(matchResults: unknown): string {
     lines.push("");
   }
 
-  // Conditional bucket — show count + a few representative concerns/blockers
   if (conditional.length > 0) {
     const conditionalSorted = [...conditional].sort(
       (a, b) => (b.score ?? 0) - (a.score ?? 0)
@@ -483,7 +474,6 @@ function summarizeMatchResults(matchResults: unknown): string {
     lines.push("");
   }
 
-  // Top elimination reasons — most-frequent blocker strings
   if (eliminated.length > 0) {
     const blockerCounts = new Map<string, number>();
     for (const b of eliminated) {
@@ -515,9 +505,6 @@ function formatCatalogBlock(catalog: Catalog): string {
   const header = "=== WHOLESALE LENDER × PROGRAM CATALOG ===";
   const lines: string[] = [header];
 
-  // ---------------------------------------------------------------------------
-  // Section 1: Wholesale lenders + capability flags
-  // ---------------------------------------------------------------------------
   if (catalog.lenders.length === 0) {
     lines.push("(No active wholesale lenders configured.)");
   } else {
@@ -536,9 +523,6 @@ function formatCatalogBlock(catalog: Catalog): string {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Section 2: Lender-specific programs
-  // ---------------------------------------------------------------------------
   const lendersWithPrograms = catalog.lenders.filter(
     (l) => l.programs.length > 0
   );
@@ -565,9 +549,6 @@ function formatCatalogBlock(catalog: Catalog): string {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Section 3: Agency programs grouped by agency
-  // ---------------------------------------------------------------------------
   if (catalog.agencyPrograms.length > 0) {
     const byAgency = new Map<string, AgencyProgram[]>();
     for (const ap of catalog.agencyPrograms) {
@@ -581,7 +562,6 @@ function formatCatalogBlock(catalog: Catalog): string {
       `# Agency programs (${catalog.agencyPrograms.length}) — placeable by any wholesale lender above with the matching capability`
     );
 
-    // Stable ordering: Fannie Mae first, then alphabetical
     const sortedAgencies = Array.from(byAgency.keys()).sort((a, b) => {
       if (a === "Fannie Mae") return -1;
       if (b === "Fannie Mae") return 1;
@@ -594,7 +574,6 @@ function formatCatalogBlock(catalog: Catalog): string {
       lines.push(
         `${agency} (${programs.length} programs)${capabilityHint ? ` — typically requires ${capabilityHint} capability` : ""}:`
       );
-      // Sort programs alphabetically within agency
       const sortedPrograms = [...programs].sort((a, b) =>
         a.program_name.localeCompare(b.program_name)
       );
@@ -617,9 +596,6 @@ function formatCatalogBlock(catalog: Catalog): string {
   return lines.join("\n");
 }
 
-// Map agency name → which lender capability flag is typically needed.
-// Conservative — when in doubt, omit the hint and let Finley reason from
-// agency-name + lender capability flags directly.
 function agencyCapabilityHint(agency: string): string | null {
   switch (agency) {
     case "Fannie Mae":
@@ -632,8 +608,6 @@ function agencyCapabilityHint(agency: string): string | null {
     case "USDA":
       return "USDA";
     case "HUD":
-      // Section 184 is HUD-administered but generally tracked under FHA-capable
-      // wholesale lenders. Conservative hint.
       return "FHA";
     default:
       return null;
@@ -666,8 +640,28 @@ function buildSystemPrompt(blocks: ContextBlocks): string {
 // Data loaders
 // =============================================================================
 
+// F3.3: viewer's tenant comes from employees by EMAIL. team_users.id !=
+// employees.id under Phase 5-prep-C dual-write. Email is the canonical
+// join key.
+async function resolveViewerTenantId(
+  viewerEmail: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("employees")
+    .select("tenant_id")
+    .eq("email", viewerEmail)
+    .maybeSingle();
+  if (error) {
+    console.error("[handoff-chat] employees lookup failed.", error);
+    return null;
+  }
+  if (!data || !data.tenant_id) return null;
+  return data.tenant_id as string;
+}
+
 async function loadBorrowerScenario(
-  intakeSessionId: string
+  intakeSessionId: string,
+  tenantId: string
 ): Promise<IntakeRow | null> {
   const { data, error } = await supabaseAdmin
     .from("borrower_intake_sessions")
@@ -675,6 +669,7 @@ async function loadBorrowerScenario(
       "id, status, language, borrower_first_name, borrower_last_name, borrower_state, loan_officer_id, messages, extracted_payload, match_results"
     )
     .eq("id", intakeSessionId)
+    .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (error || !data) {
@@ -684,6 +679,8 @@ async function loadBorrowerScenario(
   return data as unknown as IntakeRow;
 }
 
+// borrower_intake_sessions.loan_officer_id references team_users.id
+// (verified via SQL probe). This stays a team_users lookup.
 async function loadLoanOfficerName(
   loanOfficerId: string | null
 ): Promise<string | null> {
@@ -697,16 +694,49 @@ async function loadLoanOfficerName(
   return (data as { full_name?: string | null }).full_name ?? null;
 }
 
-async function loadCatalog(): Promise<Catalog> {
-  // Lenders: filter matches `/api/match` exactly — anything that isn't tagged
-  // as an agency (Fannie Mae, Freddie Mac, etc.) is a placement option.
-  // Pull capability flags so Pro Mode can reason about which agency programs
-  // each lender can actually place.
+// F3.3: Catalog is now tenant-scoped via tenant_lenders.
+//
+// Lenders: only those enabled for this tenant via tenant_lenders.is_active=true.
+// Programs: inherit the lender filter (no separate tenant filter on programs).
+// Agency programs (global_guidelines): NOT scoped — selling guides are shared
+// across tenants by design.
+async function loadCatalog(tenantId: string): Promise<Catalog> {
+  // Step 1: which lenders are enabled for this tenant?
+  const { data: tenantLenderRows, error: tenantLenderError } =
+    await supabaseAdmin
+      .from("tenant_lenders")
+      .select("lender_id")
+      .eq("tenant_id", tenantId)
+      .eq("is_active", true);
+
+  if (tenantLenderError) {
+    console.error(
+      "[handoff-chat] tenant_lenders load failed",
+      tenantLenderError
+    );
+    return { lenders: [], agencyPrograms: [] };
+  }
+
+  const enabledLenderIds = (tenantLenderRows ?? [])
+    .map((r) => (r as { lender_id?: string }).lender_id)
+    .filter((id): id is string => typeof id === "string");
+
+  // F3.3 edge case: tenant with no configured lenders. Bail with empty
+  // catalog rather than running .in('id', []) which has unpredictable
+  // PostgREST semantics. Agency programs also skipped — without lenders
+  // they have no recommendation anchor anyway.
+  if (enabledLenderIds.length === 0) {
+    console.warn("[handoff-chat] tenant has no enabled lenders.", { tenantId });
+    return { lenders: [], agencyPrograms: [] };
+  }
+
+  // Step 2: load those lenders, restricted to non-agency.
   const { data: lenderRows, error: lenderError } = await supabaseAdmin
     .from("lenders")
     .select(
       "id, name, lender_type, does_conventional, does_fha, does_va, does_usda"
     )
+    .in("id", enabledLenderIds)
     .or("lender_type.is.null,lender_type.neq.agency");
 
   if (lenderError || !lenderRows || lenderRows.length === 0) {
@@ -726,7 +756,7 @@ async function loadCatalog(): Promise<Catalog> {
 
   const lenderIds = lenders.map((l) => l.id);
 
-  // Lender-specific active programs
+  // Step 3: lender-specific active programs for those lenders.
   const { data: programRows, error: programError } = await supabaseAdmin
     .from("programs")
     .select(
@@ -764,9 +794,7 @@ async function loadCatalog(): Promise<Catalog> {
       programs: programsByLender.get(l.id) ?? [],
     }));
 
-  // Agency programs from global_guidelines — same source the matcher reads.
-  // Fields kept compact for the prompt; richer notes live on each row but
-  // would blow the token budget if injected wholesale.
+  // Step 4: agency programs from global_guidelines — NOT tenant-scoped.
   const { data: agencyRows, error: agencyError } = await supabaseAdmin
     .from("global_guidelines")
     .select(
@@ -836,7 +864,7 @@ export async function POST(
   const { proSessionId } = await context.params;
 
   // -------------------------------------------------------------------------
-  // 1. Auth gate
+  // 1. Auth gate (team_users)
   // -------------------------------------------------------------------------
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE)?.value;
@@ -851,7 +879,7 @@ export async function POST(
 
   const { data: teamUser, error: teamUserError } = await supabaseAdmin
     .from("team_users")
-    .select("id, role, is_active")
+    .select("id, role, is_active, email")
     .eq("id", session.userId)
     .maybeSingle();
 
@@ -869,7 +897,34 @@ export async function POST(
   }
 
   // -------------------------------------------------------------------------
-  // 2. Validate route param + load pro session
+  // 2. F3.3: Resolve viewer's tenant_id via employees.
+  // -------------------------------------------------------------------------
+  const viewerEmail = (teamUser as { email?: string | null }).email;
+  if (!viewerEmail) {
+    console.error(
+      "[handoff-chat] team_users row has no email — cannot resolve tenant.",
+      { teamUserId: teamUser.id }
+    );
+    return NextResponse.json(
+      { error: "Tenant is not configured for this account." },
+      { status: 403 }
+    );
+  }
+
+  const viewerTenantId = await resolveViewerTenantId(viewerEmail);
+  if (!viewerTenantId) {
+    console.warn(
+      "[handoff-chat] employees row missing or has no tenant_id.",
+      { teamUserId: teamUser.id, viewerEmail }
+    );
+    return NextResponse.json(
+      { error: "Tenant is not configured for this account." },
+      { status: 403 }
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 3. Validate route param + load pro session (tenant-scoped)
   // -------------------------------------------------------------------------
   if (!isUuid(proSessionId)) {
     return NextResponse.json(
@@ -882,6 +937,7 @@ export async function POST(
     .from("professional_chat_sessions")
     .select("id, intake_session_id, team_user_id, language, messages")
     .eq("id", proSessionId)
+    .eq("tenant_id", viewerTenantId)
     .maybeSingle();
 
   if (proError || !proRow) {
@@ -894,7 +950,7 @@ export async function POST(
   const pro = proRow as unknown as ProSessionRow;
 
   // -------------------------------------------------------------------------
-  // 3. Defense in depth: ensure this LO owns this thread.
+  // 4. Defense in depth: ensure this LO owns this thread.
   // -------------------------------------------------------------------------
   if (pro.team_user_id !== session.userId) {
     return NextResponse.json(
@@ -904,7 +960,7 @@ export async function POST(
   }
 
   // -------------------------------------------------------------------------
-  // 4. Parse + validate the LO's message
+  // 5. Parse + validate the LO's message
   // -------------------------------------------------------------------------
   let body: { message?: unknown; mode?: unknown } = {};
   try {
@@ -932,9 +988,13 @@ export async function POST(
   }
 
   // -------------------------------------------------------------------------
-  // 5. Load runtime context (intake row, LO of record, catalog)
+  // 6. Load runtime context (intake row, LO of record, catalog) — all
+  //    tenant-scoped where applicable.
   // -------------------------------------------------------------------------
-  const intake = await loadBorrowerScenario(pro.intake_session_id);
+  const intake = await loadBorrowerScenario(
+    pro.intake_session_id,
+    viewerTenantId
+  );
   if (!intake) {
     return NextResponse.json(
       { error: "Borrower intake session not found." },
@@ -944,7 +1004,7 @@ export async function POST(
 
   const [loanOfficerName, catalog] = await Promise.all([
     loadLoanOfficerName(intake.loan_officer_id),
-    loadCatalog(),
+    loadCatalog(viewerTenantId),
   ]);
 
   const blocks: ContextBlocks = {
@@ -956,11 +1016,11 @@ export async function POST(
 
   const systemPrompt = buildSystemPrompt(blocks);
 
-  // Lightweight observability — sizes only, no PII content.
   console.log("[handoff-chat] context built", {
     proSessionId: pro.id,
     intakeId: intake.id,
     teamUserId: session.userId,
+    tenantId: viewerTenantId,
     scenarioBytes: blocks.scenario.length,
     transcriptBytes: blocks.transcript.length,
     matchBytes: blocks.matchResults.length,
@@ -972,7 +1032,7 @@ export async function POST(
   });
 
   // -------------------------------------------------------------------------
-  // 6. Build conversation history + call OpenAI
+  // 7. Build conversation history + call OpenAI
   // -------------------------------------------------------------------------
   const ts = new Date().toISOString();
   const existingMessages: ChatMessage[] = Array.isArray(pro.messages)
@@ -1001,7 +1061,7 @@ export async function POST(
   }
 
   // -------------------------------------------------------------------------
-  // 7. Persist updated messages JSONB
+  // 8. Persist updated messages JSONB (tenant-scoped UPDATE)
   // -------------------------------------------------------------------------
   const assistantTurn: ChatMessage = {
     role: "assistant",
@@ -1013,7 +1073,8 @@ export async function POST(
   const { error: updateError } = await supabaseAdmin
     .from("professional_chat_sessions")
     .update({ messages: updatedMessages })
-    .eq("id", pro.id);
+    .eq("id", pro.id)
+    .eq("tenant_id", viewerTenantId);
 
   if (updateError) {
     console.error("[handoff-chat] persist failed", updateError);
@@ -1022,7 +1083,7 @@ export async function POST(
   }
 
   // -------------------------------------------------------------------------
-  // 8. Return the assistant reply
+  // 9. Return the assistant reply
   // -------------------------------------------------------------------------
   return NextResponse.json({
     success: true,
