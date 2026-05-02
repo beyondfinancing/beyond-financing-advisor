@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getSessionFromRequest } from "@/lib/team-auth";
+import { getCurrentTenantId, getSessionFromRequest } from "@/lib/team-auth";
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       authenticated: true,
+      tenantId: getCurrentTenantId(req),
       user: {
         id: user.id,
         name: user.full_name,
