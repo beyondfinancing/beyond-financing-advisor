@@ -13,9 +13,20 @@
 //
 // Auth: bf_team_session cookie via lib/team-auth.getSessionFromRequest.
 //   - 401 if no session, expired session, or signature mismatch.
-//   - 401 if the session's userId no longer maps to an active employees row.
+//   - 401 if the session's email no longer maps to an active employees row.
 //   - 403 if the role is not 'Loan Officer'.
 //     (Phase 5.2 scope. Assistant/Admin views are deferred.)
+//
+// VIEWER LOOKUP IS BY EMAIL, NOT BY ID:
+//   The session cookie's userId is team_users.id. team_users and employees
+//   are NOT guaranteed to share the same id — the Phase 5-prep-C dual-write
+//   pattern upserts by email with independent UUIDs. So we must join by
+//   email, the canonical key shared between the two tables.
+//
+//   Pre-F3.3 versions of this route looked up employees by id; that path
+//   silently failed for any user whose team_users.id != employees.id and
+//   was masked because the inbox isn't hit on every request. F3.3 fixes
+//   that incidentally while adding tenant scoping.
 //
 // Tenant scoping (F3.3):
 //   - viewer.tenant_id (from employees) is the authoritative tenant filter.
@@ -54,6 +65,8 @@
 //   }
 //
 // Notes:
+//   - viewer.id in the response is employees.id (the canonical id used by
+//     borrower_scenarios.assigned_loan_officer_id), not team_users.id.
 //   - Reads via supabaseAdmin (service role). Auth + tenant scope are
 //     enforced at the route boundary, so service-role read is safe.
 //   - msgCount and lastMessagePreview are computed server-side from the
@@ -403,9 +416,7 @@ export async function GET(req: NextRequest) {
   try {
     // -----------------------------------------------------------------------
     // Auth — verify signed cookie, then re-confirm against the live
-    // employees row. The session cookie is HMAC-signed, but role,
-    // is_active, and tenant_id can change after issuance. The live
-    // employees row is the authoritative source of truth for tenant scope.
+    // employees row by EMAIL (not id — see file header).
     // -----------------------------------------------------------------------
     const session = getSessionFromRequest(req)
     if (!session) {
@@ -418,7 +429,7 @@ export async function GET(req: NextRequest) {
     const { data: viewer, error: viewerErr } = await supabaseAdmin
       .from('employees')
       .select('id, full_name, email, role, is_active, tenant_id')
-      .eq('id', session.userId)
+      .eq('email', session.email)
       .maybeSingle()
 
     if (viewerErr) {
