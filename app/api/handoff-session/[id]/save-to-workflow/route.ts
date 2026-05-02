@@ -1,9 +1,24 @@
 // app/api/handoff-session/[id]/save-to-workflow/route.ts
 //
 // Step 6 Phase 6.1 (Polish v1) — Pro Mode summary endpoint.
+// F3.3 (5/6) — TENANT SCOPING (this revision)
 //
 // =============================================================================
-// CHANGES IN POLISH V1
+// CHANGES IN F3.3 (5/6) — TENANT SCOPING
+// =============================================================================
+//
+// - Resolve viewer.tenant_id via employees lookup by email.
+// - Tenant-scope all four reads: workflow_files, borrower_intake_sessions,
+//   and both branches of professional_chat_sessions.
+// - Set tenant_id explicitly on workflow_feed INSERT for F3.7-safety.
+// - workflow_files.loan_officer_id verified to reference team_users.id
+//   (SQL probe). Existing ownership check (loan_officer_id === session.userId)
+//   stays unchanged.
+// - Cross-tenant access on any read returns 404. The route can never reach
+//   the INSERT step with a workflow_file or intake from another tenant.
+//
+// =============================================================================
+// PRIOR CHANGES IN POLISH V1 (preserved)
 // =============================================================================
 //
 // Hybrid template: deterministic data is now assembled by CODE; the AI
@@ -12,31 +27,14 @@
 //
 // Why: the prior all-AI version was observed having gpt-4o-mini hallucinate
 // numeric counts and the top-recommendation string even when given exact
-// values in the context. Concrete example from production:
-//   Matcher returned: 576 strong / 23 conditional / 0 eliminated, top rec
-//                     "AGENCY Connect ... with ClearEdge Lending"
-//   AI wrote:         310 strong / 78 conditional / 211 eliminated, top rec
-//                     "Standard Conforming Manual Underwriting with Newrez"
-// The AI also mislabeled the Debt field as "Reserves" because the prompt
-// template asked for a Reserves field that wasn't in the context.
-//
-// These outputs become permanent file records — factual fidelity matters.
-// Prompt-tightening alone did not eliminate the drift in earlier tests.
+// values in the context. These outputs become permanent file records —
+// factual fidelity matters.
 //
 // The AI now returns JSON ({ takeaways[], next_action }) via OpenAI's
 // response_format=json_object. The route handler assembles the final
 // summary text from that JSON plus the structured ScenarioFields and
 // MatchSummary produced by code-side helpers. Counts, top recommendation,
 // and field labels can never drift.
-//
-// Other changes:
-//   - Field label "Credit / Income / Reserves" → "Credit / Monthly income /
-//     Monthly debt" (matches the actual data we pass).
-//   - Scenario rendering tightened: occupancy + state + home price grouped
-//     on a single Property line; loan amount + path + LTV + down payment
-//     grouped on a single Loan line. Same information, fewer disjointed
-//     bullets.
-//   - Defensive fallbacks if AI returns empty takeaways or next_action.
 //
 // =============================================================================
 //
@@ -54,14 +52,16 @@
 //
 // Access control:
 //   - Calling user MUST be workflow_files.loan_officer_id on the target.
+//   - Target workflow_file MUST belong to caller's tenant.
 //
 // Failure modes:
 //   - 401 no/invalid session
-//   - 403 inactive, wrong role, not the assigned LO, or pro session belongs
-//         to different caller
+//   - 403 inactive, wrong role, no tenant configured, not the assigned LO,
+//         or pro session belongs to different caller
 //   - 400 invalid [id] / body / pro session belongs to different intake
 //   - 404 intake session, target workflow file, or explicit pro session
-//         not found
+//         not found (also returned for cross-tenant access — do not leak
+//         row existence in another tenant)
 //   - 502 OpenAI call failed
 //   - 500 INSERT failed
 
@@ -159,20 +159,20 @@ type MatcherResponse = {
 
 type ScenarioFields = {
   borrowerName: string;
-  loanAmount: string;       // formatted, e.g. "$560,000" or "—"
-  homePrice: string;        // formatted, e.g. "$700,000" or "—"
-  downPayment: string;      // formatted, e.g. "$140,000" or "—"
-  ltv: string;              // formatted with %, e.g. "80%" or "—"
+  loanAmount: string;
+  homePrice: string;
+  downPayment: string;
+  ltv: string;
   occupancy: string;
   state: string;
   path: string;
   credit: string;
-  income: string;           // monthly, formatted
-  debt: string;             // monthly, formatted
+  income: string;
+  debt: string;
 };
 
 type MatchSummary = {
-  available: boolean;       // false if matcher has not been run
+  available: boolean;
   strongCount: number;
   conditionalCount: number;
   eliminatedCount: number;
@@ -474,8 +474,6 @@ function assembleFinalSummary(args: {
 }): string {
   const { todayHuman, scenario: s, match, bullets } = args;
 
-  // Property line — combine occupancy + state + home price gracefully when
-  // any field is missing.
   const propertyDetails = [s.occupancy, s.state]
     .filter((x) => x && x !== "—")
     .join(" in ");
@@ -483,15 +481,12 @@ function assembleFinalSummary(args: {
     ? `• Property: ${propertyDetails}, ${s.homePrice}`
     : `• Property: ${s.homePrice}`;
 
-  // Loan line — combine path + amount + LTV + down. Suffixes drop cleanly
-  // when their fields are missing.
   const ltvSuffix = s.ltv !== "—" ? ` at ${s.ltv} LTV` : "";
   const downSuffix =
     s.downPayment !== "—" ? ` with ${s.downPayment} down` : "";
   const loanPathPrefix = s.path !== "—" ? `${s.path}, ` : "";
   const loanLine = `• Loan: ${loanPathPrefix}${s.loanAmount}${ltvSuffix}${downSuffix}`;
 
-  // Matcher Outcome lines — pulled from structured MatchSummary, never from AI
   const matchLines = match.available
     ? [
         `• ${match.strongCount} strong, ${match.conditionalCount} conditional, ${match.eliminatedCount} eliminated`,
@@ -532,7 +527,7 @@ export async function POST(
   const { id: intakeSessionId } = await context.params;
 
   // ---------------------------------------------------------------------------
-  // 1. Auth
+  // 1. Auth (team_users)
   // ---------------------------------------------------------------------------
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE)?.value;
@@ -547,7 +542,7 @@ export async function POST(
 
   const { data: teamUser, error: teamUserError } = await supabaseAdmin
     .from("team_users")
-    .select("id, full_name, role, is_active")
+    .select("id, full_name, role, is_active, email")
     .eq("id", session.userId)
     .maybeSingle();
 
@@ -566,7 +561,49 @@ export async function POST(
   }
 
   // ---------------------------------------------------------------------------
-  // 2. Validate [id] + body
+  // 2. F3.3: Resolve viewer's tenant_id via employees lookup by EMAIL.
+  // ---------------------------------------------------------------------------
+  const viewerEmail = (teamUser as { email?: string | null }).email;
+  if (!viewerEmail) {
+    console.error(
+      "[save-to-workflow] team_users row has no email — cannot resolve tenant.",
+      { teamUserId: teamUser.id }
+    );
+    return NextResponse.json(
+      { error: "Tenant is not configured for this account." },
+      { status: 403 }
+    );
+  }
+
+  const { data: employee, error: employeeError } = await supabaseAdmin
+    .from("employees")
+    .select("tenant_id")
+    .eq("email", viewerEmail)
+    .maybeSingle();
+
+  if (employeeError) {
+    console.error("[save-to-workflow] employees lookup failed.", employeeError);
+    return NextResponse.json(
+      { error: "Failed to verify session." },
+      { status: 500 }
+    );
+  }
+
+  if (!employee || !employee.tenant_id) {
+    console.warn(
+      "[save-to-workflow] employees row missing or has no tenant_id.",
+      { teamUserId: teamUser.id, viewerEmail }
+    );
+    return NextResponse.json(
+      { error: "Tenant is not configured for this account." },
+      { status: 403 }
+    );
+  }
+
+  const viewerTenantId = employee.tenant_id as string;
+
+  // ---------------------------------------------------------------------------
+  // 3. Validate [id] + body
   // ---------------------------------------------------------------------------
   if (!isUuid(intakeSessionId)) {
     return NextResponse.json(
@@ -605,12 +642,15 @@ export async function POST(
   }
 
   // ---------------------------------------------------------------------------
-  // 3. Verify ownership of target workflow file
+  // 4. Verify ownership of target workflow file (tenant-scoped).
+  //    workflow_files.loan_officer_id references team_users.id (verified
+  //    via SQL probe). Comparison against session.userId stays unchanged.
   // ---------------------------------------------------------------------------
   const { data: workflowFile, error: workflowFileError } = await supabaseAdmin
     .from("workflow_files")
     .select("id, loan_officer_id, borrower_name, file_number")
     .eq("id", targetWorkflowFileId)
+    .eq("tenant_id", viewerTenantId)
     .maybeSingle();
 
   if (workflowFileError) {
@@ -636,7 +676,7 @@ export async function POST(
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Load intake row
+  // 5. Load intake row (tenant-scoped)
   // ---------------------------------------------------------------------------
   const { data: intakeData, error: intakeError } = await supabaseAdmin
     .from("borrower_intake_sessions")
@@ -644,6 +684,7 @@ export async function POST(
       "id, language, borrower_first_name, borrower_last_name, borrower_state, loan_officer_id, extracted_payload, match_results"
     )
     .eq("id", intakeSessionId)
+    .eq("tenant_id", viewerTenantId)
     .maybeSingle();
 
   if (intakeError) {
@@ -661,7 +702,8 @@ export async function POST(
   const intakeRow = intakeData as unknown as IntakeRow;
 
   // ---------------------------------------------------------------------------
-  // 5. Load pro chat session — explicit OR most-recent for caller
+  // 6. Load pro chat session — explicit OR most-recent for caller.
+  //    Both branches tenant-scoped for defense in depth.
   // ---------------------------------------------------------------------------
   let proSession: ProSessionRow | null = null;
 
@@ -672,6 +714,7 @@ export async function POST(
         "id, intake_session_id, team_user_id, language, messages, created_at"
       )
       .eq("id", explicitProSessionId)
+      .eq("tenant_id", viewerTenantId)
       .maybeSingle();
 
     if (error) {
@@ -705,6 +748,7 @@ export async function POST(
       )
       .eq("intake_session_id", intakeSessionId)
       .eq("team_user_id", session.userId)
+      .eq("tenant_id", viewerTenantId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -716,7 +760,7 @@ export async function POST(
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Extract structured data + build context blocks
+  // 7. Extract structured data + build context blocks
   // ---------------------------------------------------------------------------
   const scenario = getScenarioFields(intakeRow);
   const { summary: match, raw: matchRaw } = getMatchSummary(intakeRow);
@@ -735,7 +779,7 @@ export async function POST(
   });
 
   // ---------------------------------------------------------------------------
-  // 7. AI generates ONLY takeaways + next_action (JSON mode)
+  // 8. AI generates ONLY takeaways + next_action (JSON mode)
   // ---------------------------------------------------------------------------
   let bullets: AIBullets;
   try {
@@ -751,6 +795,7 @@ export async function POST(
       intakeSessionId,
       targetWorkflowFileId,
       teamUserId: session.userId,
+      tenantId: viewerTenantId,
       error: e instanceof Error ? e.message : String(e),
     });
     return NextResponse.json(
@@ -760,7 +805,7 @@ export async function POST(
   }
 
   // ---------------------------------------------------------------------------
-  // 8. Assemble final summary text deterministically
+  // 9. Assemble final summary text deterministically
   // ---------------------------------------------------------------------------
   const summary = assembleFinalSummary({
     todayHuman,
@@ -770,7 +815,9 @@ export async function POST(
   });
 
   // ---------------------------------------------------------------------------
-  // 9. INSERT into workflow_feed
+  // 10. INSERT into workflow_feed.
+  //     tenant_id is set explicitly so this INSERT continues to work after
+  //     F3.7 DROPs the DEFAULT off workflow_feed.tenant_id.
   // ---------------------------------------------------------------------------
   const author = String(teamUser.full_name ?? "").trim() || "Team User";
 
@@ -778,6 +825,7 @@ export async function POST(
     .from("workflow_feed")
     .insert({
       workflow_file_id: targetWorkflowFileId,
+      tenant_id: viewerTenantId,
       author,
       role: callerRole,
       text: summary,
@@ -791,6 +839,7 @@ export async function POST(
       intakeSessionId,
       targetWorkflowFileId,
       teamUserId: session.userId,
+      tenantId: viewerTenantId,
       error: feedError?.message,
     });
     return NextResponse.json(
@@ -803,6 +852,7 @@ export async function POST(
     intakeSessionId,
     targetWorkflowFileId,
     teamUserId: session.userId,
+    tenantId: viewerTenantId,
     feedId: (feedRow as { id: string }).id,
     summaryChars: summary.length,
     matchAvailable: match.available,
