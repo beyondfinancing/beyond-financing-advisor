@@ -50,10 +50,37 @@ export async function POST(req: Request) {
       );
     }
 
+    // F3.2: resolve tenantId by joining the authenticated team_users row
+    // to its matching employees row by email. Real Estate Agents and any
+    // other roles without an employees row land here with tenantId=null,
+    // which the read-time shim in getCurrentTenantId resolves to the BF
+    // fallback until F3.7.
+    let tenantId: string | null = null;
+    {
+      const { data: employee, error: employeeError } = await supabaseAdmin
+        .from("employees")
+        .select("tenant_id")
+        .eq("email", user.email)
+        .limit(1)
+        .maybeSingle();
+
+      if (employeeError) {
+        // Don't fail login on a tenant lookup error — log and continue
+        // with tenantId=null so the shim takes over.
+        console.error(
+          "[team-auth/login] employees tenant lookup failed:",
+          employeeError
+        );
+      } else if (employee?.tenant_id) {
+        tenantId = employee.tenant_id;
+      }
+    }
+
     await setTeamSessionCookie({
       userId: user.id,
       email: user.email,
       role: user.role,
+      tenantId,
     });
 
     return NextResponse.json({
@@ -69,14 +96,14 @@ export async function POST(req: Request) {
         phone: user.phone,
       },
     });
-} catch (error) {
-  return NextResponse.json(
-    {
-      success: false,
-      error:
-        error instanceof Error ? error.message : "Unknown server error.",
-    },
-    { status: 500 }
-  );
-}
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Unknown server error.",
+      },
+      { status: 500 }
+    );
+  }
 }
