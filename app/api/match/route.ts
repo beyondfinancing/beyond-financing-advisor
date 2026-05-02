@@ -13,6 +13,59 @@
 //   - lenders (with capability flags: does_conventional/fha/va/usda)
 //   - lender_state_eligibility
 //
+// =============================================================================
+// F3.3 (6/6) — TENANT SCOPING + AUTH (this revision)
+// =============================================================================
+//
+// Prior to this revision, /api/match was an UNAUTHENTICATED route that
+// returned the system-wide lender catalog evaluation to any caller. After
+// F3.1 multi-tenancy schema landed, that meant the matcher would have
+// returned ALL lenders across ALL tenants — leaking other shops' lender
+// catalogs to BF and vice versa.
+//
+// Changes in this revision:
+//
+//   1. AUTH — same pattern as sibling F3.3 routes:
+//        - bf_team_session cookie required (401 if missing/invalid)
+//        - team_users row must be active (403 if not)
+//        - role must be in PROFESSIONAL_ROLES (403 if not)
+//        - Verified via SQL probe (and via GitHub grep) that no
+//          borrower-side route calls /api/match. Only callers are
+//          /finley/page.tsx and persist-match (which only references it
+//          in comments). Safe to add auth without borrower regression.
+//
+//   2. TENANT RESOLUTION — same pattern as sibling F3.3 routes:
+//        - Resolve viewer.tenant_id via employees table by email
+//          (canonical join key under Phase 5-prep-C dual-write).
+//        - 403 if employees row missing or has no tenant_id.
+//
+//   3. CATALOG SCOPING — 4-step pattern from /api/handoff-chat:
+//        a) Read tenant_lenders for viewerTenantId where is_active=true
+//           → enabledLenderIds[]
+//        b) If enabledLenderIds is empty: short-circuit with empty
+//           buckets and a clear top_recommendation message. Don't run
+//           queries with .in('id', []) — Supabase behavior on empty
+//           IN is inconsistent.
+//        c) lenders query: add .in('id', enabledLenderIds). Existing
+//           lender_type != 'agency' filter preserved as defense in
+//           depth.
+//        d) programs query: add .in('lender_id', enabledLenderIds).
+//        e) lender_state_eligibility query: add
+//           .in('lender_id', enabledLenderIds).
+//        f) global_guidelines (agency selling guides) is NOT scoped —
+//           Fannie/Freddie/FHA/VA/USDA selling guides are shared by
+//           every shop. Same decision as /api/handoff-chat.
+//
+//   4. CLIENT INSTANCE — this route mixes `createClient` (existing,
+//      for catalog reads) with `supabaseAdmin` (new, for auth lookups
+//      so RLS on team_users/employees doesn't block the lookup). The
+//      inconsistency is acknowledged in the F3 cleanup queue and will
+//      be normalized post-F3.7. Not blocking.
+//
+// =============================================================================
+// SCORING CHANGE
+// =============================================================================
+//
 // SCORING CHANGE (this version):
 //   - Agency / Conventional / Government programs: +20 tier bonus
 //   - Non-QM / DSCR / Bank Statement programs: -10 tier penalty
@@ -56,7 +109,20 @@
 // =============================================================================
 
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase";
+import { verifySessionToken } from "@/lib/team-auth";
+
+const SESSION_COOKIE = "bf_team_session";
+
+const PROFESSIONAL_ROLES = new Set([
+  "Loan Officer",
+  "Loan Officer Assistant",
+  "Branch Manager",
+  "Production Manager",
+  "Processor",
+]);
 
 // -----------------------------------------------------------------------------
 // Types
@@ -1406,11 +1472,162 @@ function isBetterEvaluation(a: EvaluationResult, b: EvaluationResult): boolean {
 
 export async function POST(req: Request) {
   try {
+    // -------------------------------------------------------------------------
+    // F3.3 STEP 1: Auth (cookie + team_users active + role gate).
+    // -------------------------------------------------------------------------
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get(SESSION_COOKIE)?.value;
+    const session = sessionCookie ? verifySessionToken(sessionCookie) : null;
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required." },
+        { status: 401 }
+      );
+    }
+
+    const { data: teamUser, error: teamUserError } = await supabaseAdmin
+      .from("team_users")
+      .select("id, full_name, role, is_active, email")
+      .eq("id", session.userId)
+      .maybeSingle();
+
+    if (teamUserError || !teamUser || !teamUser.is_active) {
+      return NextResponse.json(
+        { success: false, error: "Account not active." },
+        { status: 403 }
+      );
+    }
+
+    const callerRole = String(teamUser.role ?? "");
+    if (!PROFESSIONAL_ROLES.has(callerRole)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This action is for licensed mortgage professionals.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // F3.3 STEP 2: Resolve viewer.tenant_id via employees lookup by EMAIL.
+    // team_users.id !== employees.id under Phase 5-prep-C dual-write; email
+    // is the canonical join key.
+    // -------------------------------------------------------------------------
+    const viewerEmail = (teamUser as { email?: string | null }).email;
+    if (!viewerEmail) {
+      console.error(
+        "[match] team_users row has no email — cannot resolve tenant.",
+        { teamUserId: teamUser.id }
+      );
+      return NextResponse.json(
+        { success: false, error: "Tenant is not configured for this account." },
+        { status: 403 }
+      );
+    }
+
+    const { data: employee, error: employeeError } = await supabaseAdmin
+      .from("employees")
+      .select("tenant_id")
+      .eq("email", viewerEmail)
+      .maybeSingle();
+
+    if (employeeError) {
+      console.error("[match] employees lookup failed.", employeeError);
+      return NextResponse.json(
+        { success: false, error: "Failed to verify session." },
+        { status: 500 }
+      );
+    }
+
+    if (!employee || !employee.tenant_id) {
+      console.warn("[match] employees row missing or has no tenant_id.", {
+        teamUserId: teamUser.id,
+        viewerEmail,
+      });
+      return NextResponse.json(
+        { success: false, error: "Tenant is not configured for this account." },
+        { status: 403 }
+      );
+    }
+
+    const viewerTenantId = employee.tenant_id as string;
+
+    // -------------------------------------------------------------------------
+    // F3.3 STEP 3: Get enabledLenderIds for this tenant from tenant_lenders.
+    // -------------------------------------------------------------------------
+    const { data: tenantLenderRows, error: tenantLendersError } =
+      await supabaseAdmin
+        .from("tenant_lenders")
+        .select("lender_id")
+        .eq("tenant_id", viewerTenantId)
+        .eq("is_active", true);
+
+    if (tenantLendersError) {
+      console.error(
+        "[match] tenant_lenders lookup failed.",
+        tenantLendersError
+      );
+      return NextResponse.json(
+        { success: false, error: "Failed to load tenant catalog." },
+        { status: 500 }
+      );
+    }
+
+    const enabledLenderIds: string[] = ((tenantLenderRows ?? []) as Array<{
+      lender_id?: string | null;
+    }>)
+      .map((r) => r.lender_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+
     const payload = (await req.json()) as FormPayload;
 
+    // -------------------------------------------------------------------------
+    // F3.3 STEP 4: Empty-tenant edge case.
+    // If the tenant has no enabled lenders, short-circuit. Don't run
+    // .in('id', []) — Supabase behavior on empty IN is inconsistent and we
+    // already know the answer is "no matches possible." The agency loop
+    // would also produce nothing because it iterates allLenders.
+    // -------------------------------------------------------------------------
+    if (enabledLenderIds.length === 0) {
+      console.warn("[match] tenant has no enabled lenders.", {
+        teamUserId: teamUser.id,
+        tenantId: viewerTenantId,
+      });
+      return NextResponse.json({
+        success: true,
+        next_question: null,
+        top_recommendation:
+          "No lenders are configured for your account. Contact your admin to enable lender programs.",
+        openai_enhancement: null,
+        strong_matches: [],
+        conditional_matches: [],
+        eliminated_paths: [],
+        lender_summary: {
+          active_lender_count: 0,
+          active_lenders_checked: [],
+          matched_lenders_in_results: [],
+        },
+        summary: {
+          total_guidelines_checked: 0,
+          strong_count: 0,
+          conditional_count: 0,
+          eliminated_count: 0,
+        },
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // F3.3 STEP 5: Catalog reads. `createClient` is preserved for the
+    // catalog reads to avoid mid-F3.3 client-instance churn (see header
+    // comment). Tenant scoping enforced via `.in('lender_id', ...)` and
+    // `.in('id', ...)` filters.
+    // -------------------------------------------------------------------------
     const supabase = createClient();
 
-    // Pull all active lender programs with their lender + guideline relations
+    // Pull active lender programs scoped to this tenant's enabled lenders,
+    // with their lender + guideline relations.
     const { data: programs, error: programsError } = await supabase
       .from("programs")
       .select(`
@@ -1424,7 +1641,8 @@ export async function POST(req: Request) {
         lenders ( id, name, states ),
         program_guidelines ( * )
       `)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .in("lender_id", enabledLenderIds);
 
     if (programsError) {
       return NextResponse.json(
@@ -1433,14 +1651,18 @@ export async function POST(req: Request) {
       );
     }
 
-    // Pull all lenders with capability flags and type. Filter out agencies
-    // (Fannie Mae, Freddie Mac, etc.) — they are investors/GSEs that publish
-    // selling guides, not placement options for borrowers. The matcher pairs
-    // each agency guideline with the wholesale lenders capable of placing it,
-    // which is why agencies should never appear in the candidate pool.
+    // Pull lenders scoped to this tenant's enabled lender ids, with capability
+    // flags and type. The lender_type != 'agency' filter is preserved as
+    // defense in depth — agencies (Fannie Mae, Freddie Mac, etc.) are
+    // investors/GSEs that publish selling guides, not placement options for
+    // borrowers, and should never appear in the candidate pool. The matcher
+    // pairs each agency guideline with the wholesale lenders capable of
+    // placing it (capability flags drive that loop), which is why agencies
+    // are excluded from the candidate pool here.
     const { data: lendersData, error: lendersError } = await supabase
       .from("lenders")
       .select("id, name, lender_type, does_conventional, does_fha, does_va, does_usda, aus_methods")
+      .in("id", enabledLenderIds)
       .or("lender_type.is.null,lender_type.neq.agency");
 
     if (lendersError) {
@@ -1460,7 +1682,12 @@ export async function POST(req: Request) {
       lendersById.set(lender.id, lender);
     }
 
-    // Pull active agency programs from global_guidelines
+    // Pull active agency programs from global_guidelines.
+    // NOT tenant-scoped — Fannie/Freddie/FHA/VA/USDA selling guides are
+    // shared across all shops by design. Agency programs pair with each
+    // tenant's enabled wholesale lenders via capability flags in the
+    // agency loop below, so tenant scoping is enforced through the lender
+    // pairing, not the agency guideline read.
     const { data: agencyData, error: agencyError } = await supabase
       .from("global_guidelines")
       .select("*")
@@ -1475,14 +1702,16 @@ export async function POST(req: Request) {
 
     const agencyGuidelines = (agencyData || []) as GlobalGuidelineRow[];
 
-    // Pull state eligibility for the borrower's subject state
+    // Pull state eligibility for the borrower's subject state, scoped to
+    // this tenant's enabled lenders.
     const subjectState = String(payload.subject_state || "").trim().toUpperCase();
     let stateEligibilityRows: StateEligibilityRow[] = [];
     if (subjectState) {
       const { data: stateRows, error: stateError } = await supabase
         .from("lender_state_eligibility")
         .select("*")
-        .eq("state_code", subjectState);
+        .eq("state_code", subjectState)
+        .in("lender_id", enabledLenderIds);
       if (stateError) {
         return NextResponse.json(
           { success: false, error: `Failed to load state eligibility: ${stateError.message}` },
@@ -1760,6 +1989,19 @@ export async function POST(req: Request) {
       conditionalMatches.length,
       eliminatedPaths.length
     );
+
+    console.log("[match] completed", {
+      teamUserId: teamUser.id,
+      tenantId: viewerTenantId,
+      enabledLenderCount: enabledLenderIds.length,
+      activeLenderCount: activeLenderNames.size,
+      matchedLenderCount: matchedLenderNames.size,
+      programsLoaded: allRows.length,
+      agencyGuidelinesLoaded: agencyGuidelines.length,
+      strongCount: strongMatches.length,
+      conditionalCount: conditionalMatches.length,
+      eliminatedCount: eliminatedPaths.length,
+    });
 
     return NextResponse.json({
       success: true,
