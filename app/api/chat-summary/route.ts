@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getOrCreateHandoffToken, buildHandoffLink, isUuid } from '@/lib/handoff';
+import { BF_TENANT_UUID_FALLBACK } from '@/lib/team-auth';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -360,9 +361,24 @@ ${messages
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.SUPABASE_SERVICE_ROLE_KEY,
       );
+      // F3.4: resolve tenant from parent borrower_intake_sessions row so handoff token inherits it.
+      let resolvedTenantId: string = BF_TENANT_UUID_FALLBACK;
+      try {
+        const { data: parentSession } = await supabaseForToken
+          .from('borrower_intake_sessions')
+          .select('tenant_id')
+          .eq('id', intakeSessionId)
+          .maybeSingle();
+        if (parentSession?.tenant_id) {
+          resolvedTenantId = parentSession.tenant_id as string;
+        }
+      } catch {
+        // best-effort — fall back to BF default on any error
+      }
       handoffTokenId = await getOrCreateHandoffToken(
         supabaseForToken,
         intakeSessionId,
+        resolvedTenantId,
       );
     }
     const handoffLink = handoffTokenId
