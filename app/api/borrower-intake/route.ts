@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getOrCreateHandoffToken, buildHandoffLink, isUuid } from '@/lib/handoff';
+import { BF_TENANT_UUID_FALLBACK } from '@/lib/team-auth';
 
 type RealtorPayload = {
   hasRealtor?: boolean;
@@ -329,6 +330,26 @@ export async function POST(req: Request) {
       ? buildHandoffLink(handoffTokenId)
       : undefined;
 
+    // F3.4 tenant resolution: derive tenant_id from the parent intake session
+    // (which Diff #2 stamps with tenant_id on INSERT). Fall back to BF default
+    // for the rare case where intakeSessionId is missing or the lookup fails.
+    // Will be tightened at F3.7 GATE when DROP DEFAULT lands on this column.
+    let resolvedTenantId: string = BF_TENANT_UUID_FALLBACK;
+    if (isUuid(intakeSessionId)) {
+      try {
+        const { data: parentSession, error: parentErr } = await supabase
+          .from('borrower_intake_sessions')
+          .select('tenant_id')
+          .eq('id', intakeSessionId)
+          .maybeSingle();
+        if (!parentErr && parentSession && (parentSession as { tenant_id: string | null }).tenant_id) {
+          resolvedTenantId = (parentSession as { tenant_id: string }).tenant_id;
+        }
+      } catch {
+        // Best-effort: keep BF fallback on any DB hiccup.
+      }
+    }
+
     const notificationStatus = {
       loan_officer: 'pending' as 'pending' | 'sent' | 'error',
       realtor: 'skipped' as 'pending' | 'sent' | 'error' | 'skipped',
@@ -387,6 +408,7 @@ export async function POST(req: Request) {
 
     // 3. Audit log
     await supabase.from('borrower_action_logs').insert({
+      tenant_id: resolvedTenantId,
       borrower_name: fullName,
       borrower_email: borrowerEmail,
       borrower_phone: borrowerPhone,
