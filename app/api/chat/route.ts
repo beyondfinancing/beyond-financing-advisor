@@ -56,6 +56,7 @@
 
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { BF_TENANT_UUID_FALLBACK } from "@/lib/team-auth";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -743,22 +744,22 @@ async function callClaude(
 //
 // Best-effort: any DB hiccup returns null. Persistence path is non-blocking.
 //
-async function resolveTeamUserIdByEmail(
+async function resolveTeamUserAndTenantByEmail(
   email: string | null | undefined
-): Promise<string | null> {
+): Promise<{ id: string; tenant_id: string | null } | null> {
   const e = safeString(email).toLowerCase();
   if (!e) return null;
 
   try {
     const { data, error } = await supabaseAdmin
       .from("team_users")
-      .select("id")
+      .select("id, tenant_id")
       .eq("email", e)
       .eq("is_active", true)
       .maybeSingle();
 
     if (error || !data) return null;
-    return (data as { id: string }).id;
+    return data as { id: string; tenant_id: string | null };
   } catch {
     return null;
   }
@@ -830,10 +831,17 @@ async function persistConversation(
     // extracted_payload.selectedOfficer).
     const officerEmail = officer ? safeString(officer.email) : "";
     const assistantEmail = officer ? safeString(officer.assistantEmail) : "";
-    const [resolvedOfficerId, resolvedAssistantId] = await Promise.all([
-      resolveTeamUserIdByEmail(officerEmail),
-      resolveTeamUserIdByEmail(assistantEmail),
+    const [officerRecord, assistantRecord] = await Promise.all([
+      resolveTeamUserAndTenantByEmail(officerEmail),
+      resolveTeamUserAndTenantByEmail(assistantEmail),
     ]);
+    const resolvedOfficerId = officerRecord?.id ?? null;
+    const resolvedAssistantId = assistantRecord?.id ?? null;
+    // F3.4 walk-up policy (Option A): tenant comes from the LO's team_users row;
+    // assistant is fallback; finally BF default for true walk-ups (no LO match).
+    // Will be removed at F3.7 GATE when DROP DEFAULT lands and routing fills tenant.
+    const resolvedTenantId =
+      officerRecord?.tenant_id ?? assistantRecord?.tenant_id ?? BF_TENANT_UUID_FALLBACK;
 
     const extractedPayload = {
       borrower,
@@ -879,7 +887,7 @@ async function persistConversation(
 
     const { data, error } = await supabaseAdmin
       .from("borrower_intake_sessions")
-      .insert(baseRow)
+      .insert({ ...baseRow, tenant_id: resolvedTenantId })
       .select("id")
       .single();
 
