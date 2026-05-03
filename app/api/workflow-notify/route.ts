@@ -44,6 +44,7 @@ type NotificationEventType =
 
 type WorkflowFileRecord = {
   id: string;
+  tenant_id: string;
   file_number?: string | null;
   borrower_name?: string | null;
   purpose?: string | null;
@@ -671,6 +672,7 @@ async function sendTwilioSms(params: { to: string; body: string }) {
 
 async function logNotification(params: {
   workflowFileId: string;
+  tenantId: string;
   fileNumber: string;
   borrowerName: string;
   propertyAddress: string;
@@ -688,6 +690,7 @@ async function logNotification(params: {
 }) {
   await supabaseAdmin.from("workflow_notifications").insert({
     workflow_file_id: params.workflowFileId,
+    tenant_id: params.tenantId,
     file_number: params.fileNumber || null,
     borrower_name: params.borrowerName || null,
     property_address: params.propertyAddress || null,
@@ -739,6 +742,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Workflow file not found." },
         { status: 404 }
+      );
+    }
+
+    // F3.4 paranoia guard: every workflow_file row MUST have tenant_id.
+    // If this trips, the row predates F3.1 backfill or the column default
+    // silently inserted NULL. Fail loud so the bad row gets fixed, not
+    // silently propagated into workflow_notifications.
+    if (!file.tenant_id) {
+      return NextResponse.json(
+        { success: false, error: "Workflow file missing tenant_id; refusing to send notifications." },
+        { status: 500 }
       );
     }
 
@@ -834,6 +848,7 @@ export async function POST(request: NextRequest) {
 
       await logNotification({
         workflowFileId,
+        tenantId: file.tenant_id,
         fileNumber,
         borrowerName,
         propertyAddress,
@@ -889,6 +904,7 @@ export async function POST(request: NextRequest) {
 
         await logNotification({
           workflowFileId,
+          tenantId: file.tenant_id,
           fileNumber,
           borrowerName,
           propertyAddress,
@@ -926,6 +942,7 @@ export async function POST(request: NextRequest) {
 
         await logNotification({
           workflowFileId,
+          tenantId: file.tenant_id,
           fileNumber,
           borrowerName,
           propertyAddress,
