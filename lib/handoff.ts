@@ -20,6 +20,7 @@
 // the caller's client keeps things consistent.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { BF_TENANT_UUID_FALLBACK } from "./team-auth";
 
 // UUID v4 (and v1/v3/v5) shape check. Cheap defense against malformed values
 // that would otherwise throw at the Postgres uuid column.
@@ -55,7 +56,8 @@ export function buildHandoffLink(tokenId: string): string {
  */
 export async function getOrCreateHandoffToken(
   supabase: SupabaseClient,
-  intakeSessionId: string
+  intakeSessionId: string,
+  tenantId?: string
 ): Promise<string | null> {
   if (!isUuid(intakeSessionId)) return null;
 
@@ -80,7 +82,7 @@ export async function getOrCreateHandoffToken(
     // and accesses default ([]) come from the table schema.
     const { data: created, error: insertError } = await supabase
       .from("professional_handoff_tokens")
-      .insert({ intake_session_id: intakeSessionId })
+      .insert({ intake_session_id: intakeSessionId, tenant_id: tenantId ?? BF_TENANT_UUID_FALLBACK })
       .select("id")
       .single();
 
