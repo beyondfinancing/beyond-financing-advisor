@@ -319,16 +319,8 @@ export async function POST(req: Request) {
     const officerPhone = officer?.mobile ?? officer?.phone ?? '';
     const officerAssistant = officer?.assistant_email ?? null;
 
-    // Issue or reuse a Professional Handoff token for this intake session.
-    // Best-effort — null result means email goes out without the magic link
-    // (e.g. session row not yet persisted, or DB hiccup).
+    // Resolve intake session id once — used both for F3.4 tenant lookup and handoff token.
     const intakeSessionId = body.intakeSessionId?.trim() || '';
-    const handoffTokenId = isUuid(intakeSessionId)
-      ? await getOrCreateHandoffToken(supabase, intakeSessionId)
-      : null;
-    const handoffLink = handoffTokenId
-      ? buildHandoffLink(handoffTokenId)
-      : undefined;
 
     // F3.4 tenant resolution: derive tenant_id from the parent intake session
     // (which Diff #2 stamps with tenant_id on INSERT). Fall back to BF default
@@ -349,6 +341,16 @@ export async function POST(req: Request) {
         // Best-effort: keep BF fallback on any DB hiccup.
       }
     }
+
+    // Issue or reuse a Professional Handoff token for this intake session.
+    // Best-effort — null result means email goes out without the magic link
+    // (e.g. session row not yet persisted, or DB hiccup).
+    const handoffTokenId = isUuid(intakeSessionId)
+      ? await getOrCreateHandoffToken(supabase, intakeSessionId, resolvedTenantId)
+      : null;
+    const handoffLink = handoffTokenId
+      ? buildHandoffLink(handoffTokenId)
+      : undefined;
 
     const notificationStatus = {
       loan_officer: 'pending' as 'pending' | 'sent' | 'error',
