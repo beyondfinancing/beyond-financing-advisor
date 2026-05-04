@@ -229,14 +229,22 @@ export async function POST(
       scenario.borrower_path === 'Purchase' ||
       scenario.borrower_path === 'Investment'
 
-    const buyerAgentPrefill =
+    const buyerAgentPrefill: {
+      buyer_agent_name: string | null
+      buyer_agent_email: string | null
+      buyer_agent_phone: string | null
+    } =
       isPurchaseSide && realtor
         ? {
             buyer_agent_name: realtor.full_name,
             buyer_agent_email: realtor.email,
             buyer_agent_phone: realtor.phone,
           }
-        : {}
+        : {
+            buyer_agent_name: null,
+            buyer_agent_email: null,
+            buyer_agent_phone: null,
+          }
 
     const workflowFilePayload = {
       borrower_name: borrower?.full_name || null,
