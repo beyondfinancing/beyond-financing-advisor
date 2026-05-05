@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
  *     scenario_id: string (uuid),
  *     question_key: string (must exist in finley_question_bank with active=true),
  *     answer_value: any (JSON; validated loosely here, schema-tightened in Phase 4-2),
- *     answered_by_role: 'borrower' | 'loan_officer' | 'system'
+ *     answered_by_role: 'borrower' | 'finley' | 'lo' | 'processor'
  *   }
  *
  * Auth: bf_team_session cookie required (LO/team only — borrower-facing answer
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     if (typeof answer_value === 'undefined') {
       return NextResponse.json({ error: 'answer_value_required' }, { status: 400 });
     }
-    const ALLOWED_ROLES = ['borrower', 'loan_officer', 'system'];
+    const ALLOWED_ROLES = ['borrower', 'finley', 'lo', 'processor'];
     if (!answered_by_role || !ALLOWED_ROLES.includes(answered_by_role)) {
       return NextResponse.json({ error: 'answered_by_role_invalid' }, { status: 400 });
     }
