@@ -1159,6 +1159,7 @@ function FinleyPageInner() {
         units: form.units,
         first_time_homebuyer: toBooleanOrEmpty(form.first_time_homebuyer),
         available_reserves_months: form.available_reserves_months,
+        session_id: handoffSessionId || undefined,
       };
 
       const res = await fetch("/api/match", {
