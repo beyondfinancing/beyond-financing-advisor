@@ -207,7 +207,7 @@ async function sendStaleEmail(file: StaleFile, recipients: string[]) {
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;color:#1f2937;padding:20px;">
       <h2 style="color:#263366;margin:0 0 12px 0;">
-        Stale File Alert â No internal activity for 48 business hours
+        Stale File Alert — No internal activity for 48 business hours
       </h2>
       <p style="line-height:1.6;">
         The following file has had no internal team activity for
@@ -216,17 +216,17 @@ async function sendStaleEmail(file: StaleFile, recipients: string[]) {
       </p>
       <table style="border-collapse:collapse;margin-top:12px;font-size:14px;">
         <tr><td style="padding:6px 12px;color:#475569;"><strong>File #</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.file_number ?? 'â')}</td></tr>
+            <td style="padding:6px 12px;">${escapeHtml(file.file_number ?? '—')}</td></tr>
         <tr><td style="padding:6px 12px;color:#475569;"><strong>Borrower</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.borrower_name ?? 'â')}</td></tr>
+            <td style="padding:6px 12px;">${escapeHtml(file.borrower_name ?? '—')}</td></tr>
         <tr><td style="padding:6px 12px;color:#475569;"><strong>Property</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.property_address ?? 'â')}</td></tr>
+            <td style="padding:6px 12px;">${escapeHtml(file.property_address ?? '—')}</td></tr>
         <tr><td style="padding:6px 12px;color:#475569;"><strong>Loan Officer</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.loan_officer ?? 'â')}</td></tr>
+            <td style="padding:6px 12px;">${escapeHtml(file.loan_officer ?? '—')}</td></tr>
         <tr><td style="padding:6px 12px;color:#475569;"><strong>Processor</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.processor ?? 'â')}</td></tr>
+            <td style="padding:6px 12px;">${escapeHtml(file.processor ?? '—')}</td></tr>
         <tr><td style="padding:6px 12px;color:#475569;"><strong>Status</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.status ?? 'â')}</td></tr>
+            <td style="padding:6px 12px;">${escapeHtml(file.status ?? '—')}</td></tr>
         <tr><td style="padding:6px 12px;color:#475569;"><strong>Last activity</strong></td>
             <td style="padding:6px 12px;">${escapeHtml(file.last_activity_at)}</td></tr>
       </table>
