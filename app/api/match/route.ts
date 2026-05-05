@@ -1638,6 +1638,23 @@ type FunnelImpact = {
   scoreDelta: number;
 };
 
+function isAgencyEquivalent(loanCategory?: string): boolean {
+  if (!loanCategory) return false;
+  const lc = loanCategory.toLowerCase();
+  return (
+    lc.includes("conventional") ||
+    lc.includes("agency") ||
+    lc.includes("fannie") ||
+    lc.includes("freddie") ||
+    lc.includes("fha") ||
+    lc.includes("usda") ||
+    lc === "va" ||
+    lc.startsWith("va ") ||
+    lc.includes(" va ") ||
+    lc.endsWith(" va")
+  );
+}
+
 function applyFunnelTierImpact(
   evaluation: EvaluationResult,
   funnel: FunnelAnswers | null,
@@ -1650,7 +1667,9 @@ function applyFunnelTierImpact(
     scoreDelta: 0,
   };
   if (!funnel) return out;
-  const isAgency = programContext.isAgency;
+  const isAgency =
+    programContext.isAgency ||
+    isAgencyEquivalent(programContext.loanCategory);
 
   // --- Citizenship ---
   const citizenship = String(funnel.citizenship_status || "").trim().toLowerCase();
