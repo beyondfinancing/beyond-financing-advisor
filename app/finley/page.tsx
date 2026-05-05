@@ -451,6 +451,30 @@ function getGuidedAssistantReply(
   return `${capturedText}${resolvedNextQuestion}`;
 }
 
+// Phase 4-2a (Diff #12) — humanize enum option keys for chip labels
+function humanizeOption(opt: string): string {
+  if (!opt || typeof opt !== "string") return String(opt);
+  const acronyms: Record<string, string> = {
+    us: "U.S.",
+    usa: "U.S.A.",
+    itin: "ITIN",
+    dscr: "DSCR",
+    w2: "W-2",
+    fha: "FHA",
+    va: "VA",
+    usda: "USDA",
+    "1099": "1099",
+  };
+  return opt
+    .split("_")
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (acronyms[lower]) return acronyms[lower];
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 function buildSummaryPayload(args: {
   professionalSession: ProfessionalSession;
   form: QualificationInput;
@@ -692,6 +716,19 @@ function FinleyPageInner() {
   const [loadingMyFiles, setLoadingMyFiles] = useState(false);
   const [selectedTargetFileId, setSelectedTargetFileId] = useState<string>("");
   const [savingToWorkflow, setSavingToWorkflow] = useState(false);
+  // Phase 4-2a (Diff #12) — discovery question funnel state
+  const [activeFunnelQuestion, setActiveFunnelQuestion] = useState<{
+    question_key: string;
+    prompt_text: string;
+    answer_schema: { type: string; options?: string[] };
+    ask_order: number;
+  } | null>(null);
+  const [funnelProgress, setFunnelProgress] = useState<{
+    answered: number;
+    total: number;
+    status: string;
+  }>({ answered: 0, total: 0, status: "idle" });
+  const [funnelSubmitting, setFunnelSubmitting] = useState(false);
   const [savedFeedId, setSavedFeedId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string>("");
 
@@ -947,7 +984,67 @@ function FinleyPageInner() {
   // redirects to /team. Proceeds with the redirect even if the server call
   // fails so the user is never stranded on a page they can no longer use.
   // ---------------------------------------------------------------------------
-  async function logoutProfessional() {
+  // Phase 4-2a (Diff #12) — discovery funnel loader + answer handler
+    async function loadNextFunnelQuestion() {
+      if (!handoffSessionId) {
+        setActiveFunnelQuestion(null);
+        setFunnelProgress({ answered: 0, total: 0, status: "idle" });
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/finley/next-question?scenario_id=${encodeURIComponent(handoffSessionId)}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) return;
+        const j = await res.json();
+        if (j && j.success) {
+          setActiveFunnelQuestion(j.next_question || null);
+          setFunnelProgress({
+            answered: typeof j.answered_count === "number" ? j.answered_count : 0,
+            total: typeof j.total_questions === "number" ? j.total_questions : 0,
+            status: j.status || "idle",
+          });
+        }
+      } catch {
+        // non-fatal: leave existing state
+      }
+    }
+
+    useEffect(() => {
+      loadNextFunnelQuestion();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [handoffSessionId]);
+
+    async function onAnswerChip(value: string) {
+      if (!handoffSessionId || !activeFunnelQuestion || funnelSubmitting) return;
+      setFunnelSubmitting(true);
+      try {
+        const res = await fetch("/api/finley/answer", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scenario_id: handoffSessionId,
+            question_key: activeFunnelQuestion.question_key,
+            answer_value: value,
+            answered_by_role: "lo",
+          }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          setError(`Could not save answer: ${j.error || res.statusText}`);
+          return;
+        }
+        await loadNextFunnelQuestion();
+      } catch (e) {
+        setError("Could not save answer. Please try again.");
+      } finally {
+        setFunnelSubmitting(false);
+      }
+    }
+
+    async function logoutProfessional() {
     try {
       await fetch("/api/team-auth/logout", { method: "POST" });
     } catch {
@@ -1011,6 +1108,8 @@ function FinleyPageInner() {
           : "Please review the visible lender and program paths and confirm any remaining documentation or compensating factors.");
 
       setNextQuestion(resolvedNextQuestion);
+      // Phase 4-2a (Diff #12) — refresh discovery funnel after match
+      loadNextFunnelQuestion();
       setSuccessMessage("Match analysis completed successfully.");
 
       // Step 5 Drop B (Component 2) — persist match results to the borrower
@@ -2117,7 +2216,67 @@ function FinleyPageInner() {
           >
             <h2 style={{ fontSize: "clamp(24px, 4vw, 32px)", margin: "0 0 14px 0" }}>
               Finley Conversation
-            </h2>
+            </h2>{handoffSessionId && funnelProgress.total > 0 && (activeFunnelQuestion || funnelProgress.status === "complete") && (
+              <div
+                style={{
+                  border: "1px solid #d9e1ec",
+                  borderRadius: 18,
+                  padding: 18,
+                  marginBottom: 16,
+                  background: "#ffffff",
+                }}
+              >
+                {activeFunnelQuestion ? (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "baseline",
+                        marginBottom: 10,
+                        gap: 12,
+                      }}
+                    >
+                      <h4 style={{ margin: 0, color: "#263366" }}>
+                        Refine Matches — Question {activeFunnelQuestion.ask_order} of {funnelProgress.total}
+                      </h4>
+                      <span style={{ color: "#4b5d7a", fontSize: 13, whiteSpace: "nowrap" }}>
+                        Answered {funnelProgress.answered} / {funnelProgress.total}
+                      </span>
+                    </div>
+                    <p style={{ color: "#4b5d7a", lineHeight: 1.6, marginBottom: 12 }}>
+                      {activeFunnelQuestion.prompt_text}
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {(activeFunnelQuestion.answer_schema?.options || []).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          disabled={funnelSubmitting}
+                          onClick={() => onAnswerChip(opt)}
+                          style={{
+                            border: "1px solid #cfe0f6",
+                            borderRadius: 999,
+                            padding: "8px 14px",
+                            background: funnelSubmitting ? "#f1f5fb" : "#f8fbff",
+                            color: "#263366",
+                            cursor: funnelSubmitting ? "wait" : "pointer",
+                            fontSize: 14,
+                          }}
+                        >
+                          {humanizeOption(opt)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ color: "#1f7a4d", lineHeight: 1.6 }}>
+                    ✓ Discovery complete — {funnelProgress.answered} of {funnelProgress.total} questions answered. Phase 5 will refine your matches based on these answers.
+                  </div>
+                )}
+              </div>
+            )}
+
 
             <div
               style={{
