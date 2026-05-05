@@ -48,7 +48,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useState, Suspense } from "react";
+import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type BorrowerStatus =
@@ -1049,6 +1049,36 @@ function FinleyPageInner() {
       loadNextFunnelQuestion();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [handoffSessionId]);
+
+    // -------------------------------------------------------------------------
+    // Phase 4-2c (Diff #14) — Auto re-match on funnel completion
+    // -------------------------------------------------------------------------
+    // When the discovery funnel reaches answered === total > 0 (Q6 confirmed),
+    // automatically re-run the qualification match so the borrower's tier list
+    // refreshes immediately with the refined Strong/Conditional groupings —
+    // without requiring the LO to manually click "Run Qualification Match"
+    // again. Uses a useRef guard to ensure we only fire once per session.
+    const autoMatchFiredRef = useRef<boolean>(false);
+    useEffect(() => {
+      const { answered, total } = funnelProgress;
+      if (
+        total > 0 &&
+        answered === total &&
+        !autoMatchFiredRef.current &&
+        handoffSessionId &&
+        !loading
+      ) {
+        autoMatchFiredRef.current = true;
+        setSuccessMessage(
+          "Discovery complete — refining matches based on your answers..."
+        );
+        runQualificationMatch().catch((e) => {
+          // Non-fatal: log and reset guard so user can manually retry
+          console.warn("[auto-rematch] failed:", e);
+          autoMatchFiredRef.current = false;
+        });
+      }
+    }, [funnelProgress.answered, funnelProgress.total, handoffSessionId, loading]);
 
     async function submitFunnelAnswer(answer_value: any) {
       if (!handoffSessionId || !activeFunnelQuestion || funnelSubmitting) return;
