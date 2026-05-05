@@ -142,6 +142,7 @@ type FormPayload = {
   units?: string | number;
   first_time_homebuyer?: boolean | string;
   available_reserves_months?: string | number;
+  session_id?: string;
 };
 
 type MatchBucket = {
@@ -1584,6 +1585,161 @@ function isBetterEvaluation(a: EvaluationResult, b: EvaluationResult): boolean {
 }
 
 // -----------------------------------------------------------------------------
+// PHASE 5 — FUNNEL-AWARE TIER FILTER
+// -----------------------------------------------------------------------------
+//
+// Loads scenario_qualifying_answers for the current scenario_id (= workflow_files.id)
+// and applies deterministic tier-impact rules to each program evaluation.
+//
+// Rules are conservative AGENCY-PROGRAM-FIRST. Lender-specific Non-QM programs
+// are demoted only when explicit Non-QM-only signals are present (e.g. bank
+// statements, DSCR rental, non-warrantable condo) — they are not eliminated
+// by income docs alone because most lender-program guidelines already encode
+// their own income_type rules.
+//
+// The funnel answers are layered ON TOP of the existing evaluator output:
+// they may downgrade strong→conditional or conditional→eliminated, and they
+// append blockers/concerns. They never UPGRADE buckets.
+// -----------------------------------------------------------------------------
+
+type FunnelAnswers = {
+  citizenship_status?: string;
+  income_doc_type?: string;
+  credit_event_history_4y?: { event?: string; months_seasoned?: number };
+  property_flags?: { units_2_4?: boolean; manufactured?: boolean; non_warrantable_condo?: boolean };
+  loan_size_vs_county_limit?: { is_jumbo?: boolean; is_high_balance?: boolean };
+  borrower_flags?: { veteran?: boolean; first_time_hb?: boolean; rural_property?: boolean };
+};
+
+async function loadFunnelAnswers(
+  scenarioId: string,
+  tenantId: string
+): Promise<FunnelAnswers | null> {
+  if (!scenarioId) return null;
+  const { data, error } = await supabaseAdmin
+    .from("scenario_qualifying_answers")
+    .select("question_key, answer_value")
+    .eq("tenant_id", tenantId)
+    .eq("scenario_id", scenarioId);
+  if (error || !data || data.length === 0) return null;
+  const out: FunnelAnswers = {};
+  for (const row of data) {
+    const k = row.question_key as keyof FunnelAnswers;
+    const v = row.answer_value;
+    (out as Record<string, unknown>)[k] = v as never;
+  }
+  return out;
+}
+
+type FunnelImpact = {
+  newBucket: "strong" | "conditional" | "eliminated";
+  addedBlockers: string[];
+  addedConcerns: string[];
+  scoreDelta: number;
+};
+
+function applyFunnelTierImpact(
+  evaluation: EvaluationResult,
+  funnel: FunnelAnswers | null,
+  programContext: { isAgency: boolean; agency?: string; productFamily?: string; programName?: string; loanCategory?: string }
+): FunnelImpact {
+  const out: FunnelImpact = {
+    newBucket: evaluation.bucket,
+    addedBlockers: [],
+    addedConcerns: [],
+    scoreDelta: 0,
+  };
+  if (!funnel) return out;
+  const isAgency = programContext.isAgency;
+
+  // --- Citizenship ---
+  const citizenship = String(funnel.citizenship_status || "").trim().toLowerCase();
+  if (citizenship === "foreign_national") {
+    out.addedBlockers.push("Borrower is a Foreign National — Agency programs require US citizen, permanent resident, or eligible visa holder.");
+    if (isAgency) {
+      out.newBucket = "eliminated";
+      out.scoreDelta -= 50;
+    } else {
+      out.addedConcerns.push("Confirm program supports Foreign National borrowers.");
+    }
+  } else if (citizenship === "itin") {
+    if (isAgency) {
+      out.addedBlockers.push("Borrower is an ITIN borrower — Agency programs require SSN. ITIN-niche Non-QM programs only.");
+      out.newBucket = "eliminated";
+      out.scoreDelta -= 50;
+    } else {
+      out.addedConcerns.push("Confirm program supports ITIN borrowers.");
+    }
+  }
+
+  // --- Income docs ---
+  const incomeDoc = String(funnel.income_doc_type || "").trim().toLowerCase();
+  if (incomeDoc === "bank_statements" || incomeDoc === "dscr_rental" || incomeDoc === "asset_depletion" || incomeDoc === "profit_loss_only" || incomeDoc === "1099_only") {
+    if (isAgency) {
+      out.addedBlockers.push(`Borrower documents income via ${incomeDoc.replace(/_/g, " ")} — Agency programs require W-2 or full tax returns.`);
+      out.newBucket = "eliminated";
+      out.scoreDelta -= 40;
+    }
+  }
+
+  // --- Credit events (4yr lookback) ---
+  const creditEvent = funnel.credit_event_history_4y;
+  if (creditEvent && creditEvent.event && creditEvent.event !== "none") {
+    const event = String(creditEvent.event).toLowerCase();
+    const months = typeof creditEvent.months_seasoned === "number" ? creditEvent.months_seasoned : 0;
+    const requiredMonths: Record<string, number> = {
+      bk7: 48,
+      bk13: 24,
+      foreclosure: 84,
+      short_sale: 48,
+      deed_in_lieu: 48,
+    };
+    const required = requiredMonths[event] ?? 0;
+    if (isAgency && required > 0 && months < required) {
+      out.addedBlockers.push(`${event.toUpperCase()} seasoning is ${months} months — Agency requires ${required} months minimum.`);
+      out.newBucket = "eliminated";
+      out.scoreDelta -= 40;
+    } else if (isAgency && required > 0 && months >= required) {
+      out.addedConcerns.push(`${event.toUpperCase()} seasoning of ${months} months meets Agency ${required}-month minimum — confirm with underwriter.`);
+    }
+  }
+
+  // --- Property flags ---
+  const propertyFlags = funnel.property_flags;
+  if (propertyFlags) {
+    if (propertyFlags.non_warrantable_condo === true && isAgency) {
+      out.addedBlockers.push("Subject is a non-warrantable condo — Agency programs require warrantable. Non-QM only.");
+      out.newBucket = "eliminated";
+      out.scoreDelta -= 40;
+    }
+    if (propertyFlags.manufactured === true && isAgency) {
+      out.addedConcerns.push("Subject is manufactured housing — Agency support is program-specific (Fannie MH Advantage / Freddie CHOICEHome). Confirm program eligibility.");
+      if (out.newBucket === "strong") out.newBucket = "conditional";
+    }
+    if (propertyFlags.units_2_4 === true) {
+      out.addedConcerns.push("2-4 unit subject — confirm program supports multi-unit and review LTV/reserves requirements.");
+    }
+  }
+
+  // --- Loan size vs county limit ---
+  const loanSize = funnel.loan_size_vs_county_limit;
+  if (loanSize) {
+    if (loanSize.is_jumbo === true && isAgency && programContext.productFamily !== "Jumbo") {
+      out.addedBlockers.push("Loan size exceeds Agency conforming + high-balance limit (Jumbo) — Agency conforming programs do not apply.");
+      out.newBucket = "eliminated";
+      out.scoreDelta -= 40;
+    }
+    if (loanSize.is_high_balance === true && isAgency) {
+      out.addedConcerns.push("Loan size in High-Balance range — confirm High-Balance variant pricing and county limit eligibility.");
+    }
+  }
+
+  // --- Borrower flags (boost-only; deferred to Phase 5.1 once VA/FHA/USDA seeded) ---
+
+  return out;
+}
+
+// -----------------------------------------------------------------------------
 // POST handler
 // -----------------------------------------------------------------------------
 
@@ -1699,6 +1855,11 @@ export async function POST(req: Request) {
       .filter((id): id is string => typeof id === "string" && id.length > 0);
 
     const payload = (await req.json()) as FormPayload;
+
+    // PHASE 5: Load funnel answers if scenario_id present.
+    const funnelAnswers = payload.session_id
+      ? await loadFunnelAnswers(payload.session_id, viewerTenantId)
+      : null;
 
     // -------------------------------------------------------------------------
     // F3.3 STEP 4: Empty-tenant edge case.
@@ -1984,6 +2145,17 @@ export async function POST(req: Request) {
         required_reserves_months: guideline.reserves_required_months,
       };
 
+      // PHASE 5: Apply funnel-aware tier impact (lender program).
+      const funnelImpact = applyFunnelTierImpact(evaluation, funnelAnswers, {
+        isAgency: false,
+        loanCategory: program.loan_category || undefined,
+        programName,
+      });
+      if (funnelImpact.addedBlockers.length > 0) bucketEntry.blockers = [...bucketEntry.blockers, ...funnelImpact.addedBlockers];
+      if (funnelImpact.addedConcerns.length > 0) bucketEntry.concerns = [...bucketEntry.concerns, ...funnelImpact.addedConcerns];
+      bucketEntry.score = Math.max(0, bucketEntry.score + funnelImpact.scoreDelta);
+      evaluation.bucket = funnelImpact.newBucket;
+
       if (evaluation.bucket === "strong") {
         strongMatches.push(bucketEntry);
         matchedLenderNames.add(lenderName);
@@ -2071,6 +2243,18 @@ export async function POST(req: Request) {
           score: evaluation.score,
           required_reserves_months: null,
         };
+
+        // PHASE 5: Apply funnel-aware tier impact (agency program).
+        const funnelImpactAgency = applyFunnelTierImpact(evaluation, funnelAnswers, {
+          isAgency: true,
+          agency: agencyGuideline.agency,
+          productFamily: agencyGuideline.product_family,
+          programName: agencyGuideline.program_name,
+        });
+        if (funnelImpactAgency.addedBlockers.length > 0) bucketEntry.blockers = [...bucketEntry.blockers, ...funnelImpactAgency.addedBlockers];
+        if (funnelImpactAgency.addedConcerns.length > 0) bucketEntry.concerns = [...bucketEntry.concerns, ...funnelImpactAgency.addedConcerns];
+        bucketEntry.score = Math.max(0, bucketEntry.score + funnelImpactAgency.scoreDelta);
+        evaluation.bucket = funnelImpactAgency.newBucket;
 
         if (evaluation.bucket === "strong") {
           strongMatches.push(bucketEntry);
