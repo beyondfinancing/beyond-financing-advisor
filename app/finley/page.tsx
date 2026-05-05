@@ -451,6 +451,38 @@ function getGuidedAssistantReply(
   return `${capturedText}${resolvedNextQuestion}`;
 }
 
+// Phase 4-2a (Diff #12.2) — schema shape detector for varied answer_schema shapes
+type FunnelSchemaShape =
+  | { kind: "enum"; options: string[] }
+  | { kind: "object_enum"; key: string; options: string[]; extras: Array<{ key: string; type: "integer" }> }
+  | { kind: "object_bools"; flags: string[] }
+  | { kind: "unknown" };
+
+function detectSchemaShape(schema: any): FunnelSchemaShape {
+  if (!schema || typeof schema !== "object") return { kind: "unknown" };
+  if (schema.type === "enum" && Array.isArray(schema.options)) {
+    return { kind: "enum", options: schema.options };
+  }
+  if (schema.type === "object" && schema.properties && typeof schema.properties === "object") {
+    const props: Array<[string, any]> = Object.entries(schema.properties);
+    const enumProp = props.find(([, v]) => v && Array.isArray(v.enum));
+    if (enumProp) {
+      const extras = props
+        .filter(([k]) => k !== enumProp[0])
+        .filter(([, v]) => v && v.type === "integer")
+        .map(([k]) => ({ key: k, type: "integer" as const }));
+      return { kind: "object_enum", key: enumProp[0], options: (enumProp[1] as any).enum, extras };
+    }
+    const allBool = props.every(
+      ([, v]) => v === "bool" || (v && typeof v === "object" && v.type === "boolean")
+    );
+    if (allBool && props.length > 0) {
+      return { kind: "object_bools", flags: props.map(([k]) => k) };
+    }
+  }
+  return { kind: "unknown" };
+}
+
 // Phase 4-2a (Diff #12) — humanize enum option keys for chip labels
 function humanizeOption(opt: string): string {
   if (!opt || typeof opt !== "string") return String(opt);
@@ -729,6 +761,8 @@ function FinleyPageInner() {
     status: string;
   }>({ answered: 0, total: 0, status: "idle" });
   const [funnelSubmitting, setFunnelSubmitting] = useState(false);
+  // Phase 4-2a (Diff #12.2) — multi-bool flag toggle state for object_bools schemas
+  const [multiBoolFlags, setMultiBoolFlags] = useState<Record<string, boolean>>({});
   const [savedFeedId, setSavedFeedId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string>("");
 
@@ -1016,7 +1050,7 @@ function FinleyPageInner() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [handoffSessionId]);
 
-    async function onAnswerChip(value: string) {
+    async function submitFunnelAnswer(answer_value: any) {
       if (!handoffSessionId || !activeFunnelQuestion || funnelSubmitting) return;
       setFunnelSubmitting(true);
       try {
@@ -1027,7 +1061,7 @@ function FinleyPageInner() {
           body: JSON.stringify({
             scenario_id: handoffSessionId,
             question_key: activeFunnelQuestion.question_key,
-            answer_value: value,
+            answer_value,
             answered_by_role: "lo",
           }),
         });
@@ -1036,12 +1070,34 @@ function FinleyPageInner() {
           setError(`Could not save answer: ${j.error || res.statusText}`);
           return;
         }
+        // Reset multi-bool toggles for next question
+        setMultiBoolFlags({});
         await loadNextFunnelQuestion();
       } catch (e) {
         setError("Could not save answer. Please try again.");
       } finally {
         setFunnelSubmitting(false);
       }
+    }
+
+    async function onAnswerChip(value: string) {
+      // Phase 4-2a (Diff #12.2) — shape-aware: for object_enum, wrap in {[key]: value}
+      const shape = detectSchemaShape(activeFunnelQuestion?.answer_schema);
+      if (shape.kind === "object_enum") {
+        await submitFunnelAnswer({ [shape.key]: value });
+      } else {
+        await submitFunnelAnswer(value);
+      }
+    }
+
+    async function onSubmitMultiBool() {
+      const shape = detectSchemaShape(activeFunnelQuestion?.answer_schema);
+      if (shape.kind !== "object_bools") return;
+      const payload: Record<string, boolean> = {};
+      for (const flag of shape.flags) {
+        payload[flag] = !!multiBoolFlags[flag];
+      }
+      await submitFunnelAnswer(payload);
     }
 
     async function logoutProfessional() {
@@ -2248,25 +2304,91 @@ function FinleyPageInner() {
                       {activeFunnelQuestion.prompt_text}
                     </p>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {(activeFunnelQuestion.answer_schema?.options || []).map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          disabled={funnelSubmitting}
-                          onClick={() => onAnswerChip(opt)}
-                          style={{
-                            border: "1px solid #cfe0f6",
-                            borderRadius: 999,
-                            padding: "8px 14px",
-                            background: funnelSubmitting ? "#f1f5fb" : "#f8fbff",
-                            color: "#263366",
-                            cursor: funnelSubmitting ? "wait" : "pointer",
-                            fontSize: 14,
-                          }}
-                        >
-                          {humanizeOption(opt)}
-                        </button>
-                      ))}
+                      {(() => {
+                        const shape = detectSchemaShape(activeFunnelQuestion.answer_schema);
+                        if (shape.kind === "enum" || shape.kind === "object_enum") {
+                          return shape.options.map((opt) => (
+                            <button
+                              key={opt}
+                              type="button"
+                              disabled={funnelSubmitting}
+                              onClick={() => onAnswerChip(opt)}
+                              style={{
+                                border: "1px solid #cfe0f6",
+                                borderRadius: 999,
+                                padding: "8px 14px",
+                                background: funnelSubmitting ? "#f1f5fb" : "#f8fbff",
+                                color: "#263366",
+                                cursor: funnelSubmitting ? "wait" : "pointer",
+                                fontSize: 14,
+                              }}
+                            >
+                              {humanizeOption(opt)}
+                            </button>
+                          ));
+                        }
+                        if (shape.kind === "object_bools") {
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
+                              <div style={{ color: "#4b5d7a", fontSize: 13 }}>
+                                Select all that apply, then click Confirm.
+                              </div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                {shape.flags.map((flag) => {
+                                  const on = !!multiBoolFlags[flag];
+                                  return (
+                                    <button
+                                      key={flag}
+                                      type="button"
+                                      disabled={funnelSubmitting}
+                                      onClick={() =>
+                                        setMultiBoolFlags((prev) => ({ ...prev, [flag]: !prev[flag] }))
+                                      }
+                                      style={{
+                                        border: on ? "1px solid #263366" : "1px solid #cfe0f6",
+                                        borderRadius: 999,
+                                        padding: "8px 14px",
+                                        background: on ? "#dde6f5" : "#f8fbff",
+                                        color: "#263366",
+                                        cursor: funnelSubmitting ? "wait" : "pointer",
+                                        fontSize: 14,
+                                        fontWeight: on ? 600 : 400,
+                                      }}
+                                    >
+                                      {on ? "✓ " : ""}
+                                      {humanizeOption(flag)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div>
+                                <button
+                                  type="button"
+                                  disabled={funnelSubmitting}
+                                  onClick={onSubmitMultiBool}
+                                  style={{
+                                    border: "1px solid #263366",
+                                    borderRadius: 8,
+                                    padding: "8px 18px",
+                                    background: "#263366",
+                                    color: "#ffffff",
+                                    cursor: funnelSubmitting ? "wait" : "pointer",
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Confirm
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div style={{ color: "#a36d2b", fontSize: 13, lineHeight: 1.6 }}>
+                            This question requires manual entry — coming soon.
+                          </div>
+                        );
+                      })()}
                     </div>
                   </>
                 ) : (
