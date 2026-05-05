@@ -469,6 +469,123 @@ function getCategoryTierBonus(loanCategory: string | null | undefined): number {
   return 0;
 }
 
+// =============================================================================
+// F3.7-FINLEY — TIER GROUPING HELPERS (Diff #9)
+// =============================================================================
+//
+// Pure in-memory transformations. NO Supabase reads. Mirrors the 5-tier
+// vocabulary enforced at the DB CHECK-constraint level (programs_tier_code_chk
+// and gg_tier_code_chk). Single source of truth: the TIER_CODES constant.
+//
+// =============================================================================
+
+const TIER_CODES = [
+  "TIER_1_AGENCY",
+  "TIER_2_GOVERNMENT",
+  "TIER_3_LENDER_PORTFOLIO",
+  "TIER_4_NON_QM",
+  "TIER_5_SPECIALTY",
+] as const;
+
+type TierCode = (typeof TIER_CODES)[number];
+
+const TIER_LABELS: Record<TierCode, string> = {
+  TIER_1_AGENCY: "Agency Programs",
+  TIER_2_GOVERNMENT: "Government Programs",
+  TIER_3_LENDER_PORTFOLIO: "Lender Portfolio",
+  TIER_4_NON_QM: "Non-QM",
+  TIER_5_SPECIALTY: "Specialty",
+};
+
+const TIER_RANKS: Record<TierCode, number> = {
+  TIER_1_AGENCY: 10,
+  TIER_2_GOVERNMENT: 20,
+  TIER_3_LENDER_PORTFOLIO: 30,
+  TIER_4_NON_QM: 40,
+  TIER_5_SPECIALTY: 50,
+};
+
+function getTierCodeFromCategory(loanCategory: string | null | undefined): TierCode {
+  if (!loanCategory) return "TIER_3_LENDER_PORTFOLIO";
+  const normalized = loanCategory.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+
+  // Agency — explicit and synthesized agency entries
+  if (normalized.includes("fannie")) return "TIER_1_AGENCY";
+  if (normalized.includes("freddie")) return "TIER_1_AGENCY";
+  if (normalized.includes("conventional")) return "TIER_1_AGENCY";
+  if (normalized === "agency" || normalized.includes("conforming")) return "TIER_1_AGENCY";
+
+  // Government
+  if (normalized.includes("fha")) return "TIER_2_GOVERNMENT";
+  if (normalized.includes("usda")) return "TIER_2_GOVERNMENT";
+  if (/(^|_)va($|_)/.test(normalized)) return "TIER_2_GOVERNMENT";
+
+  // Specialty (alt-doc / alt-citizenship)
+  if (normalized.includes("itin")) return "TIER_5_SPECIALTY";
+  if (normalized.includes("foreign")) return "TIER_5_SPECIALTY";
+
+  // Non-QM family
+  if (normalized.includes("non_qm") || normalized.includes("nonqm")) return "TIER_4_NON_QM";
+  if (normalized.includes("dscr")) return "TIER_4_NON_QM";
+  if (normalized.includes("bank_statement") || normalized.includes("bank_stmt")) return "TIER_4_NON_QM";
+  if (normalized.includes("asset_depletion")) return "TIER_4_NON_QM";
+  if (normalized.includes("p_l") || normalized.includes("profit_loss")) return "TIER_4_NON_QM";
+
+  // Default: lender portfolio (HELOC / Second / Other / null)
+  return "TIER_3_LENDER_PORTFOLIO";
+}
+
+type BucketEntry = {
+  loan_category?: string | null;
+  score?: number | null;
+  [key: string]: unknown;
+};
+
+function groupIntoTiers(
+  strong: BucketEntry[],
+  conditional: BucketEntry[]
+): Array<{
+  tier_code: TierCode;
+  tier_label: string;
+  tier_rank: number;
+  strong_count: number;
+  conditional_count: number;
+  best_fit: BucketEntry | null;
+  all_matches: BucketEntry[];
+}> {
+  const buckets: Record<TierCode, { strong: BucketEntry[]; conditional: BucketEntry[] }> = {
+    TIER_1_AGENCY: { strong: [], conditional: [] },
+    TIER_2_GOVERNMENT: { strong: [], conditional: [] },
+    TIER_3_LENDER_PORTFOLIO: { strong: [], conditional: [] },
+    TIER_4_NON_QM: { strong: [], conditional: [] },
+    TIER_5_SPECIALTY: { strong: [], conditional: [] },
+  };
+
+  for (const m of strong) {
+    const t = getTierCodeFromCategory((m.loan_category as string | null | undefined) ?? null);
+    buckets[t].strong.push(m);
+  }
+  for (const m of conditional) {
+    const t = getTierCodeFromCategory((m.loan_category as string | null | undefined) ?? null);
+    buckets[t].conditional.push(m);
+  }
+
+  return TIER_CODES.map((code) => {
+    const all = [...buckets[code].strong, ...buckets[code].conditional].sort(
+      (a, b) => ((b.score as number) ?? 0) - ((a.score as number) ?? 0)
+    );
+    return {
+      tier_code: code,
+      tier_label: TIER_LABELS[code],
+      tier_rank: TIER_RANKS[code],
+      strong_count: buckets[code].strong.length,
+      conditional_count: buckets[code].conditional.length,
+      best_fit: buckets[code].strong[0] ?? buckets[code].conditional[0] ?? null,
+      all_matches: all,
+    };
+  }).sort((a, b) => a.tier_rank - b.tier_rank);
+}
+
 // -----------------------------------------------------------------------------
 // Guideline completeness check (lender-program path)
 // -----------------------------------------------------------------------------
@@ -2003,12 +2120,15 @@ export async function POST(req: Request) {
       eliminatedCount: eliminatedPaths.length,
     });
 
+    const tieredView = groupIntoTiers(strongMatches, conditionalMatches);
+
     return NextResponse.json({
       success: true,
       next_question: nextQuestion,
       top_recommendation: topRecommendation,
       openai_enhancement: null,
       strong_matches: strongMatches,
+      tiers: tieredView,
       conditional_matches: conditionalMatches,
       eliminated_paths: eliminatedPaths,
       lender_summary: {
