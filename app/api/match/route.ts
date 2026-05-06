@@ -1641,6 +1641,7 @@ type FunnelImpact = {
 function isAgencyEquivalent(loanCategory?: string): boolean {
   if (!loanCategory) return false;
   const lc = loanCategory.toLowerCase();
+  if (lc.includes("jumbo")) return false;
   return (
     lc.includes("conventional") ||
     lc.includes("agency") ||
