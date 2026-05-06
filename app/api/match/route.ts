@@ -1765,9 +1765,41 @@ function applyFunnelTierImpact(
     }
   }
 
-  // --- Borrower flags (boost-only; deferred to Phase 5.1 once VA/FHA/USDA seeded) ---
+ // --- Borrower flags (Phase 6-B3: boost-only; never UPGRADE buckets) ---
+    const borrowerFlags = funnel.borrower_flags;
+    if (borrowerFlags && isAgency) {
+      const lc = String(programContext.loanCategory || "").toLowerCase();
+      const pf = String(programContext.productFamily || "").toLowerCase();
+      const pn = String(programContext.programName || "").toLowerCase();
 
-  return out;
+      // Veteran → boost VA programs only
+      if (borrowerFlags.veteran === true && isVAProgram(programContext.loanCategory)) {
+        out.addedConcerns.push("Borrower indicates veteran status — confirm COE/entitlement and VA funding fee exemption if applicable.");
+        out.scoreDelta += 15;
+      }
+
+      // First-time homebuyer → boost FHA, HomeReady, Home Possible
+      const isFHA = lc.includes("fha");
+      const isHomeReady = pf.includes("homeready") || pn.includes("homeready") || pn.includes("home ready");
+      const isHomePossible = pf.includes("home possible") || pn.includes("home possible") || pn.includes("homepossible");
+      if (borrowerFlags.first_time_hb === true && (isFHA || isHomeReady || isHomePossible)) {
+        out.addedConcerns.push("First-time homebuyer — verify HUD-approved homebuyer education completion if program requires it.");
+        out.scoreDelta += 10;
+      }
+
+      // Rural property → boost USDA programs; flag risk on non-USDA agency programs
+      const isUSDA = lc.includes("usda") || lc.includes("rural development") || lc.includes("rd ");
+      if (borrowerFlags.rural_property === true) {
+        if (isUSDA) {
+          out.addedConcerns.push("Rural property indicated — confirm subject address falls within USDA RD eligibility map.");
+          out.scoreDelta += 15;
+        } else {
+          out.addedConcerns.push("Rural/non-warrantable area indicated — confirm appraiser comparable availability and lender overlays.");
+        }
+      }
+    }
+
+    return out;
 }
 
 // -----------------------------------------------------------------------------
