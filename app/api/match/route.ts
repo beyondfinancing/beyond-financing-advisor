@@ -1655,6 +1655,17 @@ function isAgencyEquivalent(loanCategory?: string): boolean {
   );
 }
 
+function isVAProgram(loanCategory?: string): boolean {
+  if (!loanCategory) return false;
+  const lc = loanCategory.toLowerCase();
+  return (
+    lc === "va" ||
+    lc.startsWith("va ") ||
+    lc.includes(" va ") ||
+    lc.endsWith(" va")
+  );
+}
+
 function applyFunnelTierImpact(
   evaluation: EvaluationResult,
   funnel: FunnelAnswers | null,
@@ -1743,7 +1754,7 @@ function applyFunnelTierImpact(
   // --- Loan size vs county limit ---
   const loanSize = funnel.loan_size_vs_county_limit;
   if (loanSize) {
-    if (loanSize.is_jumbo === true && isAgency && programContext.productFamily !== "Jumbo") {
+    if (loanSize.is_jumbo === true && isAgency && programContext.productFamily !== "Jumbo" && !isVAProgram(programContext.loanCategory)) {
       out.addedBlockers.push("Loan size exceeds Agency conforming + high-balance limit (Jumbo) — Agency conforming programs do not apply.");
       out.newBucket = "eliminated";
       out.scoreDelta -= 40;
