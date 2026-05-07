@@ -235,7 +235,7 @@ export async function GET(req: Request) {
     .select(
       "employee_id, role, employees!inner(id, email, full_name, is_branch_manager, tenant_id)",
     )
-    .eq("tenant_id", BF_TENANT_ID);
+    .eq("employees.tenant_id", BF_TENANT_ID);
 
   if (rolesErr) {
     return NextResponse.json(
