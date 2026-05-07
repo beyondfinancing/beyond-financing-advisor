@@ -30,16 +30,16 @@ const NOTIFICATION_TYPE = "daily_workflow_update";
 
 type WorkflowFile = {
   id: string;
-  loan_number: string | null;
-  borrower_full_name: string | null;
+  file_number: string | null;
+  borrower_name: string | null;
   property_address: string | null;
-  loan_purpose: string | null;
-  loan_amount: number | null;
+  purpose: string | null;
+  amount: number | null;
   status: string | null;
-  target_close_date: string | null;
+  target_close: string | null;
   loan_officer_id: string | null;
   created_at: string | null;
-  last_internal_activity_at: string | null;
+  last_activity_at: string | null;
 };
 
 type Employee = {
@@ -91,14 +91,14 @@ async function sendResend(payload: {
 }
 
 function fileRow(f: WorkflowFile, opts: { showCta?: boolean } = {}): string {
-  const loanNum = f.loan_number ? `Loan #${escapeHtml(f.loan_number)}` : "Loan #—";
-  const purpose = escapeHtml(f.loan_purpose || "Loan");
-  const amount = formatCurrency(f.loan_amount);
-  const borrower = escapeHtml(f.borrower_full_name || "—");
+  const loanNum = f.file_number ? `Loan #${escapeHtml(f.file_number)}` : "Loan #—";
+  const purpose = escapeHtml(f.purpose || "Loan");
+  const amount = formatCurrency(f.amount);
+  const borrower = escapeHtml(f.borrower_name || "—");
   const property = escapeHtml(f.property_address || "—");
   const status = statusLabel(f.status);
-  const closeDate = f.target_close_date
-    ? new Date(f.target_close_date).toLocaleDateString("en-US", {
+  const closeDate = f.target_close
+    ? new Date(f.target_close).toLocaleDateString("en-US", {
         month: "numeric",
         day: "numeric",
         year: "numeric",
@@ -267,7 +267,7 @@ export async function GET(req: Request) {
   const { data: filesData, error: filesErr } = await supabase
     .from("workflow_files")
     .select(
-      "id, loan_number, borrower_full_name, property_address, loan_purpose, loan_amount, status, target_close_date, loan_officer_id, created_at, last_internal_activity_at",
+      "id, file_number, borrower_name, property_address, purpose, amount, status, target_close, loan_officer_id, created_at, last_activity_at",
     )
     .eq("tenant_id", BF_TENANT_ID)
     .neq("status", "closed")
@@ -296,8 +296,8 @@ export async function GET(req: Request) {
   });
 
   const closingWithin7All = allFiles.filter((f) => {
-    if (!f.target_close_date) return false;
-    const t = new Date(f.target_close_date).getTime();
+    if (!f.target_close) return false;
+    const t = new Date(f.target_close).getTime();
     if (Number.isNaN(t)) return false;
     return t >= now && t - now <= SEVEN_DAYS_MS;
   });
