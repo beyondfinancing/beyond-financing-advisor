@@ -114,14 +114,16 @@ function fileRow(f: WorkflowFile, opts: { showCta?: boolean } = {}): string {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
       style="margin:0 0 12px 0;border:1px solid ${COLORS.BORDER};border-radius:10px;background:#FAFBFD;">
       <tr>
-        <td style="padding:14px 16px;font-family:Arial,Helvetica,sans-serif;color:${COLORS.TEXT_PRIMARY};">
-          <div style="font-weight:700;font-size:15px;">${borrower}</div>
-          <div style="font-size:13px;color:${COLORS.TEXT_MUTED};margin-top:2px;">${loanNum} · ${purpose} · ${amount}</div>
-          <div style="font-size:13px;color:${COLORS.TEXT_MUTED};margin-top:2px;">${property}</div>
-          <div style="font-size:12px;color:${COLORS.TEXT_MUTED};margin-top:6px;">
+        <td style="padding:12px 16px;font-family:Arial,Helvetica,sans-serif;color:${COLORS.TEXT_PRIMARY};vertical-align:middle;">
+          <div style="font-weight:700;font-size:14px;">${borrower}</div>
+          <div style="font-size:11px;color:${COLORS.TEXT_MUTED};margin-top:2px;">${loanNum} · ${purpose} · ${amount}</div>
+          <div style="font-size:11px;color:${COLORS.TEXT_MUTED};margin-top:2px;">${property}</div>
+          <div style="font-size:11px;color:${COLORS.TEXT_MUTED};margin-top:6px;">
             <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#EEF2FF;color:${COLORS.BRAND_NAVY};font-weight:600;">${status}</span>
             <span style="margin-left:8px;">Close ${escapeHtml(closeDate)}</span>
           </div>
+        </td>
+        <td width="140" style="padding:12px 16px;vertical-align:middle;text-align:right;width:140px;">
           ${ctaCell}
         </td>
       </tr>
