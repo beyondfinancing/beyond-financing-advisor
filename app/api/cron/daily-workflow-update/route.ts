@@ -6,7 +6,7 @@
 //   - Production Manager (full pipeline view, all files)
 //   - Each Loan Officer (their own files only) with their LOAs CC'd
 // Master Admin (no tenant_id) is NEVER included.
-// Style-1 branded hero + per-file CTA buttons via @/lib/email-template.
+// Style-1 branded hero + per-file CTA buttons via @/lib/email-template. (v2 - 2-col fileRow)
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
