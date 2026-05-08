@@ -62,7 +62,23 @@ function statusLabel(s: string | null | undefined): string {
   return escapeHtml(s || "—");
 }
 
-async function sendResend(
+async function sendResend(payload: {
+    from: string;
+    to: string[];
+    cc?: string[];
+    subject: string;
+    html: string;
+}): Promise<{ ok: boolean; error?: string }> {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) return { ok: false, error: "RESEND_API_KEY missing" };
+    try {
+          const resp = await fetch("https://api.resend.com/emails", {
+                  method: "POST",
+                  headers: {
+                            Authorization: `Bearer ${apiKey}`,
+                            "Content-Type": "application/json",
+                  },
+            
       body: JSON.stringify(payload),
     });
     if (!resp.ok) {
