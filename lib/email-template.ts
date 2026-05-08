@@ -70,7 +70,7 @@ export function brandedHero(opts: {
     style="background:${HERO_BG};border-radius:14px 14px 0 0;">
     <tr>
       <td style="padding:32px 36px 28px 36px;background:${HERO_BG};border-radius:14px 14px 0 0;">
-        <div style="display:inline-block;padding:8px 16px;border-radius:999px;background:#FFFFFF;color:${HERO_BG};font-size:12px;font-weight:800;letter-spacing:1.4px;font-family:Arial,Helvetica,sans-serif;">${pill}</div>
+        <div style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.12);color:#E8EEFB;font-size:10px;font-weight:600;letter-spacing:1.6px;border:1px solid rgba(255,255,255,0.25);font-family:Arial,Helvetica,sans-serif;">${pill}</div>
         <h1 style="margin:14px 0 0 0;color:#FFFFFF;font-size:26px;line-height:1.25;font-weight:800;font-family:Arial,Helvetica,sans-serif;">${title}</h1>
         ${
           subtitle
@@ -97,7 +97,7 @@ export function ctaButton(opts: { label: string; href: string }): string {
     <tr>
       <td align="center" style="border-radius:8px;background:${BRAND_NAVY};">
         <a href="${href}" target="_blank"
-          style="display:inline-block;padding:14px 28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:8px;background:${BRAND_NAVY};">
+          style="display:inline-block;padding:8px 18px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:8px;background:${BRAND_NAVY};">
           ${label}
         </a>
       </td>
