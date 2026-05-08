@@ -160,7 +160,7 @@ export async function POST(req: Request) {
             .join("")}</ul>`
         : "<p>No structured field list was provided.</p>";
 
-    const notifyHtml = `
+    const ctaBlockHtml = fileId ? `<div style="margin:14px 0 6px 0;text-align:center;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr><td align="center" bgcolor="#263366" style="border-radius:14px;"><a href="https://beyondintelligence.io/workflow/${escapeHtml(fileId)}" style="display:inline-block;padding:8px 18px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px;background-color:#263366;">Open File</a></td></tr></table></div>` : ""; const notifyHtml = `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:720px;margin:0 auto;padding:16px 20px;">
         <h1 style="font-size:20px;margin:0 0 8px 0;">Workflow File Change</h1>
         <p><strong>Loan ID:</strong> ${escapeHtml(loanId)}</p>
@@ -176,7 +176,7 @@ export async function POST(req: Request) {
         <h3 style="margin-top:12px;">Changed Fields</h3>
         ${changedFieldsHtml}
 
-        ${buildDoNotReplyHtml()}
+        ${ctaBlockHtml}${buildDoNotReplyHtml()}
       </div>
     `;
 
@@ -192,7 +192,7 @@ export async function POST(req: Request) {
           ${escapeHtml(changeSummary).replace(/\n/g, "<br />")}
         </div>
 
-        ${buildDoNotReplyHtml()}
+        ${ctaBlockHtml}${buildDoNotReplyHtml()}
       </div>
     `;
 
