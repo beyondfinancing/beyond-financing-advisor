@@ -127,7 +127,7 @@ function fileRow(f: WorkflowFile, opts: { showCta?: boolean } = {}): string {
 }
 
 function sectionHeader(title: string): string {
-  return `<h2 style="margin:24px 0 10px 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:0.6px;text-transform:uppercase;color:${COLORS.BRAND_NAVY};">${escapeHtml(title)}</h2>`;
+  return `<h2 style="margin:14px 0 6px 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:0.6px;text-transform:uppercase;color:${COLORS.BRAND_NAVY};">${escapeHtml(title)}</h2>`;
 }
 
 function emptyNote(text: string): string {
@@ -154,7 +154,7 @@ function buildEmailHtml(opts: {
   });
 
   const fnaSection =
-    sectionHeader("Files Needing Attention") +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 6px 0;"><tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:0.6px;text-transform:uppercase;color:${COLORS.BRAND_NAVY};font-weight:700;vertical-align:middle;">Files Needing Attention</td><td align="right" style="vertical-align:middle;"><a href="${commandCenterUrl()}" style="display:inline-block;padding:6px 14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:8px;background:${COLORS.BRAND_NAVY};">Open Command Center</a></td></tr></table>` +
     (opts.filesNeedingAttention.length === 0
       ? emptyNote("No urgent oversight items right now.")
       : opts.filesNeedingAttention.map((f) => fileRow(f, { showCta: true })).join(""));
@@ -178,7 +178,7 @@ function buildEmailHtml(opts: {
       : opts.allActiveFiles.map((f) => fileRow(f, { showCta: true })).join(""));
 
   const bodyHtml = `
-    ${topCta}
+    
     ${fnaSection}
     ${closingSection}
     ${newSection}
