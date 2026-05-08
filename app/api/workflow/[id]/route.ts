@@ -264,7 +264,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { data, error } = await supabaseAdmin
       .from("workflow_feed")
       .insert({
-        workflow_file_id: id,
+        workflow_file_id: id, tenant_id: (await supabaseAdmin.from("workflow_files").select("tenant_id").eq("id", id).single()).data?.tenant_id,
         author,
         role,
         text,
