@@ -255,7 +255,7 @@ function formatTargetClose(value: string | null | undefined): string {
 
 function buildDoNotReplyHtml(): string {
   return `
-    <div style="margin-top:22px;padding:14px 16px;border:1px solid #FCD34D;background:#FFFBEB;border-radius:14px;font-family:Arial,Helvetica,sans-serif;">
+    <div style="margin-top:12px;padding:10px 14px;border:1px solid #FCD34D;background:#FFFBEB;border-radius:14px;font-family:Arial,Helvetica,sans-serif;">
       <div style="font-size:13px;font-weight:700;color:#92400E;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">
         Do Not Reply
       </div>
@@ -485,12 +485,12 @@ function buildInternalEmailHtml(params: {
     : "";
 
   const ctaBlockHtml = `
-    <div style="margin:24px 0 8px 0;text-align:center;">
+    <div style="margin:14px 0 6px 0;text-align:center;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
         <tr>
           <td align="center" bgcolor="#263366" style="border-radius:14px;">
             <a href="${escapeHtml(deepLinkUrl)}"
-               style="display:inline-block;padding:14px 26px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:14px;background-color:#263366;">
+               style="display:inline-block;padding:8px 18px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px;background-color:#263366;">
               Open This File in Workflow Intelligence
             </a>
           </td>
@@ -510,7 +510,7 @@ function buildInternalEmailHtml(params: {
   // match a known LO after normalized lookup.
   const routingAlertHtml = routedViaFallback
     ? `
-      <div style="margin-bottom:18px;padding:16px 18px;border:2px solid #DC2626;background:#FEF2F2;border-radius:14px;">
+      <div style="margin-bottom:12px;padding:12px 14px;border:2px solid #DC2626;background:#FEF2F2;border-radius:14px;">
         <div style="font-size:13px;font-weight:800;color:#7F1D1D;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;">
           ⚠ Routing Alert — Unrecognized Loan Officer
         </div>
@@ -525,17 +525,17 @@ function buildInternalEmailHtml(params: {
     : "";
 
   return `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
-      <h1 style="margin:0 0 18px 0;color:#263366;">${escapeHtml(eventTitle)}</h1>
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:16px 20px;">
+      <h1 style="margin:0 0 10px 0;color:#263366;">${escapeHtml(eventTitle)}</h1>
 
       ${routingAlertHtml}
 
-      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:14px 16px;margin-bottom:12px;">
         <p style="line-height:1.8;margin-top:0;">Hello ${escapeHtml(recipientName || "Team")},</p>
         <p style="line-height:1.8;">${escapeHtml(eventNarrative)}</p>
       </div>
 
-      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:18px;margin-bottom:18px;">
+      <div style="background:#ffffff;border:1px solid #d9e1ec;border-radius:16px;padding:14px 16px;margin-bottom:12px;">
         <h2 style="margin:0 0 12px 0;font-size:18px;">Loan Details</h2>
         <p style="margin:6px 0;line-height:1.7;"><strong>Loan Number:</strong> ${escapeHtml(loanNumber)}</p>
         <p style="margin:6px 0;line-height:1.7;"><strong>Borrower:</strong> ${escapeHtml(borrowerName)}</p>
@@ -554,7 +554,7 @@ function buildInternalEmailHtml(params: {
 
       ${ctaBlockHtml}
 
-      <div style="margin-top:18px;color:#64748B;font-size:13px;line-height:1.6;">
+      <div style="margin-top:10px;color:#64748B;font-size:13px;line-height:1.6;">
         Internal team notification from Beyond Intelligence Workflow Intelligence. Realtor agents receive a separate courtesy update without internal note content.
       </div>
 
@@ -583,9 +583,9 @@ function buildRealtorEmailHtml(params: {
   } = params;
 
   return `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:24px;">
-      <h1 style="margin:0 0 18px 0;color:#263366;">${escapeHtml(emailTitle)}</h1>
-      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:18px;">
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:760px;margin:0 auto;padding:16px 20px;">
+      <h1 style="margin:0 0 10px 0;color:#263366;">${escapeHtml(emailTitle)}</h1>
+      <div style="background:#F8FAFC;border:1px solid #d9e1ec;border-radius:16px;padding:14px 16px;">
         <p style="line-height:1.8;">Hello ${escapeHtml(recipientName || "Agent")},</p>
         <p style="line-height:1.8;">${escapeHtml(emailBody)}</p>
 
@@ -599,7 +599,7 @@ function buildRealtorEmailHtml(params: {
         <p style="margin:6px 0;line-height:1.7;"><strong>Target Close:</strong> ${escapeHtml(targetClose)}</p>
         <p style="margin:6px 0;line-height:1.7;"><strong>Property:</strong> ${escapeHtml(propertyAddress)}</p>
 
-        <p style="line-height:1.8;margin-top:18px;color:#64748B;font-size:13px;">This courtesy update does not disclose internal processing details and does not constitute loan approval.</p>
+        <p style="line-height:1.8;margin-top:10px;color:#64748B;font-size:13px;">This courtesy update does not disclose internal processing details and does not constitute loan approval.</p>
       </div>
 
       ${buildDoNotReplyHtml()}
