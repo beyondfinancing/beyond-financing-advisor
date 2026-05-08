@@ -65,7 +65,7 @@ function escapeHtml(value: string): string {
 
 function buildDoNotReplyHtml(): string {
   return `
-    <div style="margin-top:22px;padding:14px 16px;border:1px solid #FCD34D;background:#FFFBEB;border-radius:14px;font-family:Arial,Helvetica,sans-serif;">
+    <div style="margin-top:12px;padding:10px 14px;border:1px solid #FCD34D;background:#FFFBEB;border-radius:14px;font-family:Arial,Helvetica,sans-serif;">
       <div style="font-size:13px;font-weight:700;color:#92400E;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">
         Do Not Reply
       </div>
@@ -161,19 +161,19 @@ export async function POST(req: Request) {
         : "<p>No structured field list was provided.</p>";
 
     const notifyHtml = `
-      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:720px;margin:0 auto;padding:24px;">
-        <h1 style="font-size:22px;margin-bottom:16px;">Workflow File Change</h1>
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:720px;margin:0 auto;padding:16px 20px;">
+        <h1 style="font-size:20px;margin:0 0 8px 0;">Workflow File Change</h1>
         <p><strong>Loan ID:</strong> ${escapeHtml(loanId)}</p>
         <p><strong>Changed By:</strong> ${escapeHtml(changedByName || changedByEmail)}</p>
         <p><strong>Role:</strong> ${escapeHtml(changedByRole)}</p>
         <p><strong>Recipient:</strong> ${escapeHtml(notifyName || notifyEmail)}</p>
 
-        <h3 style="margin-top:18px;">Change Summary</h3>
-        <div style="margin-top:8px;padding:16px;border:1px solid #d9e1ec;border-radius:14px;background:#f8fafc;">
+        <h3 style="margin-top:12px;">Change Summary</h3>
+        <div style="margin-top:6px;padding:12px 14px;border:1px solid #d9e1ec;border-radius:14px;background:#f8fafc;">
           ${escapeHtml(changeSummary).replace(/\n/g, "<br />")}
         </div>
 
-        <h3 style="margin-top:18px;">Changed Fields</h3>
+        <h3 style="margin-top:12px;">Changed Fields</h3>
         ${changedFieldsHtml}
 
         ${buildDoNotReplyHtml()}
@@ -181,14 +181,14 @@ export async function POST(req: Request) {
     `;
 
     const receiptHtml = `
-      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:720px;margin:0 auto;padding:24px;">
-        <h1 style="font-size:22px;margin-bottom:16px;">Workflow Change Receipt</h1>
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#263366;max-width:720px;margin:0 auto;padding:16px 20px;">
+        <h1 style="font-size:20px;margin:0 0 8px 0;">Workflow Change Receipt</h1>
         <p>Your file update has been logged and notification has been sent.</p>
         <p><strong>Loan ID:</strong> ${escapeHtml(loanId)}</p>
         <p><strong>Recipient:</strong> ${escapeHtml(notifyName || notifyEmail)}</p>
 
-        <h3 style="margin-top:18px;">Change Summary</h3>
-        <div style="margin-top:8px;padding:16px;border:1px solid #d9e1ec;border-radius:14px;background:#f8fafc;">
+        <h3 style="margin-top:12px;">Change Summary</h3>
+        <div style="margin-top:6px;padding:12px 14px;border:1px solid #d9e1ec;border-radius:14px;background:#f8fafc;">
           ${escapeHtml(changeSummary).replace(/\n/g, "<br />")}
         </div>
 
