@@ -70,7 +70,7 @@ export function brandedHero(opts: {
     style="background:${HERO_BG};border-radius:14px 14px 0 0;">
     <tr>
       <td style="padding:32px 36px 28px 36px;background:${HERO_BG};border-radius:14px 14px 0 0;">
-        <div style="display:inline-block;padding:6px 14px;border-radius:999px;background:${HERO_BG_DARK};color:#A8C7FF;font-size:11px;font-weight:700;letter-spacing:1.2px;font-family:Arial,Helvetica,sans-serif;">${pill}</div>
+        <div style="display:inline-block;padding:8px 16px;border-radius:999px;background:#FFFFFF;color:${HERO_BG};font-size:12px;font-weight:800;letter-spacing:1.4px;font-family:Arial,Helvetica,sans-serif;">${pill}</div>
         <h1 style="margin:14px 0 0 0;color:#FFFFFF;font-size:26px;line-height:1.25;font-weight:800;font-family:Arial,Helvetica,sans-serif;">${title}</h1>
         ${
           subtitle
