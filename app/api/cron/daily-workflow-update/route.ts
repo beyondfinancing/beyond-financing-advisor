@@ -115,9 +115,9 @@ function fileRow(f: WorkflowFile, opts: { showCta?: boolean } = {}): string {
       style="margin:0 0 6px 0;border:1px solid ${COLORS.BORDER};border-radius:10px;background:#FAFBFD;">
       <tr>
         <td style="padding:8px 14px;font-family:Arial,Helvetica,sans-serif;color:${COLORS.TEXT_PRIMARY};vertical-align:middle;">
-          <div style="font-weight:700;font-size:14px;">${borrower}</div>
+          <div style="font-size:11px;color:${COLORS.TEXT_MUTED};margin-bottom:4px;"><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#EEF2FF;color:${COLORS.BRAND_NAVY};font-weight:600;">${status}</span> <span style="margin-left:8px;">Close ${escapeHtml(closeDate)}</span></div><div style="font-weight:700;font-size:14px;margin-top:2px;">${borrower}</div>
           <div style="font-size:11px;color:${COLORS.TEXT_MUTED};margin-top:2px;">${loanNum} · ${purpose} · ${amount}</div>
-          <div style="font-size:11px;color:${COLORS.TEXT_MUTED};margin-top:2px;">${property} <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#EEF2FF;color:${COLORS.BRAND_NAVY};font-weight:600;margin-left:6px;">${status}</span> <span style="margin-left:6px;">Close ${escapeHtml(closeDate)}</span></div>
+          <div style="font-size:11px;color:${COLORS.TEXT_MUTED};margin-top:2px;">${property}</div>
         </td>
         <td width="140" style="padding:8px 14px;vertical-align:middle;text-align:right;width:140px;">
           ${ctaCell}
