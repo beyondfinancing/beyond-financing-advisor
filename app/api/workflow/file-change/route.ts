@@ -32,7 +32,7 @@
 // =============================================================================
 
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";import { BF_TENANT_UUID_FALLBACK } from "@/lib/team-auth";
 
 type WorkflowRole =
   | "loan_officer"
@@ -117,8 +117,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const activityInsert = {
-      loan_id: loanId,
+    let resolvedTenantId: string = BF_TENANT_UUID_FALLBACK; if (fileId) { const { data: tenantRow } = await supabaseAdmin.from("workflow_files").select("tenant_id").eq("id", fileId).maybeSingle(); if (tenantRow?.tenant_id) { resolvedTenantId = tenantRow.tenant_id as string; } } const activityInsert = {
+      tenant_id: resolvedTenantId, loan_id: loanId,
       file_id: fileId || null,
       from_role: changedByRole,
       from_name: changedByName || null,
