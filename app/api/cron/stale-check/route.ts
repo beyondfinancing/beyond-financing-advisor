@@ -229,8 +229,7 @@ async function sendStaleEmail(file: StaleFile, recipients: string[]) {
             <td style="padding:4px 10px;">${escapeHtml(file.status ?? '—')}</td></tr>
         <tr><td style="padding:4px 10px;color:#475569;"><strong>Last activity</strong></td>
             <td style="padding:4px 10px;">${escapeHtml(file.last_activity_at)}</td></tr>
-      </table>
-      <p style="line-height:1.5;margin-top:10px;">
+      </table><div style="margin:14px 0 6px 0;text-align:center;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr><td align="center" bgcolor="#263366" style="border-radius:14px;"><a href="https://beyondintelligence.io/workflow/${escapeHtml(file.id)}" style="display:inline-block;padding:8px 18px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px;background-color:#263366;">Open File</a></td></tr></table></div><p style="line-height:1.5;margin-top:10px;">
         Please update the file or document why no action is needed.
         Notifications will continue at <strong>10:00 AM</strong> and
         <strong>3:00 PM ET</strong> each business day until the file is touched.
