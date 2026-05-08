@@ -69,7 +69,7 @@ export function brandedHero(opts: {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
     style="background:${HERO_BG};border-radius:14px 14px 0 0;">
     <tr>
-      <td style="padding:32px 36px 28px 36px;background:${HERO_BG};border-radius:14px 14px 0 0;">
+      <td style="padding:20px 28px 18px 28px;background:${HERO_BG};border-radius:14px 14px 0 0;">
         <div style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.12);color:#E8EEFB;font-size:10px;font-weight:600;letter-spacing:1.6px;border:1px solid rgba(255,255,255,0.25);font-family:Arial,Helvetica,sans-serif;">${pill}</div>
         <h1 style="margin:14px 0 0 0;color:#FFFFFF;font-size:26px;line-height:1.25;font-weight:800;font-family:Arial,Helvetica,sans-serif;">${title}</h1>
         ${
@@ -93,7 +93,7 @@ export function ctaButton(opts: { label: string; href: string }): string {
 
   return `
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
-    style="margin:24px auto;">
+    style="margin:0 auto;">
     <tr>
       <td align="center" style="border-radius:8px;background:${BRAND_NAVY};">
         <a href="${href}" target="_blank"
@@ -155,7 +155,7 @@ export function outerShell(opts: {
           style="max-width:640px;width:100%;background:${CARD_BG};border-radius:14px;border:1px solid ${BORDER};overflow:hidden;">
           <tr><td>${opts.hero}</td></tr>
           <tr>
-            <td style="padding:28px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;color:${TEXT_PRIMARY};font-size:15px;line-height:1.55;">
+            <td style="padding:14px 24px 8px 24px;font-family:Arial,Helvetica,sans-serif;color:${TEXT_PRIMARY};font-size:15px;line-height:1.55;">
               ${opts.bodyHtml}
             </td>
           </tr>
