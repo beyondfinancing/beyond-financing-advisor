@@ -205,8 +205,8 @@ async function sendStaleEmail(file: StaleFile, recipients: string[]) {
   const subject = `[Stale 48h] ${file.file_number ?? file.borrower_name ?? 'Workflow file'}`;
 
   const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;color:#1f2937;padding:20px;">
-      <h2 style="color:#263366;margin:0 0 12px 0;">
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;color:#1f2937;padding:14px 18px;">
+      <h2 style="color:#263366;margin:0 0 8px 0;">
         Stale File Alert — No internal activity for 48 business hours
       </h2>
       <p style="line-height:1.6;">
@@ -214,23 +214,23 @@ async function sendStaleEmail(file: StaleFile, recipients: string[]) {
         <strong>${escapeHtml(stale)} business hours</strong>
         (weekends and company holidays excluded, Eastern time).
       </p>
-      <table style="border-collapse:collapse;margin-top:12px;font-size:14px;">
-        <tr><td style="padding:6px 12px;color:#475569;"><strong>File #</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.file_number ?? '—')}</td></tr>
-        <tr><td style="padding:6px 12px;color:#475569;"><strong>Borrower</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.borrower_name ?? '—')}</td></tr>
-        <tr><td style="padding:6px 12px;color:#475569;"><strong>Property</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.property_address ?? '—')}</td></tr>
-        <tr><td style="padding:6px 12px;color:#475569;"><strong>Loan Officer</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.loan_officer ?? '—')}</td></tr>
-        <tr><td style="padding:6px 12px;color:#475569;"><strong>Processor</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.processor ?? '—')}</td></tr>
-        <tr><td style="padding:6px 12px;color:#475569;"><strong>Status</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.status ?? '—')}</td></tr>
-        <tr><td style="padding:6px 12px;color:#475569;"><strong>Last activity</strong></td>
-            <td style="padding:6px 12px;">${escapeHtml(file.last_activity_at)}</td></tr>
+      <table style="border-collapse:collapse;margin-top:8px;font-size:14px;">
+        <tr><td style="padding:4px 10px;color:#475569;"><strong>File #</strong></td>
+            <td style="padding:4px 10px;">${escapeHtml(file.file_number ?? '—')}</td></tr>
+        <tr><td style="padding:4px 10px;color:#475569;"><strong>Borrower</strong></td>
+            <td style="padding:4px 10px;">${escapeHtml(file.borrower_name ?? '—')}</td></tr>
+        <tr><td style="padding:4px 10px;color:#475569;"><strong>Property</strong></td>
+            <td style="padding:4px 10px;">${escapeHtml(file.property_address ?? '—')}</td></tr>
+        <tr><td style="padding:4px 10px;color:#475569;"><strong>Loan Officer</strong></td>
+            <td style="padding:4px 10px;">${escapeHtml(file.loan_officer ?? '—')}</td></tr>
+        <tr><td style="padding:4px 10px;color:#475569;"><strong>Processor</strong></td>
+            <td style="padding:4px 10px;">${escapeHtml(file.processor ?? '—')}</td></tr>
+        <tr><td style="padding:4px 10px;color:#475569;"><strong>Status</strong></td>
+            <td style="padding:4px 10px;">${escapeHtml(file.status ?? '—')}</td></tr>
+        <tr><td style="padding:4px 10px;color:#475569;"><strong>Last activity</strong></td>
+            <td style="padding:4px 10px;">${escapeHtml(file.last_activity_at)}</td></tr>
       </table>
-      <p style="line-height:1.6;margin-top:16px;">
+      <p style="line-height:1.5;margin-top:10px;">
         Please update the file or document why no action is needed.
         Notifications will continue at <strong>10:00 AM</strong> and
         <strong>3:00 PM ET</strong> each business day until the file is touched.
