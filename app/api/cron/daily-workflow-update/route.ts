@@ -62,22 +62,7 @@ function statusLabel(s: string | null | undefined): string {
   return escapeHtml(s || "—");
 }
 
-async function sendResend(payload: {
-  from: string;
-  to: string[];
-  cc?: string[];
-  subject: string;
-  html: string;
-}): Promise<{ ok: boolean; error?: string }> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return { ok: false, error: "RESEND_API_KEY missing" };
-  try {
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+async function sendResend(
       body: JSON.stringify(payload),
     });
     if (!resp.ok) {
@@ -398,14 +383,9 @@ export async function GET(req: Request) {
       .insert({
         tenant_id: BF_TENANT_ID,
         notification_type: NOTIFICATION_TYPE,
-        recipient_email: plan.to[0],
+        recipient_email: plan.to[0], recipient_role: plan.roleLabel, delivery_channel: "email", delivery_status: sent.ok ? "sent" : "failed", message_subject: subject, event_type: "daily_workflow_update",
         sent_at: new Date().toISOString(),
-        payload: {
-          cc: plan.cc,
-          file_count: plan.files.length,
-          ok: sent.ok,
-          error: sent.error || null,
-        },
+        
       });
 
     sendResults.push({
