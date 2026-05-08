@@ -380,7 +380,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
 
   const { id } = await context.params;
 
-  const { error } = await supabaseAdmin
+  const cleanId = clean(id); const { data: existingUser } = await supabaseAdmin.from("team_users").select("email, role").eq("id", cleanId).maybeSingle(); const cascadeEmail = clean(existingUser?.email || "").toLowerCase(); const cascadeRole = clean(existingUser?.role || ""); const { error } = await supabaseAdmin
     .from("team_users")
     .delete()
     .eq("id", clean(id));
@@ -389,5 +389,5 @@ export async function DELETE(_req: Request, context: RouteContext) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  if (cascadeEmail) { try { if (cascadeRole === "Real Estate Agent") { await supabaseAdmin.from("realtors").delete().eq("email", cascadeEmail); } else if (cascadeRole === "Loan Officer" || cascadeRole === "Loan Officer Assistant" || cascadeRole === "Processor" || cascadeRole === "Production Manager" || cascadeRole === "Branch Manager") { await supabaseAdmin.from("employees").delete().eq("email", cascadeEmail); } } catch (cascadeErr) { console.error("admin/users DELETE: cascade failed.", cascadeErr); } } return NextResponse.json({ success: true });
 }
