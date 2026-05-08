@@ -599,7 +599,7 @@ function buildRealtorEmailHtml(params: {
         <p style="margin:6px 0;line-height:1.7;"><strong>Target Close:</strong> ${escapeHtml(targetClose)}</p>
         <p style="margin:6px 0;line-height:1.7;"><strong>Property:</strong> ${escapeHtml(propertyAddress)}</p>
 
-        <p style="line-height:1.8;margin-top:10px;color:#64748B;font-size:13px;">This courtesy update does not disclose internal processing details and does not constitute loan approval.</p>
+        <p style="line-height:1.8;margin-top:10px;color:#64748B;font-size:13px;">This courtesy update does not disclose internal processing details and does not constitute loan approval.</p><div style="margin:14px 0 6px 0;text-align:center;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr><td align="center" bgcolor="#263366" style="border-radius:14px;"><a href="https://www.beyondfinancing.com/home-purchase?step=1" style="display:inline-block;padding:8px 18px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px;background-color:#263366;">Have another client? Apply Now</a></td></tr></table></div>
       </div>
 
       ${buildDoNotReplyHtml()}
