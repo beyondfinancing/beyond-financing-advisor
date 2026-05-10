@@ -678,6 +678,7 @@ function FinleyPageInner() {
   );
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatPending, setChatPending] = useState(false);
   const [strongMatches, setStrongMatches] = useState<MatchBucket[]>([]);
   const [conditionalMatches, setConditionalMatches] = useState<MatchBucket[]>([]);
   const [eliminatedPaths, setEliminatedPaths] = useState<MatchBucket[]>([]);
@@ -1250,24 +1251,66 @@ function FinleyPageInner() {
     }
   }
 
-  function sendToFinley() {
+  async function sendToFinley() {
     const trimmed = chatInput.trim();
-    if (!trimmed) return;
+    if (!trimmed || chatPending) return;
 
-    const assistantReply = getGuidedAssistantReply(
-      form,
-      nextQuestion || openAiEnhancement?.nextBestQuestion || "",
-      strongMatches,
-      conditionalMatches
-    );
-
-    setChatMessages((prev) => [
-      ...prev,
-      { role: "user", content: trimmed },
-      { role: "assistant", content: assistantReply },
-    ]);
-
+    // Append the user's message immediately so the UI feels responsive,
+    // then clear the input and lock the send button while the LLM is working.
+    const userMessage: ChatMessage = { role: "user", content: trimmed };
+    const historyForApi = [...chatMessages, userMessage].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    setChatMessages((prev) => [...prev, userMessage]);
     setChatInput("");
+    setChatPending(true);
+
+    try {
+      const resp = await fetch("/api/finley/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          messages: historyForApi,
+          form,
+          strong_matches: strongMatches,
+          conditional_matches: conditionalMatches,
+          eliminated_paths: eliminatedPaths,
+          top_recommendation: topRecommendation,
+          next_question: nextQuestion,
+          lender_summary: lenderSummary,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data?.success || typeof data.reply !== "string") {
+        throw new Error(data?.error || data?.detail || `HTTP ${resp.status}`);
+      }
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply },
+      ]);
+    } catch (err) {
+      // Graceful fallback — never leave the user without a reply. Use the
+      // existing deterministic guidance generator and surface that the live
+      // LLM path failed so the LO knows it was a degraded turn.
+      const fallback = getGuidedAssistantReply(
+        form,
+        nextQuestion || openAiEnhancement?.nextBestQuestion || "",
+        strongMatches,
+        conditionalMatches
+      );
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `(Finley's live reasoning is temporarily unavailable — falling back to guided summary. Detail: ${errMsg})\n\n${fallback}`,
+        },
+      ]);
+    } finally {
+      setChatPending(false);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -3010,6 +3053,7 @@ function FinleyPageInner() {
                 <button
                   type="button"
                   onClick={sendToFinley}
+                  disabled={chatPending || !chatInput.trim()}
                   style={{
                     background: "#0096C7",
                     color: "#ffffff",
@@ -3017,10 +3061,11 @@ function FinleyPageInner() {
                     borderRadius: 16,
                     padding: "14px 20px",
                     fontWeight: 700,
-                    cursor: "pointer",
+                    cursor: chatPending || !chatInput.trim() ? "not-allowed" : "pointer",
+                    opacity: chatPending || !chatInput.trim() ? 0.6 : 1,
                   }}
                 >
-                  Send to Finley
+                  {chatPending ? "Finley is thinking…" : "Send to Finley"}
                 </button>
               </>
             )}
