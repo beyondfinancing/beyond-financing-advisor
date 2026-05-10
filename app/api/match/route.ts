@@ -1262,6 +1262,7 @@ function evaluateAgencyProgramForLender(
   const transactionType = String(payload.transaction_type || "").trim();
   const incomeType = String(payload.income_type || "").trim();
   const propertyType = String(payload.property_type || "").trim();
+  const borrowerStatus = String(payload.borrower_status || "").trim();
   const creditScore = toNumber(payload.credit_score);
   const ltv = toNumber(payload.ltv);
   const dti = toNumber(payload.dti);
@@ -1425,6 +1426,25 @@ function evaluateAgencyProgramForLender(
     strengths.push(`${lenderName} is licensed in ${subjectState} for this occupancy.`);
   } else {
     missingItems.push("Subject state");
+  }
+
+  // Agency programs (FHA/VA/USDA/Fannie Mae/Freddie Mac) statutorily require
+  // a valid SSN. ITIN / DACA / Foreign National borrowers are categorically
+  // ineligible. Eliminate BEFORE income/state/etc. checks so the blocker reflects
+  // the true statutory reason.
+  if (borrowerStatus && !isBorrowerStatusGovernmentCompatible(borrowerStatus)) {
+    blockers.push(
+      `${agencyDisplay} loans require a valid Social Security Number; borrower status ${borrowerStatus.replace(/_/g, " ")} is not eligible for ${agencyDisplay} financing.`
+    );
+    return {
+      bucket: "eliminated",
+      score: 0,
+      blockers,
+      concerns,
+      strengths,
+      missingItems,
+      explanation: `${agencyDisplay} is a government / GSE agency program. Agency financing statutorily requires an SSN; ITIN, DACA, and Foreign National borrowers are not eligible.`,
+    };
   }
 
   // Agency programs are full-doc — eliminate non-doc income types
