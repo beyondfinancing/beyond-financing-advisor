@@ -1118,21 +1118,27 @@ function getGovernmentAgencyForProgram(
   programName: string,
   loanCategory: string | null,
   agency?: string | null
-): "FHA" | "VA" | "USDA" | null {
+): "FHA" | "VA" | "USDA" | "Fannie Mae" | "Freddie Mac" | null {
   const cat = normalizeToken(String(loanCategory || ""));
   if (cat === "fha") return "FHA";
   if (cat === "va") return "VA";
   if (cat === "usda") return "USDA";
+  if (cat.includes("fannie")) return "Fannie Mae";
+  if (cat.includes("freddie")) return "Freddie Mac";
 
   const ag = normalizeToken(String(agency || ""));
   if (ag === "fha") return "FHA";
   if (ag === "va") return "VA";
   if (ag === "usda") return "USDA";
+  if (ag.includes("fannie")) return "Fannie Mae";
+  if (ag.includes("freddie")) return "Freddie Mac";
 
   const name = String(programName || "");
   if (/\bfha\b/i.test(name) || /fha-insured/i.test(name)) return "FHA";
   if (/\bva\b/i.test(name) || /va-guaranteed/i.test(name) || /\birrrl\b/i.test(name)) return "VA";
   if (/\busda\b/i.test(name) || /rural housing/i.test(name) || /rd section/i.test(name)) return "USDA";
+  if (/fannie\s*mae/i.test(name)) return "Fannie Mae";
+  if (/freddie\s*mac/i.test(name)) return "Freddie Mac";
 
   return null;
 }
