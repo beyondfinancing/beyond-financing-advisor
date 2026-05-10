@@ -153,6 +153,7 @@ const COPY: Record<
     disclaimerTitle: string;
     disclaimerText: string;
     disclaimerAccept: string;
+    smsConsent: string;
     scenarioDirectionTitle: string;
     scenarioDirectionText: string;
     conversationTitle: string;
@@ -227,6 +228,7 @@ const COPY: Record<
     disclaimerText:
       "This system provides preliminary guidance only. It is not a loan approval, underwriting decision, commitment to lend, legal advice, tax advice, or final program determination. All scenarios remain subject to licensed loan officer review, documentation, verification, underwriting, title, appraisal, and current investor or agency guidelines.",
     disclaimerAccept: "I acknowledge and accept this disclaimer.",
+    smsConsent: "By submitting your phone number, you agree to receive transactional SMS messages from Beyond Intelligence (operated by Beyond Financing, Inc.) regarding your mortgage inquiry, including application activity, consultation scheduling, and follow-up from your assigned loan officer. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe, HELP for help. No mobile information will be shared with third parties or affiliates for marketing purposes. See our ",
     formLockedNotice:
       "Please acknowledge the disclaimer above to begin filling out this form.",
     runReviewFirstHint:
@@ -312,6 +314,7 @@ const COPY: Record<
     disclaimerText:
       "Este sistema fornece apenas orientação preliminar. Não constitui aprovação de empréstimo, decisão de underwriting, compromisso de concessão de crédito, aconselhamento jurídico, aconselhamento fiscal ou determinação final de programa. Todos os cenários permanecem sujeitos à revisão de um loan officer licenciado, documentação, verificação, underwriting, title, appraisal e diretrizes atuais do investidor ou agência.",
     disclaimerAccept: "Reconheço e aceito este aviso.",
+    smsConsent: "Ao enviar seu número de telefone, você concorda em receber mensagens SMS transacionais da Beyond Intelligence (operada pela Beyond Financing, Inc.) sobre sua consulta hipotecária, incluindo atividade da aplicação, agendamento de consulta e acompanhamento do seu loan officer. A frequência de mensagens varia. Podem ser aplicadas tarifas de mensagens e dados. Responda STOP para cancelar, HELP para ajuda. Nenhuma informação móvel será compartilhada com terceiros ou afiliados para fins de marketing. Consulte nossos ",
     formLockedNotice:
       "Por favor, aceite o aviso acima para começar a preencher o formulário.",
     runReviewFirstHint:
@@ -397,6 +400,7 @@ const COPY: Record<
     disclaimerText:
       "Este sistema proporciona únicamente orientación preliminar. No constituye aprobación de préstamo, decisión de underwriting, compromiso de prestar, asesoría legal, asesoría fiscal ni determinación final del programa. Todos los escenarios permanecen sujetos a revisión por un loan officer con licencia, documentación, verificación, underwriting, title, appraisal y lineamientos actuales del inversionista o la agencia.",
     disclaimerAccept: "Reconozco y acepto este aviso.",
+    smsConsent: "Al enviar su número de teléfono, acepta recibir mensajes SMS transaccionales de Beyond Intelligence (operada por Beyond Financing, Inc.) sobre su consulta hipotecaria, incluyendo actividad de la solicitud, programación de consultas y seguimiento de su loan officer. La frecuencia de los mensajes varía. Pueden aplicar tarifas de mensajes y datos. Responda STOP para cancelar, HELP para ayuda. Ninguna información móvil será compartida con terceros o afiliados con fines de marketing. Consulte nuestros ",
     formLockedNotice:
       "Por favor, acepte el aviso de arriba para comenzar a llenar el formulario.",
     runReviewFirstHint:
@@ -1713,6 +1717,14 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 <div style={styles.metricSubtext}>
                   {t.estimatedLtv}: {Math.round(estimatedLtv * 100)}%
                 </div>
+              </div>
+
+              <div style={{ margin: "8px 0 14px", padding: "12px 14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, lineHeight: 1.5, color: "#334155" }}>
+                <strong style={{ color: "#0F172A" }}>SMS Consent:</strong> {t.smsConsent}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#1D4ED8", textDecoration: "underline" }}>{t.termsLinkLabel || "Terms"}</a>
+                {t.andLabel || " and "}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#1D4ED8", textDecoration: "underline" }}>{t.privacyLinkLabel || "Privacy Policy"}</a>
+                {"."}
               </div>
 
               <button
