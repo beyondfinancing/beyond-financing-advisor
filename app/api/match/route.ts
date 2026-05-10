@@ -664,6 +664,49 @@ function evaluateLenderProgram(
   const firstTimeHomebuyer =
     payload.first_time_homebuyer === true || payload.first_time_homebuyer === "yes";
 
+  // ---------------------------------------------------------------------------
+  // Government program (FHA / VA / USDA) statutory disqualifiers
+  // ---------------------------------------------------------------------------
+  // Hard-eliminate the program if it is FHA / VA / USDA AND the borrower
+  // status is ITIN / DACA / Foreign National OR the income type is non-full-doc.
+  // This runs BEFORE state / occupancy / etc. so the blocker reflects the true
+  // reason (statute, not licensing) and does not get masked by a softer concern.
+  const govProgram = getGovernmentAgencyForProgram(
+    programName,
+    loanCategory,
+    (guideline as { agency?: string | null }).agency ?? null
+  );
+  if (govProgram) {
+    if (borrowerStatus && !isBorrowerStatusGovernmentCompatible(borrowerStatus)) {
+      blockers.push(
+        `${govProgram} loans require a valid Social Security Number; borrower status ${borrowerStatus.replace(/_/g, " ")} is not eligible for ${govProgram} financing.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${programName} is a ${govProgram} program. ${govProgram} financing statutorily requires an SSN; ITIN, DACA, and Foreign National borrowers are not eligible.`,
+      };
+    }
+    if (incomeType && !isIncomeTypeAgencyCompatible(incomeType)) {
+      blockers.push(
+        `${govProgram} loans require full-documentation income; ${incomeType.replace(/_/g, " ")} is not accepted for ${govProgram}.`
+      );
+      return {
+        bucket: "eliminated",
+        score: 0,
+        blockers,
+        concerns,
+        strengths,
+        missingItems,
+        explanation: `${programName} is a ${govProgram} program. ${govProgram} underwriting requires traditional full-doc / W-2 income; the selected income type is not compatible.`,
+      };
+    }
+  }
+
   if (subjectState) {
     if (!stateEligibility || !stateEligibility.is_active) {
       blockers.push(`${lenderName} has no active state eligibility entry for ${subjectState}.`);
@@ -1044,6 +1087,65 @@ function isIncomeTypeAgencyCompatible(incomeType: string): boolean {
   if (!incomeType) return true;
   const normalized = normalizeToken(incomeType);
   return normalized === "full_doc" || normalized === "express_doc";
+}
+
+// -----------------------------------------------------------------------------
+// Government program detection (FHA / VA / USDA)
+// -----------------------------------------------------------------------------
+//
+// FHA, VA, and USDA are government-backed programs subject to STATUTORY
+// borrower and documentation requirements that override any per-lender or
+// per-program data quality. Specifically:
+//
+//   1. SSN required. ITIN, DACA, and Foreign National borrowers are
+//      categorically ineligible. (US Citizens, Permanent Residents, and
+//      Non-Permanent Residents holding a valid SSN are fine for FHA/USDA;
+//      VA additionally requires veteran/active-duty/eligible-spouse status.)
+//
+//   2. Full-doc income only. Bank Statements, P&L only, 1099-only,
+//      Asset Utilization, DSCR, No Ratio, and WVOE are all categorically
+//      ineligible — FHA/VA/USDA underwriting requires traditional
+//      W-2 / 1040 full-doc or express-doc income.
+//
+// These rules mirror isIncomeTypeAgencyCompatible() (which gates Fannie /
+// Freddie agency programs) and exist because the per-lender programs table
+// frequently has empty borrower_statuses[] / income_types[] arrays — the
+// engine treats empty as "permissive" in evaluateLenderProgram(), which would
+// otherwise let ITIN borrowers and bank-statement income flow through onto
+// FHA/VA programs as Conditional matches. Statute wins over data quality.
+
+function getGovernmentAgencyForProgram(
+  programName: string,
+  loanCategory: string | null,
+  agency?: string | null
+): "FHA" | "VA" | "USDA" | null {
+  const cat = normalizeToken(String(loanCategory || ""));
+  if (cat === "fha") return "FHA";
+  if (cat === "va") return "VA";
+  if (cat === "usda") return "USDA";
+
+  const ag = normalizeToken(String(agency || ""));
+  if (ag === "fha") return "FHA";
+  if (ag === "va") return "VA";
+  if (ag === "usda") return "USDA";
+
+  const name = String(programName || "");
+  if (/\bfha\b/i.test(name) || /fha-insured/i.test(name)) return "FHA";
+  if (/\bva\b/i.test(name) || /va-guaranteed/i.test(name) || /\birrrl\b/i.test(name)) return "VA";
+  if (/\busda\b/i.test(name) || /rural housing/i.test(name) || /rd section/i.test(name)) return "USDA";
+
+  return null;
+}
+
+function isBorrowerStatusGovernmentCompatible(borrowerStatus: string): boolean {
+  if (!borrowerStatus) return true;
+  const normalized = normalizeBorrowerStatus(borrowerStatus);
+  // FHA/VA/USDA require an SSN. ITIN, DACA, and Foreign National are
+  // categorically ineligible regardless of any per-program override.
+  if (normalized === "itin_borrower") return false;
+  if (normalized === "daca") return false;
+  if (normalized === "foreign_national") return false;
+  return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -1524,11 +1626,102 @@ function evaluateAgencyProgramForLender(
 // Build next question
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Targeted follow-up question builder
+// -----------------------------------------------------------------------------
+//
+// When all intake fields are filled but only conditional matches survive, mine
+// the top conditional match's concerns[] and missingItems[] and turn the most
+// decisive one into a question that — if answered — would either flip the
+// program to a strong match or eliminate it. This makes Finley behave like a
+// real mortgage professional who keeps drilling for compensating factors
+// instead of stopping at "review the conditional matches."
+
+type TopConditionalSummary = {
+  program_name?: string | null;
+  lender_name?: string | null;
+  loan_category?: string | null;
+  concerns?: string[] | null;
+  missing_items?: string[] | null;
+};
+
+function buildTargetedFollowUpQuestion(
+  payload: FormPayload,
+  topConditional: TopConditionalSummary | null | undefined
+): string | null {
+  if (!topConditional) return null;
+
+  const concerns = Array.isArray(topConditional.concerns) ? topConditional.concerns : [];
+  const missing = Array.isArray(topConditional.missing_items) ? topConditional.missing_items : [];
+  const programName = topConditional.program_name || "the top conditional program";
+  const lenderName = topConditional.lender_name || "the lender";
+  const category = normalizeToken(String(topConditional.loan_category || ""));
+
+  // Walk concerns / missing items and pattern-match decisive items.
+  const haystack = [...concerns, ...missing].map((s) => String(s || "").toLowerCase());
+
+  // Credit score concerns
+  if (haystack.some((h) => h.includes("credit score") || h.includes("fico") || h.includes("min credit"))) {
+    return `The top conditional path (${programName} via ${lenderName}) has a credit-score concern. Are there compensating factors — large reserves beyond what was entered, low DTI, long employment continuity, or recent score improvements not yet reflected — that could offset it?`;
+  }
+
+  // Manual UW concerns
+  if (haystack.some((h) => h.includes("manual uw") || h.includes("manual underwriting"))) {
+    return `${programName} would require Manual Underwriting through ${lenderName}. What is the borrower's residual income (disposable income after PITIA + all monthly debts), and are there any compensating factors — 12+ months reserves, DTI well below program max, or strong job tenure — that support a manual UW package?`;
+  }
+
+  // VA-specific
+  if (category === "va" || haystack.some((h) => h.includes(" va ") || h.includes("veteran") || h.includes("certificate of eligibility") || h.includes("coe"))) {
+    return `${programName} is a VA program. Does the borrower hold a valid Certificate of Eligibility (COE), and is the borrower a veteran, active-duty service member, National Guard / Reserve member with qualifying service, or eligible surviving spouse?`;
+  }
+
+  // FHA-specific
+  if (category === "fha" || haystack.some((h) => h.includes("fha"))) {
+    return `${programName} is an FHA program. Has the borrower had a prior FHA loan paid off, any 3-year-look-back events (bankruptcy, foreclosure, short sale), or any non-occupant co-borrower involved? Also confirm the property will be primary owner-occupied.`;
+  }
+
+  // USDA-specific
+  if (category === "usda" || haystack.some((h) => h.includes("usda") || h.includes("rural"))) {
+    return `${programName} is a USDA Rural Housing program. Is the subject property in a USDA-eligible rural census tract, and is total household income within the county income limit for the household size?`;
+  }
+
+  // Reserves
+  if (haystack.some((h) => h.includes("reserves") || h.includes("pitia"))) {
+    return `${programName} flags a reserves concern. Beyond the months already entered, does the borrower have additional liquid or retirement assets (401k / IRA at typical 60% utilization), business accounts, or gift-of-equity that could be counted toward reserves?`;
+  }
+
+  // DTI
+  if (haystack.some((h) => h.includes("dti") || h.includes("debt-to-income"))) {
+    return `${programName} has a DTI concern. Are there debts on the credit report being paid off at or before closing, any non-borrower household income, or installment debts with fewer than 10 payments remaining that could be excluded from the qualifying ratio?`;
+  }
+
+  // LTV
+  if (haystack.some((h) => h.includes("ltv"))) {
+    return `${programName} has an LTV concern. Is additional down payment available — gift funds, seller concessions toward principal, or proceeds from another asset sale — that could lower the LTV into program tolerance?`;
+  }
+
+  // Bank-statement income (non-government context)
+  if (haystack.some((h) => h.includes("bank statement"))) {
+    return `${programName} uses bank-statement income. How many months of statements are available (12 vs 24), is the deposit pattern consistent month-over-month, and are statements personal, business, or co-mingled?`;
+  }
+
+  // Default — surface the first concern explicitly
+  if (concerns.length > 0) {
+    return `The top conditional path is ${programName} via ${lenderName}. Its leading open item is: "${concerns[0]}". What additional context can you share to clear or qualify that item?`;
+  }
+  if (missing.length > 0) {
+    return `The top conditional path is ${programName} via ${lenderName}. Missing input flagged: "${missing[0]}". Can you provide that detail so I can re-score?`;
+  }
+
+  return null;
+}
+
 function buildNextQuestion(
   payload: FormPayload,
   strongCount: number,
   conditionalCount: number,
-  eliminatedCount: number
+  eliminatedCount: number,
+  topConditional?: TopConditionalSummary | null
 ): string {
   const orderedFieldChecks: { field: keyof FormPayload; question: string }[] = [
     { field: "subject_state", question: "What is the subject state for this scenario?" },
@@ -1554,7 +1747,13 @@ function buildNextQuestion(
     return "Please review the visible strong matches and confirm any remaining documentation or compensating factors.";
   }
   if (conditionalCount > 0) {
-    return "Please review the conditional matches and confirm the items flagged for closer review.";
+    // Finley should NOT stop at "review the conditional matches" — a real mortgage
+    // professional keeps asking targeted questions until a strong match emerges or
+    // every answerable concern has been addressed. Mine the top conditional match
+    // for the most actionable open item and turn it into a question.
+    const targeted = buildTargetedFollowUpQuestion(payload, topConditional);
+    if (targeted) return targeted;
+    return "All intake fields are filled but no strong match has surfaced yet. Please share any compensating factors — credit score detail, employment continuity, gift funds, reserves beyond what was entered, or veteran/active-duty status — that could elevate one of the conditional paths to a strong match.";
   }
   if (eliminatedCount > 0) {
     return "All currently loaded paths have been eliminated. Please review the eliminated paths and adjust the scenario or check whether additional lender programs need to be loaded.";
@@ -2347,11 +2546,13 @@ export async function POST(req: Request) {
       topRecommendation = `No path currently survives the documented constraints. Review eliminated paths to identify which constraint to revisit or which lender programs may need to be added.`;
     }
 
+    const topConditional = conditionalMatches.length > 0 ? conditionalMatches[0] : null;
     const nextQuestion = buildNextQuestion(
       payload,
       strongMatches.length,
       conditionalMatches.length,
-      eliminatedPaths.length
+      eliminatedPaths.length,
+      topConditional as unknown as TopConditionalSummary | null
     );
 
     console.log("[match] completed", {
