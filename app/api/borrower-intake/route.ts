@@ -225,6 +225,13 @@ function buildRealtorEmail(args: {
         ${args.officerPhone ? `<p style="margin:4px 0;"><strong>Phone:</strong> ${escapeHtml(args.officerPhone)}</p>` : ''}
       </div>
 
+              <div style="text-align:center;margin-top:20px;">
+                        <a href="https://www.beyondfinancing.com/home-purchase?step=1"
+                                     style="display:inline-block;background:#263366;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">
+                                                 Have another client? Apply Now
+                                                           </a>
+                                                                   </div>
+
       <p style="line-height:1.7;margin-top:16px;">
         If you'd like to be looped in on financing milestones for this transaction,
         just reply to this email or contact the loan officer directly.
