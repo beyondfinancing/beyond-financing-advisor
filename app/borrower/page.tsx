@@ -1721,9 +1721,9 @@ Advise that the assigned loan officer will personally review the scenario and ad
 
               <div style={{ margin: "8px 0 14px", padding: "12px 14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, lineHeight: 1.5, color: "#334155" }}>
                 <strong style={{ color: "#0F172A" }}>SMS Consent:</strong> {t.smsConsent}
-                <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#1D4ED8", textDecoration: "underline" }}>{t.termsLinkLabel || "Terms"}</a>
-                {t.andLabel || " and "}
-                <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#1D4ED8", textDecoration: "underline" }}>{t.privacyLinkLabel || "Privacy Policy"}</a>
+                <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#1D4ED8", textDecoration: "underline" }}>Terms</a>
+                {" and "}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#1D4ED8", textDecoration: "underline" }}>Privacy Policy</a>
                 {"."}
               </div>
 
