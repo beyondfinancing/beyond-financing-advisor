@@ -440,12 +440,13 @@ You are the borrower's preparation partner. By the time the loan officer joins t
 
 1. NEVER quote a rate. Not even "around 7%". Rates change daily and are personalized.
 2. NEVER promise approval, eligibility, or commitment to lend.
-3. NEVER name specific lenders to the borrower. Talk about program directions only.
+3. NEVER name specific lenders to the borrower. Talk about program directions only. This includes not repeating, confirming, or denying a lender name the borrower types — answer without writing the name.
 4. NEVER invent facts not present in this conversation or the borrower context below.
 5. NEVER give legal or tax advice. Refer those to a CPA or attorney.
 6. ALWAYS defer final qualification, program selection, and pricing to the assigned licensed loan officer.
 7. ALWAYS encourage the borrower to click "Apply Now" when they are ready to move forward.
 8. ALWAYS keep responses concise — 2-4 short paragraphs maximum unless explaining a complex concept.
+9. ALWAYS write plain text. The chat window does not render Markdown: no **bold**, no # headings, no tables.
 
 # PROGRAM KNOWLEDGE YOU HAVE
 
@@ -635,8 +636,13 @@ function buildSystemPrompt(
 // Model routing — choose between OpenAI and Claude
 // -----------------------------------------------------------------------------
 
-function shouldUseClaude(messages: IncomingMessage[]): boolean {
+function shouldUseClaude(messages: IncomingMessage[], stage: string | undefined): boolean {
   if (!process.env.ANTHROPIC_API_KEY) return false;
+
+  // initial_review and scenario_review carry a page-generated prompt that
+  // embeds the whole borrower profile — always "long", never something the
+  // borrower typed. Only judge real borrower (or team) messages.
+  if (stage === "initial_review" || stage === "scenario_review") return false;
 
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser) return false;
@@ -746,7 +752,13 @@ async function callClaude(
     ...(systemPrompt.dynamic ? [{ type: "text" as const, text: systemPrompt.dynamic }] : []),
   ];
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 1 });
+  // 20 s cap, no SDK retry: a slow or failed Claude call throws and the
+  // caller's OpenAI fallback answers instead of leaving the borrower waiting.
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: 20_000,
+    maxRetries: 0,
+  });
   // Sonnet 5.5: no temperature (non-default sampling is a 400); adaptive
   // thinking is on by default and counts toward max_tokens, so effort is
   // pinned to "low" (chat) and max_tokens leaves room for thinking + reply.
@@ -780,6 +792,15 @@ async function callClaude(
     text: "Thank you. Your assigned loan officer will review the scenario and advise the next steps.",
     usage,
   };
+}
+
+// The borrower chat renders replies as plain text (white-space: pre-wrap), so
+// any Markdown a model emits despite the prompt shows up as literal symbols.
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([\s\S]+?)\*\*/g, "$1")
+    .replace(/__([\s\S]+?)__/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "");
 }
 
 // -----------------------------------------------------------------------------
@@ -990,7 +1011,7 @@ export async function POST(req: Request) {
     const systemPrompt = joinSystemPrompt(systemParts);
 
     // Decide which model to use
-    const useClaude = shouldUseClaude(incomingMessages);
+    const useClaude = shouldUseClaude(incomingMessages, stage);
     let reply: string;
     let modelUsed: "openai-gpt-4o-mini" | "claude-sonnet-5-5";
 
@@ -1066,6 +1087,8 @@ export async function POST(req: Request) {
       }
       modelUsed = "openai-gpt-4o-mini";
     }
+
+    if (stage !== "team_command") reply = stripMarkdown(reply);
 
     const intakeSessionId = await persistConversation(stage, routing, reply);
     trace.setSessionId(intakeSessionId);
