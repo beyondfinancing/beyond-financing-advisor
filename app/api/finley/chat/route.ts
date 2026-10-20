@@ -38,6 +38,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySessionToken } from "@/lib/team-auth";
+import { promptVersion, startFinleyTrace } from "@/lib/llm-trace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -151,7 +152,12 @@ function buildSystemPrompt(ctx: {
 // OpenAI caller
 // -----------------------------------------------------------------------------
 
-async function callOpenAI(systemPrompt: string, history: ChatMessage[]): Promise<string> {
+type ModelResult = {
+  text: string;
+  usage?: { input?: number; output?: number; total?: number };
+};
+
+async function callOpenAI(systemPrompt: string, history: ChatMessage[]): Promise<ModelResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured.");
@@ -176,6 +182,7 @@ async function callOpenAI(systemPrompt: string, history: ChatMessage[]): Promise
 
   const data: {
     choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     error?: { message?: string };
     message?: string;
   } = await response.json();
@@ -188,7 +195,14 @@ async function callOpenAI(systemPrompt: string, history: ChatMessage[]): Promise
   if (!reply) {
     throw new Error("OpenAI returned an empty reply.");
   }
-  return reply;
+  return {
+    text: reply,
+    usage: {
+      input: data?.usage?.prompt_tokens,
+      output: data?.usage?.completion_tokens,
+      total: data?.usage?.total_tokens,
+    },
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -257,11 +271,43 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = buildSystemPrompt(ctx);
 
+    const evalRun = (req.headers.get("x-finley-eval") || "").trim();
+    const trace = startFinleyTrace({
+      name: "finley-professional-chat",
+      userId: session.userId,
+      tags: ["professional", ...(evalRun ? ["eval"] : [])],
+      metadata: {
+        role: session.role,
+        promptVersion: promptVersion(systemPrompt),
+        strongMatchCount: ctx.strong.length,
+        conditionalMatchCount: ctx.conditional.length,
+        eliminatedCount: ctx.eliminated.length,
+        evalRun: evalRun || null,
+      },
+    });
+    trace.setInput(messages[messages.length - 1].content);
+    const traceInput = [
+      { role: "system", content: systemPrompt },
+      ...messages.slice(-12),
+    ];
+
     let reply: string;
+    const startedAt = Date.now();
     try {
-      reply = await callOpenAI(systemPrompt, messages);
+      const result = await callOpenAI(systemPrompt, messages);
+      reply = result.text;
+      trace.addGeneration({
+        name: "openai", model: "gpt-4o-mini", input: traceInput, output: reply,
+        startedAt, endedAt: Date.now(), usage: result.usage,
+      });
+      trace.end(reply);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      trace.addGeneration({
+        name: "openai", model: "gpt-4o-mini", input: traceInput, output: null,
+        startedAt, endedAt: Date.now(), error: errMsg,
+      });
+      trace.end(null, { failed: true });
       console.error("[finley/chat] OpenAI call failed:", errMsg);
       return NextResponse.json(
         {

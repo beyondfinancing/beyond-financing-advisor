@@ -51,12 +51,14 @@
 //   ANTHROPIC_API_KEY       (optional — enables Claude escalation path)
 //   NEXT_PUBLIC_SUPABASE_URL          (required for catalog injection)
 //   SUPABASE_SERVICE_ROLE_KEY         (required for catalog injection)
+//   LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY  (optional — see lib/llm-trace.ts)
 //
 // =============================================================================
 
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { BF_TENANT_UUID_FALLBACK } from "@/lib/team-auth";
+import { promptVersion, startFinleyTrace } from "@/lib/llm-trace";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -654,11 +656,16 @@ function shouldUseClaude(messages: IncomingMessage[]): boolean {
   return isLong || multipleQuestions || hasComplexTopic;
 }
 
+type ModelResult = {
+  text: string;
+  usage?: { input?: number; output?: number; total?: number };
+};
+
 async function callOpenAI(
   systemPrompt: string,
   messages: IncomingMessage[],
   stage: string | undefined
-): Promise<string> {
+): Promise<ModelResult> {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -682,16 +689,22 @@ async function callOpenAI(
     );
   }
 
-  return (
-    data?.choices?.[0]?.message?.content?.trim() ||
-    "Thank you. Your assigned loan officer will review the scenario and advise the next steps."
-  );
+  return {
+    text:
+      data?.choices?.[0]?.message?.content?.trim() ||
+      "Thank you. Your assigned loan officer will review the scenario and advise the next steps.",
+    usage: {
+      input: data?.usage?.prompt_tokens,
+      output: data?.usage?.completion_tokens,
+      total: data?.usage?.total_tokens,
+    },
+  };
 }
 
 async function callClaude(
   systemPrompt: string,
   messages: IncomingMessage[]
-): Promise<string> {
+): Promise<ModelResult> {
   // Anthropic uses a different API shape — system prompt is separate,
   // and the messages array can only contain user/assistant turns.
   const claudeMessages = messages
@@ -721,14 +734,22 @@ async function callClaude(
     );
   }
 
+  const usage = {
+    input: data?.usage?.input_tokens,
+    output: data?.usage?.output_tokens,
+  };
+
   // Claude returns content as an array of content blocks
   const blocks = data?.content;
   if (Array.isArray(blocks) && blocks.length > 0) {
     const textBlock = blocks.find((b) => b?.type === "text");
-    if (textBlock?.text) return String(textBlock.text).trim();
+    if (textBlock?.text) return { text: String(textBlock.text).trim(), usage };
   }
 
-  return "Thank you. Your assigned loan officer will review the scenario and advise the next steps.";
+  return {
+    text: "Thank you. Your assigned loan officer will review the scenario and advise the next steps.",
+    usage,
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -942,12 +963,61 @@ export async function POST(req: Request) {
     let reply: string;
     let modelUsed: "openai-gpt-4o-mini" | "claude-sonnet-4";
 
+    const evalRun = safeString(req.headers.get("x-finley-eval"));
+    const trace = startFinleyTrace({
+      name: stage === "team_command" ? "finley-team-command" : "finley-borrower-chat",
+      sessionId: isUuid(routing?.intakeSessionId) ? routing?.intakeSessionId : null,
+      tags: [stage || "unknown", safeString(routing?.language) || "en", ...(evalRun ? ["eval"] : [])],
+      metadata: {
+        stage: stage || null,
+        language: safeString(routing?.language) || "en",
+        borrowerPath: safeString(routing?.borrowerPath) || null,
+        targetState: safeString(routing?.targetState) || null,
+        escalateToClaude: useClaude,
+        promptVersion: promptVersion(systemPrompt),
+        catalogProgramCount: catalog?.programCount || 0,
+        catalogLenderCount: catalog?.lenderCount || 0,
+        evalRun: evalRun || null,
+      },
+      pii: [
+        routing?.borrower?.name,
+        routing?.selectedRealtor?.name,
+        routing?.borrowerName,
+        safeString((routing?.borrower as Record<string, unknown> | undefined)?.realtorName),
+      ],
+    });
+    trace.setInput(incomingMessages[incomingMessages.length - 1]?.content ?? null);
+    const traceInput = [{ role: "system", content: systemPrompt }, ...incomingMessages];
+
+    const runModel = async (provider: "openai" | "claude"): Promise<string> => {
+      const startedAt = Date.now();
+      const model = provider === "claude" ? "claude-sonnet-4-20250514" : "gpt-4o-mini";
+      try {
+        const result =
+          provider === "claude"
+            ? await callClaude(systemPrompt, incomingMessages)
+            : await callOpenAI(systemPrompt, incomingMessages, stage);
+        trace.addGeneration({
+          name: provider, model, input: traceInput, output: result.text,
+          startedAt, endedAt: Date.now(), usage: result.usage,
+        });
+        return result.text;
+      } catch (err) {
+        trace.addGeneration({
+          name: provider, model, input: traceInput, output: null,
+          startedAt, endedAt: Date.now(),
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
+    };
+
     try {
       if (useClaude) {
-        reply = await callClaude(systemPrompt, incomingMessages);
+        reply = await runModel("claude");
         modelUsed = "claude-sonnet-4";
       } else {
-        reply = await callOpenAI(systemPrompt, incomingMessages, stage);
+        reply = await runModel("openai");
         modelUsed = "openai-gpt-4o-mini";
       }
     } catch (primaryError) {
@@ -956,9 +1026,18 @@ export async function POST(req: Request) {
         "chat: primary model failed, falling back to OpenAI.",
         primaryError
       );
-      reply = await callOpenAI(systemPrompt, incomingMessages, stage);
+      try {
+        reply = await runModel("openai");
+      } catch (fallbackError) {
+        trace.end(null, { modelUsed: null, failed: true });
+        throw fallbackError;
+      }
       modelUsed = "openai-gpt-4o-mini";
     }
+
+    const intakeSessionId = await persistConversation(stage, routing, reply);
+    trace.setSessionId(intakeSessionId);
+    trace.end(reply, { modelUsed, intakeSessionId });
 
     return NextResponse.json({
       success: true,
@@ -967,7 +1046,7 @@ export async function POST(req: Request) {
         model: modelUsed,
         catalogProgramCount: catalog?.programCount || 0,
         catalogLenderCount: catalog?.lenderCount || 0,
-        intakeSessionId: await persistConversation(stage, routing, reply),
+        intakeSessionId,
       },
     });
   } catch (error) {
