@@ -678,10 +678,48 @@ function shouldUseClaude(messages: IncomingMessage[], stage: string | undefined)
     "rural",
     "guideline",
     "overlay",
+
+    // Portuguese (written without accents — matched against accent-stripped text)
+    "autonomo",
+    "conta propria",
+    "falencia",
+    "execucao hipotecaria",
+    "extrato bancario",
+    "extratos bancarios",
+    "tipo de visto",
+    "visto de",
+    "imposto de renda",
+    "estrangeiro",
+    "sem social",
+    "credito nos eua",
+    "pelo aluguel",
+    "fideicomisso",
+    "pre-fabricada",
+
+    // Spanish (written without accents)
+    "por mi cuenta",
+    "cuenta propia",
+    "independiente",
+    "bancarrota",
+    "quiebra",
+    "ejecucion hipotecaria",
+    "estados de cuenta",
+    "estado de cuenta bancario",
+    "residencia permanente",
+    "declaracion de impuestos",
+    "extranjero",
+    "sin seguro social",
+    "historial de credito",
+    "con la renta",
+    "fideicomiso",
+    "prefabricada",
   ];
-  const hasComplexTopic = complexKeywords.some((k) =>
-    content.toLowerCase().includes(k)
-  );
+  // Strip accents so "autônomo"/"autonomo" and "ejecución"/"ejecucion" both match.
+  const normalized = content
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+  const hasComplexTopic = complexKeywords.some((k) => normalized.includes(k));
 
   return isLong || multipleQuestions || hasComplexTopic;
 }
