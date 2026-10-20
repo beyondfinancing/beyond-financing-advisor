@@ -30,7 +30,7 @@
 //   5. Optional Claude Sonnet escalation. If ANTHROPIC_API_KEY is set in
 //      the environment AND the borrower's most recent message is long or
 //      complex (technical mortgage question, multi-part), Finley routes
-//      to Claude Sonnet 4.5 for a higher-quality answer. Otherwise it
+//      to Claude Sonnet 5.5 for a higher-quality answer. Otherwise it
 //      uses OpenAI gpt-4o-mini for speed and cost.
 //
 //   6. Hard guardrails preserved:
@@ -55,6 +55,7 @@
 //
 // =============================================================================
 
+import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { BF_TENANT_UUID_FALLBACK } from "@/lib/team-auth";
@@ -350,11 +351,25 @@ function buildMissingItems(facts: ReturnType<typeof buildCollectedFacts>): strin
 // Borrower-facing system prompt — Finley as Senior Loan Officer Assistant
 // -----------------------------------------------------------------------------
 
+// The prompt is split in two so the stable half can be prompt-cached:
+//   stable  — persona, hard rules, program knowledge, qualification signals.
+//             Byte-identical for every borrower, every request.
+//   dynamic — language + stage instructions, live catalog, this borrower's
+//             facts, response instructions. Changes per conversation/turn.
+// OpenAI receives the two halves joined (its automatic prefix caching benefits
+// from the same ordering); Claude receives them as two system blocks with a
+// cache breakpoint on the stable one.
+type SystemPrompt = { stable: string; dynamic: string };
+
+function joinSystemPrompt(p: SystemPrompt): string {
+  return [p.stable, p.dynamic].filter(Boolean).join("\n\n");
+}
+
 function buildBorrowerSystemPrompt(
   stage: string | undefined,
   routing: RoutingPayload | undefined,
   catalogContext: string
-): string {
+): SystemPrompt {
   const facts = buildCollectedFacts(routing);
   const missingItems = buildMissingItems(facts);
 
@@ -373,13 +388,47 @@ function buildBorrowerSystemPrompt(
       ? Math.round((loanAmountCalc / homePriceNum) * 100)
       : null;
 
-  return `
+  return {
+    stable: BORROWER_STABLE_PROMPT,
+    dynamic: `
+${buildLanguageInstruction(facts.language)}
+${buildStageInstruction(stage)}
+
+# BEYOND INTELLIGENCE LENDER CATALOG (live data)
+
+${catalogContext}
+
+# THE BORROWER YOU ARE TALKING TO
+
+Path: ${facts.borrowerPath || "not specified"}
+Name: ${facts.borrowerName || "not provided"}
+Email: ${facts.borrowerEmail || "not provided"}
+Credit Score: ${facts.credit || "not provided"}
+Gross Monthly Income: ${facts.income ? `$${Number(facts.income).toLocaleString()}` : "not provided"}
+Monthly Debt: ${facts.debt ? `$${Number(facts.debt).toLocaleString()}` : "not provided"}
+Current State: ${facts.currentState || "not provided"}
+Target State: ${facts.targetState || "not provided"}
+Target Home Price: ${facts.homePrice ? `$${Number(facts.homePrice).toLocaleString()}` : "not provided"}
+Estimated Down Payment: ${facts.downPayment ? `$${Number(facts.downPayment).toLocaleString()}` : "not provided"}
+Estimated Loan Amount: ${loanAmountCalc > 0 ? `$${loanAmountCalc.toLocaleString()}` : "not provided"}
+Estimated LTV: ${ltvCalc !== null ? `${ltvCalc}%` : "not provided"}
+Occupancy: ${facts.occupancy || "not specified"}
+Estimated DTI (rough): ${dtiBackEndPct !== null ? `~${dtiBackEndPct}%` : "not yet calculable"}
+Assigned Loan Officer: ${facts.officerName || "Finley Beyond (BI will assign)"} ${facts.officerNmls ? `(NMLS ${facts.officerNmls})` : ""}
+Realtor on file: ${facts.realtorName || "none"}
+
+Missing intake items (do not re-ask anything that's already filled):
+${missingItems.length > 0 ? missingItems.map((item) => `- ${item}`).join("\n") : "- none — full intake captured"}
+
+${BORROWER_RESPONSE_INSTRUCTIONS}
+`.trim(),
+  };
+}
+
+const BORROWER_STABLE_PROMPT = `
 You are Finley Beyond, a senior loan officer assistant powered by Beyond Intelligence.
 
 You speak like a 20-year-veteran loan officer assistant who has helped thousands of borrowers find the right mortgage program. You are warm, professional, plain-spoken, and concise. You do not use mortgage jargon without explaining it. You sound like a real human, never like a generic chatbot.
-
-${buildLanguageInstruction(facts.language)}
-${buildStageInstruction(stage)}
 
 # YOUR ROLE
 
@@ -465,33 +514,9 @@ Listen actively to the borrower's responses for these flags and ask targeted fol
 - "It's rural" → mention USDA possibility
 - "Big down payment, moving from another country" → mention Foreign National direction
 - High debt vs income → ask about installment loans, student loans, child support
+`.trim();
 
-# BEYOND INTELLIGENCE LENDER CATALOG (live data)
-
-${catalogContext}
-
-# THE BORROWER YOU ARE TALKING TO
-
-Path: ${facts.borrowerPath || "not specified"}
-Name: ${facts.borrowerName || "not provided"}
-Email: ${facts.borrowerEmail || "not provided"}
-Credit Score: ${facts.credit || "not provided"}
-Gross Monthly Income: ${facts.income ? `$${Number(facts.income).toLocaleString()}` : "not provided"}
-Monthly Debt: ${facts.debt ? `$${Number(facts.debt).toLocaleString()}` : "not provided"}
-Current State: ${facts.currentState || "not provided"}
-Target State: ${facts.targetState || "not provided"}
-Target Home Price: ${facts.homePrice ? `$${Number(facts.homePrice).toLocaleString()}` : "not provided"}
-Estimated Down Payment: ${facts.downPayment ? `$${Number(facts.downPayment).toLocaleString()}` : "not provided"}
-Estimated Loan Amount: ${loanAmountCalc > 0 ? `$${loanAmountCalc.toLocaleString()}` : "not provided"}
-Estimated LTV: ${ltvCalc !== null ? `${ltvCalc}%` : "not provided"}
-Occupancy: ${facts.occupancy || "not specified"}
-Estimated DTI (rough): ${dtiBackEndPct !== null ? `~${dtiBackEndPct}%` : "not yet calculable"}
-Assigned Loan Officer: ${facts.officerName || "Finley Beyond (BI will assign)"} ${facts.officerNmls ? `(NMLS ${facts.officerNmls})` : ""}
-Realtor on file: ${facts.realtorName || "none"}
-
-Missing intake items (do not re-ask anything that's already filled):
-${missingItems.length > 0 ? missingItems.map((item) => `- ${item}`).join("\n") : "- none — full intake captured"}
-
+const BORROWER_RESPONSE_INSTRUCTIONS = `
 # RESPONSE INSTRUCTIONS
 
 1. NEVER re-ask for any data field already populated above.
@@ -517,7 +542,6 @@ BAD: "I recommend Lender XYZ's super-saver program." (NEVER name specific lender
 
 BAD: "Let me ask you a series of questions: what's your income, what's your debt, what's your credit..." (NEVER batch questions; ask one at a time)
 `.trim();
-}
 
 // -----------------------------------------------------------------------------
 // Team command system prompt (preserved from previous version)
@@ -600,9 +624,9 @@ function buildSystemPrompt(
   stage: string | undefined,
   routing: RoutingPayload | undefined,
   catalogContext: string
-): string {
+): SystemPrompt {
   if (stage === "team_command") {
-    return buildTeamCommandSystemPrompt(stage, routing, catalogContext);
+    return { stable: "", dynamic: buildTeamCommandSystemPrompt(stage, routing, catalogContext) };
   }
   return buildBorrowerSystemPrompt(stage, routing, catalogContext);
 }
@@ -658,7 +682,7 @@ function shouldUseClaude(messages: IncomingMessage[]): boolean {
 
 type ModelResult = {
   text: string;
-  usage?: { input?: number; output?: number; total?: number };
+  usage?: Record<string, number | undefined>;
 };
 
 async function callOpenAI(
@@ -701,50 +725,56 @@ async function callOpenAI(
   };
 }
 
+const CLAUDE_MODEL = "claude-sonnet-5-5";
+
 async function callClaude(
-  systemPrompt: string,
+  systemPrompt: SystemPrompt,
   messages: IncomingMessage[]
 ): Promise<ModelResult> {
-  // Anthropic uses a different API shape — system prompt is separate,
-  // and the messages array can only contain user/assistant turns.
-  const claudeMessages = messages
+  // Anthropic takes the system prompt separately, and the messages array can
+  // only contain user/assistant turns.
+  const claudeMessages: Anthropic.MessageParam[] = messages
     .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ role: m.role, content: m.content }));
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY as string,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      temperature: 0.4,
-      system: systemPrompt,
-      messages: claudeMessages,
-    }),
+  // Stable half first with a cache breakpoint, so every borrower conversation
+  // reuses the same cached prefix; the per-conversation half follows uncached.
+  const system: Anthropic.TextBlockParam[] = [
+    ...(systemPrompt.stable
+      ? [{ type: "text" as const, text: systemPrompt.stable, cache_control: { type: "ephemeral" as const } }]
+      : []),
+    ...(systemPrompt.dynamic ? [{ type: "text" as const, text: systemPrompt.dynamic }] : []),
+  ];
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 1 });
+  // Sonnet 5.5: no temperature (non-default sampling is a 400); adaptive
+  // thinking is on by default and counts toward max_tokens, so effort is
+  // pinned to "low" (chat) and max_tokens leaves room for thinking + reply.
+  const response = await anthropic.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 4000,
+    output_config: { effort: "low" },
+    system,
+    messages: claudeMessages,
   });
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(
-      data?.error?.message || data?.message || "Claude request failed."
-    );
-  }
-
   const usage = {
-    input: data?.usage?.input_tokens,
-    output: data?.usage?.output_tokens,
+    input: response.usage.input_tokens,
+    output: response.usage.output_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens ?? undefined,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens ?? undefined,
   };
 
-  // Claude returns content as an array of content blocks
-  const blocks = data?.content;
-  if (Array.isArray(blocks) && blocks.length > 0) {
-    const textBlock = blocks.find((b) => b?.type === "text");
-    if (textBlock?.text) return { text: String(textBlock.text).trim(), usage };
+  // A safety decline is a 200 with stop_reason "refusal" — throw so the
+  // caller's existing OpenAI fallback answers instead of a canned line.
+  if (response.stop_reason === "refusal") {
+    throw new Error(`Claude declined (${response.stop_details?.category ?? "unspecified"}).`);
   }
+
+  const textBlock = response.content.find(
+    (b): b is Anthropic.TextBlock => b.type === "text"
+  );
+  if (textBlock?.text) return { text: textBlock.text.trim(), usage };
 
   return {
     text: "Thank you. Your assigned loan officer will review the scenario and advise the next steps.",
@@ -956,12 +986,13 @@ export async function POST(req: Request) {
     const catalog = await loadLenderCatalogSummary();
     const catalogContext = renderCatalogContext(catalog);
 
-    const systemPrompt = buildSystemPrompt(stage, routing, catalogContext);
+    const systemParts = buildSystemPrompt(stage, routing, catalogContext);
+    const systemPrompt = joinSystemPrompt(systemParts);
 
     // Decide which model to use
     const useClaude = shouldUseClaude(incomingMessages);
     let reply: string;
-    let modelUsed: "openai-gpt-4o-mini" | "claude-sonnet-4";
+    let modelUsed: "openai-gpt-4o-mini" | "claude-sonnet-5-5";
 
     const evalRun = safeString(req.headers.get("x-finley-eval"));
     const trace = startFinleyTrace({
@@ -975,6 +1006,7 @@ export async function POST(req: Request) {
         targetState: safeString(routing?.targetState) || null,
         escalateToClaude: useClaude,
         promptVersion: promptVersion(systemPrompt),
+        stablePromptVersion: systemParts.stable ? promptVersion(systemParts.stable) : null,
         catalogProgramCount: catalog?.programCount || 0,
         catalogLenderCount: catalog?.lenderCount || 0,
         evalRun: evalRun || null,
@@ -991,11 +1023,11 @@ export async function POST(req: Request) {
 
     const runModel = async (provider: "openai" | "claude"): Promise<string> => {
       const startedAt = Date.now();
-      const model = provider === "claude" ? "claude-sonnet-4-20250514" : "gpt-4o-mini";
+      const model = provider === "claude" ? CLAUDE_MODEL : "gpt-4o-mini";
       try {
         const result =
           provider === "claude"
-            ? await callClaude(systemPrompt, incomingMessages)
+            ? await callClaude(systemParts, incomingMessages)
             : await callOpenAI(systemPrompt, incomingMessages, stage);
         trace.addGeneration({
           name: provider, model, input: traceInput, output: result.text,
@@ -1015,7 +1047,7 @@ export async function POST(req: Request) {
     try {
       if (useClaude) {
         reply = await runModel("claude");
-        modelUsed = "claude-sonnet-4";
+        modelUsed = "claude-sonnet-5-5";
       } else {
         reply = await runModel("openai");
         modelUsed = "openai-gpt-4o-mini";

@@ -36,7 +36,7 @@ export type GenerationRecord = {
   output: string | null;
   startedAt: number;
   endedAt: number;
-  usage?: { input?: number; output?: number; total?: number };
+  usage?: Record<string, number | undefined>;
   error?: string;
   metadata?: Record<string, unknown>;
 };
