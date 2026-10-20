@@ -60,6 +60,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { BF_TENANT_UUID_FALLBACK } from "@/lib/team-auth";
 import { promptVersion, startFinleyTrace } from "@/lib/llm-trace";
+import { personKey, remember } from "@/lib/finley-memory";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -1130,6 +1131,22 @@ export async function POST(req: Request) {
 
     const intakeSessionId = await persistConversation(stage, routing, reply);
     trace.setSessionId(intakeSessionId);
+
+    // ONE MEMORY: every Finley (WhatsApp, phone, BIS) now knows this borrower spoke with her here. Write
+    // only — a website visitor isn't identity-verified, so nothing is ever read back to them. Test
+    // traffic (eval runs) stays out of the shared memory.
+    if (stage !== "team_command" && intakeSessionId && !evalRun) {
+      const key = personKey(null, safeString(routing?.borrower?.email));
+      const said = incomingMessages[incomingMessages.length - 1];
+      const turn = `${intakeSessionId}:${incomingMessages.length}`;
+      const name = safeString(routing?.borrower?.name);
+      if (said?.role === "user") {
+        await remember({ key, kind: "borrower", name, channel: "web_borrower", persona: "client", direction: "in",
+          text: said.content, sourceTable: "borrower_intake_sessions", sourceId: turn + ":in" });
+      }
+      await remember({ key, kind: "borrower", name, channel: "web_borrower", persona: "client", direction: "out",
+        text: reply, sourceTable: "borrower_intake_sessions", sourceId: turn + ":out" });
+    }
     trace.end(reply, { modelUsed, intakeSessionId });
 
     return NextResponse.json({

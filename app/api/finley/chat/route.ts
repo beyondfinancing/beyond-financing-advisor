@@ -39,6 +39,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySessionToken } from "@/lib/team-auth";
 import { promptVersion, startFinleyTrace } from "@/lib/llm-trace";
+import { memoryBlockForStaff } from "@/lib/finley-memory";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -269,7 +270,9 @@ export async function POST(req: NextRequest) {
       lenderSummary: (body.lender_summary as Record<string, unknown>) || {},
     };
 
-    const systemPrompt = buildSystemPrompt(ctx);
+    // ONE MEMORY: what any Finley (WhatsApp, phone, website) knows about people this colleague names —
+    // only what the gate lets THIS signed-in staff member see.
+    const systemPrompt = buildSystemPrompt(ctx) + (await memoryBlockForStaff(session.email, messages[messages.length - 1].content));
 
     const evalRun = (req.headers.get("x-finley-eval") || "").trim();
     const trace = startFinleyTrace({
