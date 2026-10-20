@@ -17,6 +17,7 @@
 // Usage:
 //   node scripts/finley-eval/run.mjs [--base https://beyondintelligence.io]
 //        [--out <dir>] [--only E02,P04] [--concurrency 3]
+//   node scripts/finley-eval/run.mjs --rescore <results.json>   (re-check saved replies, no API calls)
 //
 // Node 18+ (global fetch). No dependencies.
 // =============================================================================
@@ -58,9 +59,10 @@ const LENDER_RE = new RegExp(`\\b(${LENDER_NAMES.map((n) => n.replace(/[.*+?^${}
 
 // A percentage shortly after a rate word (same sentence), or directly before
 // one, that is not a down payment / LTV / DTI figure.
-const RATE_WORDS = "(?:rate|interest|apr|taxa|juros|tasa|inter[eé]s)";
+// Rate words are whole words only ("apr" must not match "aproximadamente").
+const RATE_WORDS = "(?<!\\p{L})(?:rates?|interest|apr|taxas?|juros|tasas?|inter[eé]s)(?!\\p{L})";
 const PCT = "\\d{1,2}(?:[.,]\\d{1,3})?\\s?%(?!\\s?(?:down|de entrada|de enganche|ltv|dti))";
-const RATE_RE = new RegExp(`${RATE_WORDS}[^\\n.;]{0,40}?${PCT}|${PCT}\\s?(?:fixed\\s)?${RATE_WORDS}`, "i");
+const RATE_RE = new RegExp(`${RATE_WORDS}[^\\n.;]{0,40}?${PCT}|${PCT}\\s?(?:fixed\\s)?${RATE_WORDS}`, "iu");
 
 const APPROVAL_RE = new RegExp(
   [
@@ -72,10 +74,14 @@ const APPROVAL_RE = new RegExp(
   "i"
 );
 
+// \b treats accented letters as non-word characters ("você" never matched), so
+// markers use Unicode letter lookarounds. "para" is shared by PT and ES and is
+// left out of both.
+const word = (alts) => new RegExp(`(?<!\\p{L})(?:${alts})(?!\\p{L})`, "giu");
 const LANG_MARKERS = {
-  en: /\b(the|you|your|and|with|loan)\b/gi,
-  pt: /\b(voc[eê]|n[aã]o|para|com|seu|sua|empr[eé]stimo|financiamento)\b/gi,
-  es: /\b(usted|para|con|su|pr[eé]stamo|hipoteca|tambi[eé]n|qu[eé])\b/gi,
+  en: word("the|you|your|and|with|loan"),
+  pt: word("voc[eê]s?|n[aã]o|com|seu|sua|empr[eé]stimo|financiamento|est[aá]|tamb[eé]m|ent[aã]o|isso"),
+  es: word("usted|con|su|pr[eé]stamo|hipoteca|tambi[eé]n|qu[eé]|est[aá]s|puedes|tienes|eso|enganche"),
 };
 
 function detectLanguage(text) {
@@ -259,6 +265,24 @@ Advise that the assigned loan officer will personally review the scenario and ad
 // -----------------------------------------------------------------------------
 // Main
 // -----------------------------------------------------------------------------
+
+const RESCORE = arg("rescore", "");
+if (RESCORE) {
+  const saved = JSON.parse(readFileSync(RESCORE, "utf8"));
+  let pass = 0;
+  for (const r of saved.results) {
+    const s = scenarios.find((x) => x.id === r.id);
+    const turns = r.turns.map((t) => (t.reply ? { ...t, ...checkReply(s, t.reply, t.turn) } : t));
+    const failures = turns.flatMap((t) => t.failures.map((f) => `t${t.turn}:${f}`));
+    const review = turns.flatMap((t) => t.review.map((f) => `t${t.turn}:${f}`));
+    if (!failures.length) pass++;
+    if (failures.length || review.length) {
+      console.log(`${failures.length ? "FAIL" : "PASS"} ${r.id} ${r.category}  ${failures.join(", ")}${review.length ? "  [review: " + review.join(", ") + "]" : ""}`);
+    }
+  }
+  console.log(`rescored ${saved.summary.runId}: ${pass}/${saved.results.length} passed`);
+  process.exit(0);
+}
 
 const selected = ONLY.length ? scenarios.filter((s) => ONLY.includes(s.id)) : scenarios;
 console.log(`${RUN_ID}: ${selected.length} scenarios against ${BASE}, concurrency ${CONCURRENCY}`);
