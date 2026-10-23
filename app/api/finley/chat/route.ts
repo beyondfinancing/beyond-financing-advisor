@@ -40,6 +40,7 @@ import { cookies } from "next/headers";
 import { verifySessionToken } from "@/lib/team-auth";
 import { promptVersion, startFinleyTrace } from "@/lib/llm-trace";
 import { memoryBlockForStaff } from "@/lib/finley-memory";
+import { FINLEY_STATUTORY_RULES } from "@/lib/finley-brain";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -123,9 +124,7 @@ function buildSystemPrompt(ctx: {
     "- Reason like a real loan officer. Cite specific program names and lender names from the loaded context below — never invent lenders or programs that are not listed.",
     "- When the scenario has no strong match, propose concrete next moves: which scenario field to adjust (LTV, credit, reserves, doc type), which compensating factor to gather, or which lender/program category to load if the current catalog is missing it.",
     "- Statutory rules you must respect (already enforced by the matching engine, never override):",
-    "  • FHA / VA / USDA / Fannie Mae / Freddie Mac all require a valid SSN — ITIN, DACA, and Foreign National borrowers are NOT eligible for any of these agencies. Only Non-QM ITIN / Foreign-National portfolio programs can serve those borrowers. Never recommend a Fannie/Freddie/FHA/VA/USDA program to an ITIN, DACA, or Foreign National borrower.",
-    "  • FHA / VA / USDA / Fannie / Freddie require full-doc or express-doc income — bank statements, DSCR, P&L, 1099, asset utilization, and WVOE are not eligible for those programs.",
-    "  • VA additionally requires a valid Certificate of Eligibility (veteran / active-duty / qualifying spouse).",
+    ...FINLEY_STATUTORY_RULES,
     "- Keep responses tight: 2-5 short paragraphs or a compact bulleted list. No filler. No restating the scenario back to the user unless they asked.",
     "- If the user asks something off-topic (not mortgage / not this file), gently steer back.",
     "- If the loaded context is insufficient to answer with confidence, say so and ask the one most decisive clarifying question.",
