@@ -23,7 +23,10 @@ const OWNER_EMAIL = "pansini@beyondfinancing.com";
 type Seg = { text?: string; is_user?: boolean; start?: number; speaker?: string };
 
 // Wake word, tolerant of common mis-transcriptions; the command is whatever follows it in the same segment.
-const WAKE = /\b(finley|finlay|finly|finli|findley)\b[,.:!]?\s*(.*)$/i;
+const WAKE = /\b(finley|finlay|finly|finli|findley|finlee|finleigh)\b[,.:!]?\s*(.*)$/i;
+// Omi heard "Finley, what is…" as "Feeling, what is…" (2026-10-23). Looser sound-alikes count only as the first word of
+// the segment and followed by a pause mark, so "I'm feeling good" never wakes her.
+const WAKE_LOOSE = /^\s*(?:hey|hi|ok|okay|oi|ei)?[,\s]*(feeling|filling|finn? lee|fin ley|findlay)[,.:!?]\s*(.+)$/i;
 
 function keyOk(given: string | null): boolean {
   const want = process.env.OMI_WEBHOOK_KEY ?? "";
@@ -49,7 +52,7 @@ export async function POST(req: NextRequest) {
   // 3) Only Sandro's own voice — never what a client says near him.
   for (const seg of segments) {
     if (seg?.is_user !== true || !seg.text) continue;
-    const m = seg.text.match(WAKE);
+    const m = seg.text.match(WAKE) ?? seg.text.match(WAKE_LOOSE);
     const command = (m?.[2] ?? "").trim();
     if (command.length < 3) continue;
 
