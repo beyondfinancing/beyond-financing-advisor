@@ -1377,6 +1377,13 @@ Advise that the assigned loan officer will personally review the scenario and ad
       <style>{responsiveCss}</style>
 
       <div className="bf-wrap" style={styles.wrap}>
+        {/* Owner 2026-10-26: inside the website panel the pre-qualification had no way back to Finley. */}
+        {embedded && (
+          <a href={"/ask?embed=1&lang=" + language} style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "4px 0 12px", padding: "8px 14px",
+            borderRadius: 20, border: "1px solid #C9A35C", color: "#04182E", fontWeight: 700, fontSize: 14, textDecoration: "none", background: "#fff" }}>
+            ← {language === "pt" ? "Voltar para a Finley" : language === "es" ? "Volver a Finley" : "Back to Finley"}
+          </a>
+        )}
         {!embedded && <SiteHeader
           variant="borrower"
           language={language as SiteLanguage}
