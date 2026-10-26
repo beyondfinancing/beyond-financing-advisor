@@ -587,6 +587,16 @@ export default function BorrowerPage() {
   // has fired this session so re-running preliminary review doesn't re-spam.
   const [intakeSubmitted, setIntakeSubmitted] = useState(false);
 
+  // Website widget (2026-10-26): beyondfinancing.com opens this page inside the Finley panel
+  // (public/finley-widget.js) with ?embed=1 — the site header and its links are left out there.
+  const [embedded, setEmbedded] = useState(false);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setEmbedded(q.get("embed") === "1");
+    const lang = q.get("lang");
+    if (lang === "en" || lang === "pt" || lang === "es") setLanguage(lang);
+  }, []);
+
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1367,11 +1377,11 @@ Advise that the assigned loan officer will personally review the scenario and ad
       <style>{responsiveCss}</style>
 
       <div className="bf-wrap" style={styles.wrap}>
-        <SiteHeader
+        {!embedded && <SiteHeader
           variant="borrower"
           language={language as SiteLanguage}
           onLanguageChange={(next) => setLanguage(next as LanguageCode)}
-        />
+        />}
 
         <h1 style={styles.pageTitle}>{t.title}</h1>
         <p style={styles.pageSubtitle}>{t.subtitle}</p>
