@@ -25,7 +25,7 @@
   var VID_IDLE = ORIGIN + "/finley-idle.mp4", VID_TALK = ORIGIN + "/finley-talk.mp4";
   function faceHtml(size) {
     return "<span class='bf-face' data-state='idle'><img src='" + FACE + "' alt='' style='width:" + size + "px;height:" + size + "px'>"
-      + "<video muted loop playsinline preload='none' aria-hidden='true'></video></span>";
+      + "<video muted loop playsinline preload='auto' aria-hidden='true'></video></span>";
   }
   var css = ""
     // Owner 2026-10-26: on the LEFT (the BBB seal and accessibility button live on the right), a large, likeable face.
