@@ -15,6 +15,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { CONSENT } from "@/lib/finley-consent";
 
 type Lang = "en" | "pt" | "es";
 type Msg = { role: "user" | "assistant"; content: string };
@@ -45,6 +46,36 @@ const COPY: Record<Lang, Record<string, string>> = {
     err: "Lo siento, no pude responder ahora. Inténtelo de nuevo en un momento.", noMic: "La voz no está disponible en este navegador. Por favor, escriba su pregunta.",
   },
 };
+// The front door (owner 2026-10-26): who are you, how do we send your code, consent, then the code (or Duo).
+const GATE: Record<Lang, Record<string, string>> = {
+  en: { who: "Before we talk, let me know who you are.", iam: "I am a", client: "Client or home buyer", partner: "Business partner (realtor, attorney, title…)", employee: "Beyond Financing employee",
+    name: "Full name", email: "Email", phone: "Mobile phone", via: "Send my code by", email_c: "Email", wa: "WhatsApp", text: "Text (soon)", call: "Call (soon)",
+    send: "Send my code", duoBtn: "Verify with Duo", codeTitle: "Enter the 6-digit code", sentTo: "We sent it to", onFile: "(your contact on file with us)", verify: "Verify", back: "Back",
+    duoTitle: "Approve the Duo push on your phone", duoNum: "Enter this number in Duo Mobile:", duoWait: "Waiting for your approval…",
+    e_name: "Please enter your name.", e_email: "Please enter a valid email.", e_phone: "Please enter a 10-digit mobile number.", e_agree: "Please check the box to continue.",
+    e_limit: "Too many attempts. Please try again in an hour.", e_send: "We couldn't send the code. Please try the other option.", e_code: "That code doesn't match. Please try again.",
+    e_expired: "That code expired. Please start again.", e_tries: "Too many tries. Please start again.", e_employee_email: "Use your @beyondfinancing.com email.",
+    e_employee_unknown: "That email isn't a Beyond Financing login.", e_denied: "Duo denied the request.", e_generic: "Something went wrong. Please try again." },
+  pt: { who: "Antes de conversarmos, diga quem você é.", iam: "Eu sou", client: "Cliente ou comprador", partner: "Parceiro de negócios (corretor, advogado, título…)", employee: "Funcionário da Beyond Financing",
+    name: "Nome completo", email: "E-mail", phone: "Celular", via: "Enviar meu código por", email_c: "E-mail", wa: "WhatsApp", text: "Texto (em breve)", call: "Ligação (em breve)",
+    send: "Enviar meu código", duoBtn: "Verificar com Duo", codeTitle: "Digite o código de 6 dígitos", sentTo: "Enviamos para", onFile: "(seu contato cadastrado conosco)", verify: "Verificar", back: "Voltar",
+    duoTitle: "Aprove o Duo no seu celular", duoNum: "Digite este número no Duo Mobile:", duoWait: "Aguardando sua aprovação…",
+    e_name: "Por favor, digite seu nome.", e_email: "Digite um e-mail válido.", e_phone: "Digite um celular de 10 dígitos.", e_agree: "Marque a caixa para continuar.",
+    e_limit: "Muitas tentativas. Tente novamente em uma hora.", e_send: "Não conseguimos enviar o código. Tente a outra opção.", e_code: "O código não confere. Tente novamente.",
+    e_expired: "O código expirou. Comece de novo.", e_tries: "Muitas tentativas. Comece de novo.", e_employee_email: "Use seu e-mail @beyondfinancing.com.",
+    e_employee_unknown: "Esse e-mail não é um acesso da Beyond Financing.", e_denied: "O Duo recusou o pedido.", e_generic: "Algo deu errado. Tente novamente." },
+  es: { who: "Antes de hablar, dígame quién es usted.", iam: "Soy", client: "Cliente o comprador", partner: "Socio de negocios (agente, abogado, título…)", employee: "Empleado de Beyond Financing",
+    name: "Nombre completo", email: "Correo electrónico", phone: "Celular", via: "Enviar mi código por", email_c: "Correo", wa: "WhatsApp", text: "Texto (pronto)", call: "Llamada (pronto)",
+    send: "Enviar mi código", duoBtn: "Verificar con Duo", codeTitle: "Ingrese el código de 6 dígitos", sentTo: "Lo enviamos a", onFile: "(su contacto registrado con nosotros)", verify: "Verificar", back: "Volver",
+    duoTitle: "Apruebe Duo en su teléfono", duoNum: "Ingrese este número en Duo Mobile:", duoWait: "Esperando su aprobación…",
+    e_name: "Ingrese su nombre.", e_email: "Ingrese un correo válido.", e_phone: "Ingrese un celular de 10 dígitos.", e_agree: "Marque la casilla para continuar.",
+    e_limit: "Demasiados intentos. Inténtelo en una hora.", e_send: "No pudimos enviar el código. Pruebe la otra opción.", e_code: "El código no coincide. Inténtelo de nuevo.",
+    e_expired: "El código venció. Empiece de nuevo.", e_tries: "Demasiados intentos. Empiece de nuevo.", e_employee_email: "Use su correo @beyondfinancing.com.",
+    e_employee_unknown: "Ese correo no es un acceso de Beyond Financing.", e_denied: "Duo rechazó la solicitud.", e_generic: "Algo salió mal. Inténtelo de nuevo." },
+};
+type Step = "who" | "code" | "duo" | "chat";
+const PASS_KEY = "bf-finley-pass";
+
 const SPEECH_LANG: Record<Lang, string> = { en: "en-US", pt: "pt-BR", es: "es-US" };
 
 // The browser's speech recognition (Chrome, Edge, Safari incl. iPhone) — typed loosely, it isn't in lib.dom.
@@ -74,6 +105,21 @@ export default function AskFinleyPage() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const spokeRef = useRef(false);
   const t = COPY[lang];
+  const g = GATE[lang];
+  const [step, setStep] = useState<Step>("who");
+  const [pass, setPass] = useState("");
+  const [visitor, setVisitor] = useState("");
+  const [role, setRole] = useState<"client" | "partner" | "employee">("client");
+  const [form, setForm] = useState({ name: "", email: "", phone: "" });
+  const [channel, setChannel] = useState<"email" | "whatsapp">("email");
+  const [agree, setAgree] = useState(false);
+  const [gid, setGid] = useState("");
+  const [sentTo, setSentTo] = useState("");
+  const [onFile, setOnFile] = useState(false);
+  const [code, setCode] = useState("");
+  const [duoCode, setDuoCode] = useState("");
+  const [gateErr, setGateErr] = useState("");
+  const [gateBusy, setGateBusy] = useState(false);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -81,6 +127,10 @@ export default function AskFinleyPage() {
     const l = q.get("lang");
     if (l === "en" || l === "pt" || l === "es") setLang(l);
     setMicOk(!!makeRecognizer());
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(PASS_KEY) || "null") as { pass?: string; name?: string } | null;
+      if (saved?.pass) { setPass(saved.pass); setVisitor(saved.name || ""); setStep("chat"); }
+    } catch { /* storage blocked: they verify again */ }
     const onMsg = (e: MessageEvent) => {
       const v = (e.data as { bfLang?: string } | null)?.bfLang;
       if (v === "en" || v === "pt" || v === "es") setLang(v);
@@ -103,6 +153,54 @@ export default function AskFinleyPage() {
     window.speechSynthesis.speak(u);
   }
 
+  function gateError(e?: string) { setGateErr(g["e_" + (e || "generic")] || g.e_generic); }
+  function admit(p: string, name: string) {
+    setPass(p); setVisitor(name); setStep("chat"); setGateErr("");
+    try { window.sessionStorage.setItem(PASS_KEY, JSON.stringify({ pass: p, name })); } catch { /* fine */ }
+  }
+  async function gateCall(body: Record<string, unknown>) {
+    const r = await fetch("/api/finley-gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (await r.json().catch(() => ({}))) as Record<string, any>;
+  }
+  async function startGate() {
+    if (gateBusy) return;
+    if (form.name.trim().length < 2) return gateError("name");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) return gateError("email");
+    if (role !== "employee" && form.phone.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "").length !== 10) return gateError("phone");
+    if (role !== "employee" && !agree) return gateError("agree");
+    setGateBusy(true); setGateErr("");
+    try {
+      const r = await gateCall({ action: "start", role, name: form.name, email: form.email, phone: form.phone, channel, lang, agree });
+      if (r.error) return gateError(r.error);
+      if (r.pass) return admit(r.pass, r.name || form.name);
+      setGid(r.id);
+      if (r.duo) { setDuoCode(r.duo.code || ""); setStep("duo"); pollDuo(r.id); return; }
+      setSentTo(r.sent_to || ""); setOnFile(!!r.on_file); setCode(""); setStep("code");
+    } catch { gateError(); } finally { setGateBusy(false); }
+  }
+  async function verifyCode() {
+    if (gateBusy || code.replace(/\D/g, "").length !== 6) return;
+    setGateBusy(true); setGateErr("");
+    try {
+      const r = await gateCall({ action: "verify", id: gid, code });
+      if (r.pass) return admit(r.pass, r.name);
+      gateError(r.error);
+      if (r.error === "expired" || r.error === "tries") setStep("who");
+    } catch { gateError(); } finally { setGateBusy(false); }
+  }
+  function pollDuo(id: string, n = 0) {
+    if (n > 45) { gateError("expired"); setStep("who"); return; }
+    setTimeout(async () => {
+      try {
+        const r = await gateCall({ action: "duo_status", id });
+        if (r.pass) return admit(r.pass, r.name);
+        if (r.error) { gateError(r.error); setStep("who"); return; }
+      } catch { /* keep waiting */ }
+      pollDuo(id, n + 1);
+    }, 2000);
+  }
+
   async function ask(question: string) {
     const q = question.trim();
     if (!q || busy) return;
@@ -111,9 +209,13 @@ export default function AskFinleyPage() {
     setMsgs(next); setInput(""); setBusy(true);
     try {
       const r = await fetch("/api/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", "x-finley-pass": pass },
         body: JSON.stringify({ stage: "quick_question", routing: { language: lang, conversation: next, source: "website-ask" }, messages: next.slice(-12) }),
       });
+      if (r.status === 401) {   // pass expired: back to the door
+        try { window.sessionStorage.removeItem(PASS_KEY); } catch { /* fine */ }
+        setPass(""); setStep("who"); setMsgs(next.slice(0, -1)); setInput(q); return;
+      }
       const data = (await r.json().catch(() => ({}))) as { reply?: string; message?: string; text?: string; content?: string };
       const text = (data.reply || data.message || data.text || data.content || "").trim();
       if (!r.ok || !text) throw new Error("no answer");
@@ -165,8 +267,56 @@ export default function AskFinleyPage() {
         </header>
       )}
 
+      {step !== "chat" && (
+        <div className="ask-gate">
+          {step === "who" && (
+            <form onSubmit={(e) => { e.preventDefault(); void startGate(); }}>
+              <p className="ask-gate-lead">{g.who}</p>
+              <label className="ask-f">{g.iam}
+                <select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
+                  <option value="client">{g.client}</option><option value="partner">{g.partner}</option><option value="employee">{g.employee}</option>
+                </select></label>
+              <label className="ask-f">{g.name}<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="name" /></label>
+              <label className="ask-f">{g.email}<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" inputMode="email" /></label>
+              {role !== "employee" && <>
+                <label className="ask-f">{g.phone}<input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} autoComplete="tel" inputMode="tel" placeholder="(617) 555-0123" /></label>
+                <fieldset className="ask-via"><legend>{g.via}</legend>
+                  <label><input type="radio" name="via" checked={channel === "email"} onChange={() => setChannel("email")} /> {g.email_c}</label>
+                  <label><input type="radio" name="via" checked={channel === "whatsapp"} onChange={() => setChannel("whatsapp")} /> {g.wa}</label>
+                  <label className="off"><input type="radio" name="via" disabled /> {g.text}</label>
+                  <label className="off"><input type="radio" name="via" disabled /> {g.call}</label>
+                </fieldset>
+                <label className="ask-agree"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span>{CONSENT[lang]}</span></label>
+              </>}
+              {gateErr && <p className="ask-err">{gateErr}</p>}
+              <button type="submit" className="ask-go" disabled={gateBusy}>{role === "employee" ? g.duoBtn : g.send}</button>
+            </form>
+          )}
+          {step === "code" && (
+            <form onSubmit={(e) => { e.preventDefault(); void verifyCode(); }}>
+              <p className="ask-gate-lead">{g.codeTitle}</p>
+              <p className="ask-small">{g.sentTo} <b>{sentTo}</b> {onFile ? g.onFile : ""}</p>
+              <input className="ask-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" aria-label={g.codeTitle} autoFocus />
+              {gateErr && <p className="ask-err">{gateErr}</p>}
+              <button type="submit" className="ask-go" disabled={gateBusy || code.length !== 6}>{g.verify}</button>
+              <button type="button" className="ask-link" onClick={() => { setStep("who"); setGateErr(""); }}>{g.back}</button>
+            </form>
+          )}
+          {step === "duo" && (
+            <div>
+              <p className="ask-gate-lead">{g.duoTitle}</p>
+              {duoCode && <p className="ask-small">{g.duoNum} <b className="ask-duo">{duoCode}</b></p>}
+              <p className="ask-small">{g.duoWait}</p>
+              {gateErr && <p className="ask-err">{gateErr}</p>}
+              <button type="button" className="ask-link" onClick={() => { setStep("who"); setGateErr(""); }}>{g.back}</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === "chat" && <>
       <div className="ask-thread" aria-live="polite">
-        <div className="ask-bubble a">{t.hello}</div>
+        <div className="ask-bubble a">{visitor ? t.hello.replace(/^(Hi|Oi|¡Hola)!/, "$1, " + visitor.split(" ")[0] + "!") : t.hello}</div>
         {msgs.map((m, i) => <div key={i} className={"ask-bubble " + (m.role === "user" ? "u" : "a")}>{m.content}</div>)}
         {busy && <div className="ask-bubble a ask-dim">{t.thinking}</div>}
         {error && <div className="ask-err">{error}</div>}
@@ -189,6 +339,7 @@ export default function AskFinleyPage() {
         </div>
         <p style={S.note}>{t.note}</p>
       </div>
+      </>}
     </main>
   );
 }
@@ -227,6 +378,24 @@ const CSS = `
 .ask-tools label{display:flex;align-items:center;gap:8px;cursor:pointer}
 .ask-tools input{width:20px;height:20px;accent-color:#04182E}
 .ask-tools a{color:#8A6A2E;font-weight:600}
+.ask-gate{flex:1;overflow-y:auto;padding:16px}
+.ask-gate form,.ask-gate>div{display:flex;flex-direction:column;gap:12px;max-width:480px;margin:0 auto}
+.ask-gate-lead{margin:0;font-size:17px;font-weight:600}
+.ask-small{margin:0;font-size:14px;color:#4A5B72}
+.ask-f{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600;color:#04182E}
+.ask-f input,.ask-f select{height:48px;border:1px solid #AEB9C8;border-radius:10px;padding:0 12px;font-size:16px;background:#fff;color:#04182E;width:100% !important}
+.ask-via{border:0;padding:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ask-via legend{font-size:14px;font-weight:600;margin-bottom:6px}
+.ask-via label{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;border:1px solid #D3DAE4;border-radius:10px;background:#fff;font-size:15px;cursor:pointer}
+.ask-via label.off{color:#8296AE;cursor:default;background:#F3F5F8}
+.ask-via input{width:20px !important;height:20px;accent-color:#04182E}
+.ask-agree{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.45;color:#4A5B72;padding:10px 12px;border:2px solid #04182E;border-radius:10px;background:#fff;cursor:pointer}
+.ask-agree input{width:22px !important;min-width:22px;height:22px;margin-top:2px;accent-color:#04182E}
+.ask-go{height:50px;border:0;border-radius:25px;background:#C9A35C;color:#04182E;font-weight:700;font-size:16px;cursor:pointer;width:100% !important}
+.ask-go:disabled{opacity:.6}
+.ask-link{background:none;border:0;color:#8A6A2E;text-decoration:underline;font-size:14px;cursor:pointer;align-self:center;width:auto !important}
+.ask-code{height:56px;font-size:28px;letter-spacing:10px;text-align:center;border:1px solid #AEB9C8;border-radius:12px;width:100% !important}
+.ask-duo{font-size:26px;letter-spacing:4px;color:#04182E}
 .ask-langs{display:flex;gap:4px}
 .ask-langs button{height:32px;min-width:38px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:13px;cursor:pointer}
 .ask-langs button.on{background:#C9A35C;border-color:#C9A35C;color:#04182E}

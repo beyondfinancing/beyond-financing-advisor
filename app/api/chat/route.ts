@@ -61,6 +61,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { BF_TENANT_UUID_FALLBACK } from "@/lib/team-auth";
 import { promptVersion, startFinleyTrace } from "@/lib/llm-trace";
 import { personKey, remember } from "@/lib/finley-memory";
+import { readPass } from "@/lib/finley-gate";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -139,7 +140,7 @@ type RoutingPayload = {
 };
 
 type RequestBody = {
-  stage?: "initial_review" | "scenario_review" | "follow_up" | "team_command";
+  stage?: "initial_review" | "scenario_review" | "follow_up" | "team_command" | "quick_question";
   routing?: RoutingPayload;
   messages?: IncomingMessage[];
 };
@@ -212,7 +213,17 @@ function buildLanguageInstruction(language: string): string {
   return "Respond in English.";
 }
 
-function buildStageInstruction(stage?: string): string {
+/** Who the website visitor proved to be (finley-gate pass, set server-side in POST — never from the browser). */
+function quickWho(routing?: RoutingPayload): string {
+  const v = (routing as Record<string, unknown> | undefined)?.gateVisitor as { role?: string; name?: string; listed?: boolean } | undefined;
+  if (!v?.role) return "";
+  const first = String(v.name || "").split(" ")[0];
+  if (v.role === "employee") return `You are talking with ${first}, a verified Beyond Financing colleague (Duo or company email). Speak as a teammate: you may discuss programs, guidelines and process openly. This website chat has no access to loan files, so for a specific file point them to BIS or WhatsApp Finley. `;
+  if (v.role === "partner") return `You are talking with ${first}, a ${v.listed ? "verified Beyond Financing business partner (on file)" : "real estate or business professional (verified by code, not yet on file as a partner)"}. Speak as their friendly lender-side partner. Never discuss a specific client's file here; for deal status, offer the BRE|HQ app or WhatsApp Finley. `;
+  return `You are talking with ${first}, a verified visitor (code confirmed). Use their first name naturally. `;
+}
+
+function buildStageInstruction(stage?: string, routing?: RoutingPayload): string {
   switch (stage) {
     case "initial_review":
       return "This is the borrower's first message after running Preliminary Review. Greet them warmly by name, briefly acknowledge what you see, and ask the single most important next qualification question.";
@@ -222,7 +233,7 @@ function buildStageInstruction(stage?: string): string {
       return "This is an ongoing conversation. Answer the borrower's question if appropriate, then ask the next useful qualification question.";
     case "quick_question":
       // Website "Ask Finley" box (2026-10-26): most visitors just want a question answered, not an interview.
-      return "The visitor is using the quick 'Ask Finley' box on the website and may be listening to your answer read aloud. Answer their question directly in 2 to 4 short, plain sentences in their language, with no lists, no headings and no symbols. Do not run a qualification interview and do not ask for personal or financial details unless they offer them. Never quote rates or say they are approved. When it helps, end with one short offer: a licensed loan officer can look at their situation, or they can start the full pre-qualification.";
+      return quickWho(routing) + "The visitor is using the quick 'Ask Finley' box on the website and may be listening to your answer read aloud. Answer their question directly in 2 to 4 short, plain sentences in their language, with no lists, no headings and no symbols. Do not run a qualification interview and do not ask for personal or financial details unless they offer them. Never quote rates or say they are approved. When it helps, end with one short offer: a licensed loan officer can look at their situation, or they can start the full pre-qualification.";
     case "team_command":
       return "This is an internal Beyond Intelligence Team Command Center conversation with a mortgage professional, not a borrower.";
     default:
@@ -396,7 +407,7 @@ function buildBorrowerSystemPrompt(
     stable: BORROWER_STABLE_PROMPT,
     dynamic: `
 ${buildLanguageInstruction(facts.language)}
-${buildStageInstruction(stage)}
+${buildStageInstruction(stage, routing)}
 
 # BEYOND INTELLIGENCE LENDER CATALOG (live data)
 
@@ -577,7 +588,7 @@ function buildTeamCommandSystemPrompt(
   return `
 You are Finley Beyond inside the Beyond Intelligence Team Command Center, advising mortgage professionals — not borrowers.
 
-${buildStageInstruction(stage)}
+${buildStageInstruction(stage, routing)}
 
 # YOUR ROLE
 
@@ -1025,6 +1036,12 @@ export async function POST(req: Request) {
     const body = (await req.json()) as RequestBody;
     const stage = body?.stage;
     const routing = body?.routing;
+    // The website's quick box needs a verified visitor (owner 2026-10-26: "I do not want robots to use her").
+    if (stage === "quick_question") {
+      const gate = readPass(req.headers.get("x-finley-pass"));
+      if (!gate) return NextResponse.json({ success: false, error: "gate" }, { status: 401 });
+      if (routing) (routing as Record<string, unknown>).gateVisitor = { role: gate.role, name: gate.name, listed: gate.listed };
+    }
     const incomingMessages = normalizeMessages(body?.messages);
 
     if (!process.env.OPENAI_API_KEY) {
