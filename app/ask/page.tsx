@@ -78,6 +78,7 @@ const CTA_SUB: Record<Lang, string> = { en: "About 5 minutes · free, no obligat
 const CONSENT_Q: Record<Lang, string> = { en: "How may Finley contact you, now and in the future?", pt: "Como a Finley pode falar com você, agora e no futuro?", es: "¿Cómo puede Finley contactarle, ahora y en el futuro?" };
 const ON_FILE: Record<Lang, string> = { en: "consent already granted", pt: "consentimento já concedido", es: "consentimiento ya otorgado" };
 const ALL: Record<Lang, string> = { en: "Allow all", pt: "Permitir todos", es: "Permitir todos" };
+const NOT_YOU: Record<Lang, string> = { en: "Not you? Sign out", pt: "Não é você? Sair", es: "¿No es usted? Salir" };
 const DETACH: Record<Lang, string> = { en: "Detach", pt: "Destacar", es: "Separar" };
 const PASS_KEY = "bf-finley-pass";
 
@@ -329,6 +330,13 @@ export default function AskFinleyPage() {
     try { rec.start(); } catch { setListening(false); }
   }
 
+  /** "Not you?" — forget this visitor's pass on this device; the front door (who you are, consent, code) shows again. */
+  function signOut() {
+    try { window.sessionStorage.removeItem(PASS_KEY); window.localStorage.removeItem("bf-finley-me"); } catch { /* fine */ }
+    setPass(""); setVisitor(""); setMsgs([]); setOnFileCh([]); setForm({ name: "", email: "", phone: "" });
+    setConsent({ calls: false, whatsapp: false, sms: false, email: false }); setRole("client"); setStep("who");
+  }
+
   /** Her own window: stays open after the website (or BIS) is closed. */
   function detach() {
     const url = "/ask?lang=" + lang + "#pass=" + encodeURIComponent(pass) + "&name=" + encodeURIComponent(visitor);
@@ -430,6 +438,7 @@ export default function AskFinleyPage() {
           <button type="submit" className="ask-send" disabled={busy || !input.trim()}>{t.send}</button>
         </form>
         <div className="ask-tools">
+          <button type="button" className="ask-link" onClick={signOut}>{NOT_YOU[lang]}</button>
           <label><input type="checkbox" checked={aloud} onChange={(e) => { setAloud(e.target.checked); if (!e.target.checked && "speechSynthesis" in window) window.speechSynthesis.cancel(); }} /> {t.aloud}</label>
           {!detached && <button type="button" className="ask-link" onClick={detach} title="Keep Finley in her own window">{DETACH[lang]} ⧉</button>}
         </div>
