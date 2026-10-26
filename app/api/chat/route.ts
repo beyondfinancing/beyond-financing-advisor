@@ -220,6 +220,9 @@ function buildStageInstruction(stage?: string): string {
       return "The borrower just updated their property scenario. Acknowledge the new numbers, comment briefly on what they suggest, and ask the next logical qualification question.";
     case "follow_up":
       return "This is an ongoing conversation. Answer the borrower's question if appropriate, then ask the next useful qualification question.";
+    case "quick_question":
+      // Website "Ask Finley" box (2026-10-26): most visitors just want a question answered, not an interview.
+      return "The visitor is using the quick 'Ask Finley' box on the website and may be listening to your answer read aloud. Answer their question directly in 2 to 4 short, plain sentences in their language, with no lists, no headings and no symbols. Do not run a qualification interview and do not ask for personal or financial details unless they offer them. Never quote rates or say they are approved. When it helps, end with one short offer: a licensed loan officer can look at their situation, or they can start the full pre-qualification.";
     case "team_command":
       return "This is an internal Beyond Intelligence Team Command Center conversation with a mortgage professional, not a borrower.";
     default:

@@ -1396,6 +1396,7 @@ Advise that the assigned loan officer will personally review the scenario and ad
                 type="checkbox"
                 checked={accepted}
                 onChange={(e) => setAccepted(e.target.checked)}
+                style={styles.checkboxInput}
               />
               <span>{t.disclaimerAccept}</span>
             </label>
@@ -2008,6 +2009,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     margin: 0,
   },
+  // Owner 2026-10-26: the bare white box "does not seem like something asking me to click" — the whole row is now
+  // one obvious, tappable control.
   checkboxRow: {
     display: "flex",
     alignItems: "center",
@@ -2015,6 +2018,20 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 18,
     color: "#243F7C",
     fontWeight: 900,
+    border: "2px solid #243F7C",
+    borderRadius: 12,
+    padding: "12px 16px",
+    background: "#F3F6FC",
+    cursor: "pointer",
+    minHeight: 48,
+  },
+  checkboxInput: {
+    width: 24,
+    height: 24,
+    minWidth: 24,
+    margin: 0,
+    accentColor: "#243F7C",
+    cursor: "pointer",
   },
   placeholderBox: {
     borderRadius: 18,
