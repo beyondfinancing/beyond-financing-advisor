@@ -15,7 +15,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { CONSENT } from "@/lib/finley-consent";
+import { CONSENT_CH, CONSENT_FOOT, type ConsentChannel } from "@/lib/finley-consent";
 
 type Lang = "en" | "pt" | "es";
 type Msg = { role: "user" | "assistant"; content: string };
@@ -75,6 +75,9 @@ const GATE: Record<Lang, Record<string, string>> = {
 };
 type Step = "who" | "code" | "duo" | "chat";
 const CTA_SUB: Record<Lang, string> = { en: "About 5 minutes · free, no obligation", pt: "Cerca de 5 minutos · grátis, sem compromisso", es: "Unos 5 minutos · gratis, sin compromiso" };
+const CONSENT_Q: Record<Lang, string> = { en: "How may Finley contact you, now and in the future?", pt: "Como a Finley pode falar com você, agora e no futuro?", es: "¿Cómo puede Finley contactarle, ahora y en el futuro?" };
+const ON_FILE: Record<Lang, string> = { en: "consent already granted", pt: "consentimento já concedido", es: "consentimiento ya otorgado" };
+const ALL: Record<Lang, string> = { en: "Allow all", pt: "Permitir todos", es: "Permitir todos" };
 const DETACH: Record<Lang, string> = { en: "Detach", pt: "Destacar", es: "Separar" };
 const PASS_KEY = "bf-finley-pass";
 
@@ -114,7 +117,10 @@ export default function AskFinleyPage() {
   const [role, setRole] = useState<"client" | "partner" | "employee">("client");
   const [form, setForm] = useState({ name: "", email: "", phone: "" });
   const [channel, setChannel] = useState<"email" | "whatsapp">("email");
-  const [agree, setAgree] = useState(false);
+  // Per-channel consent (nothing pre-ticked). A returning visitor sees what's already on file, ticked and locked;
+  // they still get a fresh code every time — the code proves it's really them (owner 2026-10-26).
+  const [consent, setConsent] = useState<Record<ConsentChannel, boolean>>({ calls: false, whatsapp: false, sms: false, email: false });
+  const [onFileCh, setOnFileCh] = useState<ConsentChannel[]>([]);
   const [gid, setGid] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [onFile, setOnFile] = useState(false);
@@ -130,6 +136,14 @@ export default function AskFinleyPage() {
     const l = q.get("lang");
     if (l === "en" || l === "pt" || l === "es") setLang(l);
     setMicOk(!!makeRecognizer());
+    try {
+      const me = JSON.parse(window.localStorage.getItem("bf-finley-me") || "null") as { role?: "client" | "partner" | "employee"; name?: string; email?: string; phone?: string; granted?: ConsentChannel[] } | null;
+      if (me) {
+        if (me.role) setRole(me.role);
+        setForm({ name: me.name || "", email: me.email || "", phone: me.phone || "" });
+        if (Array.isArray(me.granted)) { setOnFileCh(me.granted); setConsent((c) => { const n = { ...c }; me.granted!.forEach((k) => { n[k] = true; }); return n; }); }
+      }
+    } catch { /* fine */ }
     // Detached window (owner 2026-10-26): the pass arrives in the #fragment (never sent to a server), then leaves the URL.
     const h = new URLSearchParams(window.location.hash.slice(1));
     if (h.get("pass")) {
@@ -190,8 +204,12 @@ export default function AskFinleyPage() {
   }
 
   function gateError(e?: string) { setGateErr(g["e_" + (e || "generic")] || g.e_generic); }
-  function admit(p: string, name: string) {
+  function admit(p: string, name: string, granted?: ConsentChannel[]) {
     setPass(p); setVisitor(name); setStep("chat"); setGateErr("");
+    try {   // remember who they are on this device (never the pass) so next time the form is filled and consent shows
+      const prev = JSON.parse(window.localStorage.getItem("bf-finley-me") || "{}");
+      window.localStorage.setItem("bf-finley-me", JSON.stringify({ role, name: form.name || name, email: form.email, phone: form.phone, granted: granted ?? prev.granted ?? [] }));
+    } catch { /* fine */ }
     try { window.sessionStorage.setItem(PASS_KEY, JSON.stringify({ pass: p, name })); } catch { /* fine */ }
   }
   async function gateCall(body: Record<string, unknown>) {
@@ -204,10 +222,9 @@ export default function AskFinleyPage() {
     if (form.name.trim().length < 2) return gateError("name");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) return gateError("email");
     if (role !== "employee" && form.phone.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "").length !== 10) return gateError("phone");
-    if (role !== "employee" && !agree) return gateError("agree");
     setGateBusy(true); setGateErr("");
     try {
-      const r = await gateCall({ action: "start", role, name: form.name, email: form.email, phone: form.phone, channel, lang, agree });
+      const r = await gateCall({ action: "start", role, name: form.name, email: form.email, phone: form.phone, channel, lang, consent });
       if (r.error) return gateError(r.error);
       if (r.pass) return admit(r.pass, r.name || form.name);
       setGid(r.id);
@@ -220,7 +237,7 @@ export default function AskFinleyPage() {
     setGateBusy(true); setGateErr("");
     try {
       const r = await gateCall({ action: "verify", id: gid, code });
-      if (r.pass) return admit(r.pass, r.name);
+      if (r.pass) return admit(r.pass, r.name, r.granted);
       gateError(r.error);
       if (r.error === "expired" || r.error === "tries") setStep("who");
     } catch { gateError(); } finally { setGateBusy(false); }
@@ -353,7 +370,19 @@ export default function AskFinleyPage() {
                   <label className="off"><input type="radio" name="via" disabled /> {g.text}</label>
                   <label className="off"><input type="radio" name="via" disabled /> {g.call}</label>
                 </fieldset>
-                <label className="ask-agree"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span>{CONSENT[lang]}</span></label>
+                <fieldset className="ask-consent"><legend>{CONSENT_Q[lang]}</legend>
+                  {(["calls", "whatsapp", "sms", "email"] as ConsentChannel[]).map((k) => {
+                    const onFile = onFileCh.includes(k);
+                    return (
+                      <label key={k} className={"ask-agree" + (onFile ? " on-file" : "")}>
+                        <input type="checkbox" checked={consent[k]} disabled={onFile} onChange={(e) => setConsent({ ...consent, [k]: e.target.checked })} />
+                        <span><b>{CONSENT_CH[lang][k].label}</b>{onFile ? <em> · {ON_FILE[lang]}</em> : null}<br />{CONSENT_CH[lang][k].text}</span>
+                      </label>
+                    );
+                  })}
+                  {onFileCh.length < 4 && <button type="button" className="ask-link" onClick={() => setConsent({ calls: true, whatsapp: true, sms: true, email: true })}>{ALL[lang]}</button>}
+                  <p className="ask-small">{CONSENT_FOOT[lang]}</p>
+                </fieldset>
               </>}
               {gateErr && <p className="ask-err">{gateErr}</p>}
               <button type="submit" className="ask-go" disabled={gateBusy}>{role === "employee" ? g.duoBtn : g.send}</button>
@@ -459,6 +488,11 @@ const CSS = `
 .ask-via label.off{color:#8296AE;cursor:default;background:#F3F5F8}
 .ask-via input{width:20px !important;height:20px;accent-color:#04182E}
 .ask-agree{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.45;color:#4A5B72;padding:10px 12px;border:2px solid #04182E;border-radius:10px;background:#fff;cursor:pointer}
+.ask-consent{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.ask-consent legend{font-size:14px;font-weight:600;margin-bottom:6px}
+.ask-consent .ask-agree{border:1px solid #D3DAE4}
+.ask-agree.on-file{border-color:#2E6B4F;background:#F2F8F4}
+.ask-agree em{color:#2E6B4F;font-style:normal;font-weight:600}
 .ask-agree input{width:22px !important;min-width:22px;height:22px;margin-top:2px;accent-color:#04182E}
 .ask-go{height:50px;border:0;border-radius:25px;background:#C9A35C;color:#04182E;font-weight:700;font-size:16px;cursor:pointer;width:100% !important}
 .ask-go:disabled{opacity:.6}

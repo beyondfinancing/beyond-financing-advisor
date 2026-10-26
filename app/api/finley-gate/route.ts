@@ -7,7 +7,7 @@
 // request DUO authentication at the spot." "A realtor can also confirm ... Finley will request sending in a
 // verification to the Realtor information on file."
 //
-//   start      {role,name,email,phone,channel,lang,agree}  -> {id, sent_to} | {id, duo:{code}} | {pass}
+//   start      {role,name,email,phone,channel,lang,consent:{calls,whatsapp,sms,email}}  -> {id, sent_to} | {id, duo:{code}} | {pass}
 //   verify     {id, code}                                   -> {pass, role, name}
 //   duo_status {id}                                         -> {waiting} | {pass, role, name} | {error}
 //
@@ -21,7 +21,7 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase";
 import { hashCode, issuePass, type GateRole } from "@/lib/finley-gate";
-import { CONSENT } from "@/lib/finley-consent";
+import { CONSENT_CH, CONSENT_FOOT, type ConsentChannel } from "@/lib/finley-consent";
 
 const FN = (name: string) => `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${name}`;
 const s = (v: unknown, n = 200) => String(v ?? "").trim().slice(0, n);
@@ -51,15 +51,34 @@ async function recordConsent(row: Record<string, any>) {
   const key = row.role === "partner" && String(row.matched || "").startsWith("brehq_partner:")
     ? "realtor:" + String(row.matched).split(":")[1] : (row.role === "partner" ? "partner:" : "client:") + phone10;
   const now = new Date().toISOString();
-  const wording = CONSENT[row.lang] || CONSENT.en;
-  await supabaseAdmin.from("bf_contact_prefs").upsert({
-    person_key: key, party: row.role === "partner" ? "realtor" : "borrower", email: row.email, phone: "+1" + phone10,
-    calls_finley: true, whatsapp: true, sms: true, reminders: true, updated_at: now,
-  });
-  await supabaseAdmin.from("bf_contact_consent_log").insert(["calls_finley", "whatsapp", "sms", "reminders"].map((channel) => ({
-    person_key: key, channel, granted: true, phone: "+1" + phone10, wording, source: "website_gate:" + row.id,
-    ip: row.ip ?? null, user_agent: row.user_agent ?? null,
-  })));
+  const lang = CONSENT_CH[row.lang] ? row.lang : "en";
+  const ticked = (row.consent || {}) as Partial<Record<ConsentChannel, boolean>>;
+  const COL: Record<ConsentChannel, string> = { calls: "calls_finley", whatsapp: "whatsapp", sms: "sms", email: "email_updates" };
+  const granted = (Object.keys(COL) as ConsentChannel[]).filter((k) => ticked[k] === true);
+  if (granted.length) {
+    // Only what was ticked is switched ON; anything granted before stays as it was (never switched off here).
+    const upd: Record<string, unknown> = { person_key: key, party: row.role === "partner" ? "realtor" : "borrower", email: row.email, phone: "+1" + phone10, name: row.name, lang, updated_at: now };
+    for (const k of granted) upd[COL[k]] = true;
+    if (granted.length) upd.reminders = true;
+    await supabaseAdmin.from("bf_contact_prefs").upsert(upd);
+    await supabaseAdmin.from("bf_contact_consent_log").insert(granted.map((k) => ({
+      person_key: key, channel: COL[k], granted: true, phone: "+1" + phone10,
+      wording: CONSENT_CH[lang][k].text + " " + CONSENT_FOOT[lang], source: "website_gate:" + row.id,
+      ip: row.ip ?? null, user_agent: row.user_agent ?? null,
+    })));
+  }
+}
+
+/** What this verified person has on file (shown as "consent already granted"). */
+async function grantedFor(row: Record<string, any>): Promise<ConsentChannel[]> {
+  const phone10 = ten(row.phone);
+  if (phone10.length !== 10) return [];
+  const { data } = await supabaseAdmin.from("bf_contact_prefs").select("phone, calls_finley, whatsapp, sms, email_updates");
+  const mine = (data ?? []).filter((p: any) => ten(p.phone) === phone10);
+  const has = (c: string) => mine.some((p: any) => p[c] === true);
+  const out: ConsentChannel[] = [];
+  if (has("calls_finley")) out.push("calls"); if (has("whatsapp")) out.push("whatsapp"); if (has("sms")) out.push("sms"); if (has("email_updates")) out.push("email");
+  return out;
 }
 
 function passFor(row: Record<string, any>) {
@@ -81,7 +100,8 @@ export async function POST(req: Request) {
     if (name.length < 2) return json({ error: "name" }, 400);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: "email" }, 400);
     if (role !== "employee" && phone.length !== 10) return json({ error: "phone" }, 400);
-    if (role !== "employee" && b.agree !== true) return json({ error: "agree" }, 400);
+    const cIn = (b.consent && typeof b.consent === "object" ? b.consent : {}) as Record<string, unknown>;
+    const consent = { calls: cIn.calls === true, whatsapp: cIn.whatsapp === true, sms: cIn.sms === true, email: cIn.email === true };
     if (role !== "employee" && !["email", "whatsapp"].includes(channel)) return json({ error: "channel" }, 400);
 
     // Flood guard: 6 attempts an hour per address, 4 per email.
@@ -117,7 +137,7 @@ export async function POST(req: Request) {
     const id = crypto.randomUUID();
     const row: Record<string, unknown> = {
       id, role, name, email, phone: phone ? "+1" + phone : null, channel, sent_to: sentTo, matched, lang,
-      expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), consent_wording: role === "employee" ? null : CONSENT[lang], ip, user_agent: ua,
+      expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), consent_wording: role === "employee" ? null : CONSENT_FOOT[lang], consent: role === "employee" ? null : consent, ip, user_agent: ua,
     };
 
     if (role === "employee") {
@@ -169,7 +189,9 @@ export async function POST(req: Request) {
     if (hashCode(id, s(b.code, 10).replace(/\D/g, "")) !== row.code_hash) return json({ error: "code" }, 400);
     await supabaseAdmin.from("finley_web_gate").update({ verified_at: new Date().toISOString() }).eq("id", id);
     try { await recordConsent(row); } catch (e) { console.error("finley-gate consent", e); }
-    return json({ pass: passFor(row), role: row.role, name: row.name });
+    let granted: ConsentChannel[] = [];
+    try { granted = await grantedFor(row); } catch { /* fine */ }
+    return json({ pass: passFor(row), role: row.role, name: row.name, granted });
   }
 
   return json({ error: "unknown action" }, 400);
