@@ -1041,6 +1041,24 @@ export async function POST(req: Request) {
       const gate = readPass(req.headers.get("x-finley-pass"));
       if (!gate) return NextResponse.json({ success: false, error: "gate" }, { status: 401 });
       if (routing) (routing as Record<string, unknown>).gateVisitor = { role: gate.role, name: gate.name, listed: gate.listed };
+      /* A Duo-verified colleague (owner 2026-10-26: "What is the status of Schirley loan?") talks to the SAME staff Finley
+       * as WhatsApp and BIS — files, tasks, calls — through finley-gate-send's staff door. If that can't answer (no cell
+       * on file, Finley busy), the general website Finley below answers instead. */
+      if (gate.role === "employee") {
+        const q = normalizeMessages(body?.messages).filter((m) => m.role === "user").pop()?.content || "";
+        try {
+          const r = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/finley-gate-send`, {
+            method: "POST",
+            headers: { authorization: "Bearer " + process.env.SUPABASE_SERVICE_ROLE_KEY, "content-type": "application/json" },
+            body: JSON.stringify({ channel: "staff_ask", email: gate.email, text: q }),
+          });
+          const j = (await r.json().catch(() => ({}))) as { ok?: boolean; replies?: string[]; pending?: boolean };
+          if (j.ok && (j.replies?.length || j.pending)) {
+            const reply = j.replies?.length ? j.replies.join(String.fromCharCode(10, 10)) : "I'm working on it — my answer will come to your WhatsApp in a moment.";
+            return NextResponse.json({ success: true, reply, meta: { model: "staff-finley" } });
+          }
+        } catch (e) { console.error("staff_ask", e); }
+      }
     }
     const incomingMessages = normalizeMessages(body?.messages);
 
