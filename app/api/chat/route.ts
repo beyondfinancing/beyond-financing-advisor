@@ -1054,10 +1054,10 @@ export async function POST(req: Request) {
             headers: { authorization: "Bearer " + process.env.SUPABASE_SERVICE_ROLE_KEY, "content-type": "application/json" },
             body: JSON.stringify({ channel: "staff_ask", email: gate.email, text: q }),
           });
-          const j = (await r.json().catch(() => ({}))) as { ok?: boolean; replies?: string[]; pending?: boolean };
+          const j = (await r.json().catch(() => ({}))) as { ok?: boolean; replies?: string[]; pending?: boolean; since?: string };
           if (j.ok && (j.replies?.length || j.pending)) {
-            const reply = j.replies?.length ? j.replies.join(String.fromCharCode(10, 10)) : "I'm working on it — my answer will come to your WhatsApp in a moment.";
-            return NextResponse.json({ success: true, reply, meta: { model: "staff-finley" } });
+            const reply = j.replies?.length ? j.replies.join(String.fromCharCode(10, 10)) : "On it — give me a moment, I'll answer right here.";
+            return NextResponse.json({ success: true, reply, pendingSince: j.replies?.length ? undefined : j.since, meta: { model: "staff-finley" } });
           }
         } catch (e) { console.error("staff_ask", e); }
       }

@@ -237,6 +237,28 @@ export default function AskFinleyPage() {
     }, 2000);
   }
 
+  /* Staff Finley sometimes needs longer than one request (calls, several steps): keep asking for up to 3 minutes and
+   * show her answer here when it lands. */
+  async function followUp(since: string, voice: boolean) {
+    setFstate("thinking");
+    for (let i = 0; i < 45; i++) {
+      await new Promise((res) => setTimeout(res, 4000));
+      try {
+        const r = await fetch("/api/finley-staff-poll", { method: "POST", headers: { "Content-Type": "application/json", "x-finley-pass": pass }, body: JSON.stringify({ since }) });
+        const j = (await r.json().catch(() => ({}))) as { replies?: string[] };
+        if (j.replies?.length) {
+          const text = j.replies.join(String.fromCharCode(10, 10));
+          setMsgs((m) => [...m, { role: "assistant", content: text }]);
+          setFstate("idle");
+          if (voice) void speak(text);
+          return;
+        }
+      } catch { /* keep trying */ }
+    }
+    setFstate("idle");
+    setMsgs((m) => [...m, { role: "assistant", content: t.err }]);
+  }
+
   async function ask(question: string) {
     const q = question.trim();
     if (!q || busy) return;
@@ -252,11 +274,12 @@ export default function AskFinleyPage() {
         try { window.sessionStorage.removeItem(PASS_KEY); } catch { /* fine */ }
         setPass(""); setStep("who"); setMsgs(next.slice(0, -1)); setInput(q); return;
       }
-      const data = (await r.json().catch(() => ({}))) as { reply?: string; message?: string; text?: string; content?: string };
+      const data = (await r.json().catch(() => ({}))) as { reply?: string; message?: string; text?: string; content?: string; pendingSince?: string };
       const text = (data.reply || data.message || data.text || data.content || "").trim();
       if (!r.ok || !text) throw new Error("no answer");
       setMsgs((m) => [...m, { role: "assistant", content: text }]);
       if (aloud || spokeRef.current) void speak(text);
+      if (data.pendingSince) void followUp(data.pendingSince, aloud || spokeRef.current);
     } catch {
       setError(t.err);
     } finally {
