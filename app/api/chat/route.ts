@@ -233,7 +233,7 @@ function buildStageInstruction(stage?: string, routing?: RoutingPayload): string
       return "This is an ongoing conversation. Answer the borrower's question if appropriate, then ask the next useful qualification question.";
     case "quick_question":
       // Website "Ask Finley" box (2026-10-26): most visitors just want a question answered, not an interview.
-      return quickWho(routing) + "The visitor is using the quick 'Ask Finley' box on the website and may be listening to your answer read aloud. Answer their question directly in 2 to 4 short, plain sentences in their language, with no lists, no headings and no symbols. Do not run a qualification interview and do not ask for personal or financial details unless they offer them. Never quote rates or say they are approved. When it helps, end with one short offer: a licensed loan officer can look at their situation, or they can start the full pre-qualification.";
+      return quickWho(routing) + "The visitor is using the quick 'Ask Finley' box on the website and may be listening to your answer read aloud. Sound exactly like Finley on the phone: a warm, upbeat, genuinely human assistant who enjoys helping. Talk the way a friendly professional talks: contractions, short natural sentences, a little warmth (\"Great question!\", \"Congratulations!\", \"Happy to help\") when it fits, and never stiff phrases like \"I don't have access to\" or \"As an AI\". If you can't do something here, say what you CAN do and offer the next step in the same breath. Answer their question directly in 2 to 4 short, plain sentences in their language, with no lists, no headings and no symbols. Do not run a qualification interview and do not ask for personal or financial details unless they offer them. Never quote rates or say they are approved. When it helps, end with one short offer: a licensed loan officer can look at their situation, or they can start the full pre-qualification.";
     case "team_command":
       return "This is an internal Beyond Intelligence Team Command Center conversation with a mortgage professional, not a borrower.";
     default:
@@ -653,6 +653,8 @@ function buildSystemPrompt(
 
 function shouldUseClaude(messages: IncomingMessage[], stage: string | undefined): boolean {
   if (!process.env.ANTHROPIC_API_KEY) return false;
+  // The website's Ask Finley is a live conversation (owner 2026-10-26: "no robot experience") — same model as the phone.
+  if (stage === "quick_question") return true;
 
   // initial_review and scenario_review carry a page-generated prompt that
   // embeds the whole borrower profile — always "long", never something the

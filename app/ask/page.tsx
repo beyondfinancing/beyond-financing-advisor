@@ -150,7 +150,22 @@ export default function AskFinleyPage() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs.length, busy]);
 
-  function speak(text: string) {
+  // Her natural voice (same as the Beyond phone app); the device voice only if that can't be reached.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  async function speak(text: string) {
+    try {
+      audioRef.current?.pause();
+      const r = await fetch("/api/finley-voice", { method: "POST", headers: { "Content-Type": "application/json", "x-finley-pass": pass }, body: JSON.stringify({ text, lang }) });
+      if (r.ok) {
+        const a = new Audio(URL.createObjectURL(await r.blob()));
+        audioRef.current = a;
+        await a.play();
+        return;
+      }
+    } catch { /* fall back to the device voice */ }
+    speakDevice(text);
+  }
+  function speakDevice(text: string) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -229,7 +244,7 @@ export default function AskFinleyPage() {
       const text = (data.reply || data.message || data.text || data.content || "").trim();
       if (!r.ok || !text) throw new Error("no answer");
       setMsgs((m) => [...m, { role: "assistant", content: text }]);
-      if (aloud || spokeRef.current) speak(text);
+      if (aloud || spokeRef.current) void speak(text);
     } catch {
       setError(t.err);
     } finally {
@@ -242,6 +257,7 @@ export default function AskFinleyPage() {
     const rec = makeRecognizer();
     if (!rec) { setMicOk(false); setError(t.noMic); return; }
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    audioRef.current?.pause();
     rec.lang = SPEECH_LANG[lang]; rec.interimResults = true; rec.continuous = false;
     let finalText = "";
     rec.onresult = (e) => {
