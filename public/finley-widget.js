@@ -21,7 +21,7 @@
     es: { open: "Hable con Finley", hi: "¡Hola, soy Finley!", ask: "¿Preguntas sobre su préstamo? Pregúnteme.", sub: "Asistente de IA de Beyond Financing", close: "Cerrar", reach: "Cómo Finley puede contactarme" },
   }[lang];
 
-  var FACE = ORIGIN + "/finley-face.jpg";
+  var FACE = ORIGIN + "/finley-face.jpg?v=2";
   var css = ""
     // Owner 2026-10-26: on the LEFT (the BBB seal and accessibility button live on the right), a large, likeable face.
     + "#bf-finley-btn{position:fixed;left:20px;bottom:20px;z-index:2147483000;display:flex;align-items:center;gap:12px;padding:0;border:0;background:transparent;cursor:pointer;font-family:'Public Sans','Segoe UI',system-ui,sans-serif}"

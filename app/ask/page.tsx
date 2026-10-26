@@ -157,7 +157,7 @@ export default function AskFinleyPage() {
       <style>{CSS}</style>
       {!embedded && (
         <header className="ask-head">
-          <img src="/finley-face.jpg" alt="" style={S.face} />
+          <img src="/finley-face.jpg?v=2" alt="" style={S.face} />
           <div className="ask-who"><div style={S.title}>{t.title}</div><div style={S.sub}>{t.sub}</div></div>
           <div className="ask-langs">{(["en", "pt", "es"] as Lang[]).map((l) => (
             <button key={l} type="button" onClick={() => setLang(l)} aria-pressed={lang === l} className={lang === l ? "on" : ""}>{l === "pt" ? "PT" : l.toUpperCase()}</button>
