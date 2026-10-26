@@ -74,6 +74,7 @@ const GATE: Record<Lang, Record<string, string>> = {
     e_employee_unknown: "Ese correo no es un acceso de Beyond Financing.", e_denied: "Duo rechazó la solicitud.", e_generic: "Algo salió mal. Inténtelo de nuevo." },
 };
 type Step = "who" | "code" | "duo" | "chat";
+const DETACH: Record<Lang, string> = { en: "Detach", pt: "Destacar", es: "Separar" };
 const PASS_KEY = "bf-finley-pass";
 
 const SPEECH_LANG: Record<Lang, string> = { en: "en-US", pt: "pt-BR", es: "es-US" };
@@ -120,6 +121,7 @@ export default function AskFinleyPage() {
   const [duoCode, setDuoCode] = useState("");
   const [gateErr, setGateErr] = useState("");
   const [gateBusy, setGateBusy] = useState(false);
+  const [detached, setDetached] = useState(false);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -127,6 +129,13 @@ export default function AskFinleyPage() {
     const l = q.get("lang");
     if (l === "en" || l === "pt" || l === "es") setLang(l);
     setMicOk(!!makeRecognizer());
+    // Detached window (owner 2026-10-26): the pass arrives in the #fragment (never sent to a server), then leaves the URL.
+    const h = new URLSearchParams(window.location.hash.slice(1));
+    if (h.get("pass")) {
+      try { window.sessionStorage.setItem(PASS_KEY, JSON.stringify({ pass: h.get("pass"), name: h.get("name") || "" })); } catch { /* fine */ }
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+    setDetached(window.name === "finley-detached");
     try {
       const saved = JSON.parse(window.sessionStorage.getItem(PASS_KEY) || "null") as { pass?: string; name?: string } | null;
       if (saved?.pass) { setPass(saved.pass); setVisitor(saved.name || ""); setStep("chat"); }
@@ -252,6 +261,13 @@ export default function AskFinleyPage() {
     try { rec.start(); } catch { setListening(false); }
   }
 
+  /** Her own window: stays open after the website (or BIS) is closed. */
+  function detach() {
+    const url = "/ask?lang=" + lang + "#pass=" + encodeURIComponent(pass) + "&name=" + encodeURIComponent(visitor);
+    const w = window.open(url, "finley-detached", "popup,width=440,height=720");
+    if (w) w.focus();
+  }
+
   const fullHref = `/borrower?${embedded ? "embed=1&" : ""}lang=${lang}`;
 
   return (
@@ -335,6 +351,7 @@ export default function AskFinleyPage() {
         </form>
         <div className="ask-tools">
           <label><input type="checkbox" checked={aloud} onChange={(e) => { setAloud(e.target.checked); if (!e.target.checked && "speechSynthesis" in window) window.speechSynthesis.cancel(); }} /> {t.aloud}</label>
+          {!detached && <button type="button" className="ask-link" onClick={detach} title="Keep Finley in her own window">{DETACH[lang]} ⧉</button>}
           <a href={fullHref}>{t.full} →</a>
         </div>
         <p style={S.note}>{t.note}</p>
