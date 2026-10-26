@@ -22,11 +22,33 @@
   }[lang];
 
   var FACE = ORIGIN + "/finley-face.jpg?v=2";
+  var VID_IDLE = ORIGIN + "/finley-idle.mp4", VID_TALK = ORIGIN + "/finley-talk.mp4";
+  function faceHtml(size) {
+    return "<span class='bf-face' data-state='idle'><img src='" + FACE + "' alt='' style='width:" + size + "px;height:" + size + "px'>"
+      + "<video muted loop playsinline preload='none' aria-hidden='true'></video></span>";
+  }
   var css = ""
     // Owner 2026-10-26: on the LEFT (the BBB seal and accessibility button live on the right), a large, likeable face.
     + "#bf-finley-btn{position:fixed;left:20px;bottom:20px;z-index:2147483000;display:flex;align-items:center;gap:12px;padding:0;border:0;background:transparent;cursor:pointer;font-family:'Public Sans','Segoe UI',system-ui,sans-serif}"
     + "#bf-finley-btn img{width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid #C9A35C;box-shadow:0 6px 22px rgba(4,24,46,.35);background:#04182E;transition:transform .2s ease}"
     + "#bf-finley-btn:hover img{transform:scale(1.05)}#bf-finley-btn:focus-visible{outline:none}#bf-finley-btn:focus-visible img{outline:3px solid #1F5FA8;outline-offset:3px}"
+    // FINLEY ALIVE (owner 2026-10-26, "a speaking Finley experience" — option A, then B video loops):
+    // idle = she breathes with a soft gold glow; listening = green pulse; thinking = a gold arc circles her;
+    // speaking = her ring moves with her voice. Talking/idle video loops (finley-idle.mp4 / finley-talk.mp4)
+    // replace the photo automatically once they exist. Reduced-motion users get the still photo.
+    + "@keyframes bfBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}"
+    + "@keyframes bfGlow{0%,100%{box-shadow:0 0 0 0 rgba(201,163,92,.55),0 6px 22px rgba(4,24,46,.35)}50%{box-shadow:0 0 0 9px rgba(201,163,92,0),0 6px 22px rgba(4,24,46,.35)}}"
+    + "@keyframes bfTalk{0%,100%{box-shadow:0 0 0 2px rgba(201,163,92,.9)}25%{box-shadow:0 0 0 7px rgba(201,163,92,.45)}50%{box-shadow:0 0 0 3px rgba(201,163,92,.8)}75%{box-shadow:0 0 0 9px rgba(201,163,92,.3)}}"
+    + "@keyframes bfListen{0%,100%{box-shadow:0 0 0 0 rgba(46,158,91,.65)}50%{box-shadow:0 0 0 11px rgba(46,158,91,0)}}"
+    + "@keyframes bfSpin{to{transform:rotate(360deg)}}"
+    + ".bf-face{position:relative;display:inline-block;border-radius:50%;line-height:0}"
+    + ".bf-face img,.bf-face video{border-radius:50%;object-fit:cover;display:block}"
+    + ".bf-face video{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .3s}.bf-face.vid video{opacity:1}"
+    + ".bf-face[data-state=idle] img,.bf-face[data-state=idle] video{animation:bfBreath 4.5s ease-in-out infinite,bfGlow 4.5s ease-in-out infinite}"
+    + ".bf-face[data-state=speaking] img,.bf-face[data-state=speaking] video{animation:bfTalk .9s ease-in-out infinite}"
+    + ".bf-face[data-state=listening] img,.bf-face[data-state=listening] video{animation:bfListen 1.2s ease-out infinite}"
+    + ".bf-face[data-state=thinking]::after{content:'';position:absolute;inset:-6px;border-radius:50%;border:3px solid transparent;border-top-color:#C9A35C;border-right-color:#C9A35C;animation:bfSpin 1s linear infinite}"
+    + "@media (prefers-reduced-motion:reduce){.bf-face img,.bf-face video,.bf-face::after{animation:none!important}.bf-face video{display:none}}"
     + "#bf-finley-btn .dot{position:absolute;left:66px;bottom:6px;width:16px;height:16px;border-radius:50%;background:#2E9E5B;border:3px solid #fff}"
     + "#bf-finley-btn .bub{background:#fff;color:#04182E;border:1px solid #D3DAE4;border-radius:14px 14px 14px 4px;padding:10px 14px;box-shadow:0 6px 20px rgba(4,24,46,.18);text-align:left;max-width:220px}"
     + "#bf-finley-btn .bub b{display:block;font-size:15px;font-weight:700}#bf-finley-btn .bub span{display:block;font-size:13px;color:#4A5B72;margin-top:2px}"
@@ -34,7 +56,7 @@
     + "background:#fff;border:1px solid #D3DAE4;border-radius:12px;box-shadow:0 16px 48px rgba(4,24,46,.25);display:none;flex-direction:column;overflow:hidden}"
     + "#bf-finley-panel.open{display:flex}"
     + "#bf-finley-head{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#04182E;color:#fff;font-family:'Public Sans','Segoe UI',system-ui,sans-serif}"
-    + "#bf-finley-head img{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #C9A35C}"
+    + "#bf-finley-head img,#bf-finley-head video{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #C9A35C}#bf-finley-btn video{border:3px solid #C9A35C;box-sizing:border-box}"
     + "#bf-finley-head b{font-size:16px;font-weight:600;display:block}#bf-finley-head span{font-size:12px;color:#C9D3E0}"
     + "#bf-finley-head .who{min-width:0;flex:1}"
     + "#bf-finley-head .langs{display:flex;gap:4px}#bf-finley-head .langs button{margin:0;min-width:36px;padding:0 8px}"
@@ -45,16 +67,16 @@
     + "#bf-finley-foot a{color:#8A6A2E;text-decoration:underline}"
     + "@media (max-width:600px){#bf-finley-panel{left:0;bottom:0;width:100%;height:100%;border-radius:0;border:0}"
     + "#bf-finley-head{padding-top:max(12px,env(safe-area-inset-top))}#bf-finley-head .who span{display:none}#bf-finley-btn{left:12px;bottom:max(12px,env(safe-area-inset-bottom))}"
-    + "#bf-finley-btn img{width:68px;height:68px}#bf-finley-btn .dot{left:52px}#bf-finley-btn .bub{max-width:170px;padding:8px 12px}#bf-finley-btn .bub span{display:none}}";
+    + "#bf-finley-btn .bf-face img{width:68px!important;height:68px!important}#bf-finley-btn .dot{left:52px}#bf-finley-btn .bub{max-width:170px;padding:8px 12px}#bf-finley-btn .bub span{display:none}}";
 
   function el(tag, attrs, html) { var e = document.createElement(tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (html) e.innerHTML = html; return e; }
 
   function mount() {
     document.head.appendChild(el("style", {}, css));
     var btn = el("button", { id: "bf-finley-btn", type: "button", "aria-haspopup": "dialog", "aria-expanded": "false", "aria-label": T.open },
-      "<img src='" + FACE + "' alt=''><i class='dot'></i><span class='bub'><b>" + T.hi + "</b><span>" + T.ask + "</span></span>");
+      faceHtml(84) + "<i class='dot'></i><span class='bub'><b>" + T.hi + "</b><span>" + T.ask + "</span></span>");
     var panel = el("div", { id: "bf-finley-panel", role: "dialog", "aria-label": "Finley" },
-      "<div id='bf-finley-head'><img src='" + FACE + "' alt=''><div class='who'><b>Finley</b><span>" + T.sub + "</span></div>"
+      "<div id='bf-finley-head'>" + faceHtml(40) + "<div class='who'><b>Finley</b><span>" + T.sub + "</span></div>"
       + "<div class='langs' role='group' aria-label='Language'><button type='button' data-l='en'>EN</button><button type='button' data-l='pt'>PT</button><button type='button' data-l='es'>ES</button></div>"
       + "<button type='button' class='x'>" + T.close + "</button></div>"
       + "<div id='bf-finley-frame'></div>"
@@ -62,6 +84,32 @@
     document.body.appendChild(panel);
     document.body.appendChild(btn);
     var loaded = false;
+    /* Finley's state, from the Ask Finley page inside the panel (postMessage {bfState}). */
+    var faces = [].slice.call(document.querySelectorAll(".bf-face"));
+    var talkOk = false;
+    faces.forEach(function (f) {
+      var v = f.querySelector("video");
+      if (!v || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+      v.addEventListener("loadeddata", function () { f.classList.add("vid"); v.play().catch(function () {}); });
+      v.src = VID_IDLE;   // a missing video simply leaves her photo in place
+    });
+    var probe = document.createElement("video"); probe.preload = "metadata"; probe.muted = true;
+    probe.addEventListener("loadedmetadata", function () { talkOk = true; }); probe.src = VID_TALK;
+    function setState(st) {
+      faces.forEach(function (f) {
+        f.setAttribute("data-state", st);
+        var v = f.querySelector("video");
+        if (v && f.classList.contains("vid") && talkOk) {
+          var want = st === "speaking" ? VID_TALK : VID_IDLE;
+          if (v.src.indexOf(want) < 0) { v.src = want; v.play().catch(function () {}); }
+        }
+      });
+    }
+    window.addEventListener("message", function (e) {
+      if (e.origin !== ORIGIN || !e.data || typeof e.data.bfState !== "string") return;
+      if (/^(idle|listening|thinking|speaking)$/.test(e.data.bfState)) setState(e.data.bfState);
+    });
+
     function setOpen(open) {
       if (open && !loaded) {
         // Loaded on first open only, so the website itself stays as fast as before.
