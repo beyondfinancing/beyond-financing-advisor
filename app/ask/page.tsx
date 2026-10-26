@@ -153,19 +153,19 @@ export default function AskFinleyPage() {
   const fullHref = `/borrower?${embedded ? "embed=1&" : ""}lang=${lang}`;
 
   return (
-    <main style={S.page}>
+    <main className="ask-page">
       <style>{CSS}</style>
       {!embedded && (
-        <header style={S.head}>
+        <header className="ask-head">
           <img src="/finley-face.jpg" alt="" style={S.face} />
-          <div style={{ flex: 1, minWidth: 0 }}><div style={S.title}>{t.title}</div><div style={S.sub}>{t.sub}</div></div>
+          <div className="ask-who"><div style={S.title}>{t.title}</div><div style={S.sub}>{t.sub}</div></div>
           <div className="ask-langs">{(["en", "pt", "es"] as Lang[]).map((l) => (
             <button key={l} type="button" onClick={() => setLang(l)} aria-pressed={lang === l} className={lang === l ? "on" : ""}>{l === "pt" ? "PT" : l.toUpperCase()}</button>
           ))}</div>
         </header>
       )}
 
-      <div style={S.thread} aria-live="polite">
+      <div className="ask-thread" aria-live="polite">
         <div className="ask-bubble a">{t.hello}</div>
         {msgs.map((m, i) => <div key={i} className={"ask-bubble " + (m.role === "user" ? "u" : "a")}>{m.content}</div>)}
         {busy && <div className="ask-bubble a ask-dim">{t.thinking}</div>}
@@ -173,7 +173,7 @@ export default function AskFinleyPage() {
         <div ref={endRef} />
       </div>
 
-      <div style={S.bottom}>
+      <div className="ask-bottom">
         <form className="ask-row" onSubmit={(e) => { e.preventDefault(); void ask(input); }}>
           {micOk && (
             <button type="button" className={"ask-mic" + (listening ? " live" : "")} onClick={toggleMic} aria-label={listening ? t.stopMic : t.mic} title={listening ? t.stopMic : t.mic}>
@@ -194,23 +194,27 @@ export default function AskFinleyPage() {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  page: { minHeight: "100dvh", display: "flex", flexDirection: "column", background: "#F3F5F8", color: "#04182E", fontFamily: "'Public Sans','Segoe UI',system-ui,sans-serif" },
-  head: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))", background: "#04182E", color: "#fff" },
   face: { width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: "2px solid #C9A35C" },
   title: { fontSize: 17, fontWeight: 700 },
   sub: { fontSize: 12, color: "#C9D3E0" },
-  thread: { flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 10 },
-  bottom: { borderTop: "1px solid #D3DAE4", background: "#fff", padding: "12px 16px", paddingBottom: "max(12px, env(safe-area-inset-bottom))" },
   note: { margin: "8px 0 0", fontSize: 12, lineHeight: 1.45, color: "#56677D" },
 };
 
 const CSS = `
+/* Layout lives in classes: the site's global mobile layer rewrites any inline display:flex into a column. */
+.ask-page{min-height:100dvh;height:100dvh;display:flex;flex-direction:column;background:#F3F5F8;color:#04182E;font-family:'Public Sans','Segoe UI',system-ui,sans-serif}
+.ask-head{display:flex;flex-direction:row;align-items:center;gap:12px;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top));background:#04182E;color:#fff}
+.ask-who{flex:1;min-width:0}
+.ask-thread{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.ask-bottom{border-top:1px solid #D3DAE4;background:#fff;padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+.ask-row input{width:auto !important;flex:1 1 auto}
+.ask-mic,.ask-send,.ask-langs button{width:auto !important}
 .ask-bubble{max-width:86%;padding:12px 14px;border-radius:14px;font-size:16px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
 .ask-bubble.a{align-self:flex-start;background:#fff;border:1px solid #D3DAE4;border-bottom-left-radius:4px}
 .ask-bubble.u{align-self:flex-end;background:#04182E;color:#fff;border-bottom-right-radius:4px}
 .ask-dim{color:#56677D;font-style:italic}
 .ask-err{align-self:center;color:#A3261E;font-size:14px}
-.ask-row{display:flex;gap:8px;align-items:center}
+.ask-row{display:flex;flex-direction:row;gap:8px;align-items:center}
 .ask-row input{flex:1;min-width:0;height:48px;border:1px solid #AEB9C8;border-radius:24px;padding:0 16px;font-size:16px;color:#04182E;background:#fff}
 .ask-row input:focus{outline:2px solid #1F5FA8;outline-offset:1px}
 .ask-mic{width:48px;height:48px;flex:0 0 48px;border-radius:50%;border:2px solid #C9A35C;background:#fff;color:#04182E;display:grid;place-items:center;cursor:pointer}
