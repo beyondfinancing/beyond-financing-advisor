@@ -151,6 +151,13 @@ export default function AskFinleyPage() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs.length, busy]);
 
+  // Finley's state for the animated face (widget header + corner button): idle / listening / thinking / speaking.
+  const [fstate, setFstate] = useState<"idle" | "listening" | "thinking" | "speaking">("idle");
+  useEffect(() => {
+    try { if (window.parent !== window) window.parent.postMessage({ bfState: fstate }, "*"); } catch { /* not embedded */ }
+  }, [fstate]);
+  useEffect(() => { setFstate(listening ? "listening" : busy ? "thinking" : "idle"); }, [listening, busy]);
+
   // Her natural voice (same as the Beyond phone app); the device voice only if that can't be reached.
   const audioRef = useRef<HTMLAudioElement | null>(null);
   async function speak(text: string) {
@@ -160,6 +167,8 @@ export default function AskFinleyPage() {
       if (r.ok) {
         const a = new Audio(URL.createObjectURL(await r.blob()));
         audioRef.current = a;
+        a.onplay = () => setFstate("speaking");
+        a.onended = a.onpause = () => setFstate("idle");
         await a.play();
         return;
       }
@@ -175,6 +184,8 @@ export default function AskFinleyPage() {
       || window.speechSynthesis.getVoices().find((x) => x.lang.toLowerCase().startsWith(SPEECH_LANG[lang].slice(0, 2)));
     if (v) u.voice = v;
     u.rate = 1;
+    u.onstart = () => setFstate("speaking");
+    u.onend = () => setFstate("idle");
     window.speechSynthesis.speak(u);
   }
 
@@ -292,7 +303,7 @@ export default function AskFinleyPage() {
       <style>{CSS}</style>
       {!embedded && (
         <header className="ask-head">
-          <img src="/finley-face.jpg?v=2" alt="" style={S.face} />
+          <span className="ask-face" data-state={fstate}><img src="/finley-face.jpg?v=2" alt="" style={S.face} /></span>
           <div className="ask-who"><div style={S.title}>{t.title}</div><div style={S.sub}>{t.sub}</div></div>
           <div className="ask-langs">{(["en", "pt", "es"] as Lang[]).map((l) => (
             <button key={l} type="button" onClick={() => setLang(l)} aria-pressed={lang === l} className={lang === l ? "on" : ""}>{l === "pt" ? "PT" : l.toUpperCase()}</button>
@@ -439,6 +450,17 @@ const CSS = `
 .ask-cta:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(201,163,92,.45)}
 .ask-cta:focus-visible{outline:3px solid #1F5FA8;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.ask-cta{transition:none}.ask-cta:hover{transform:none}}
+@keyframes afBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+@keyframes afTalk{0%,100%{box-shadow:0 0 0 2px rgba(201,163,92,.9)}25%{box-shadow:0 0 0 6px rgba(201,163,92,.45)}50%{box-shadow:0 0 0 3px rgba(201,163,92,.8)}75%{box-shadow:0 0 0 8px rgba(201,163,92,.3)}}
+@keyframes afListen{0%,100%{box-shadow:0 0 0 0 rgba(46,158,91,.65)}50%{box-shadow:0 0 0 10px rgba(46,158,91,0)}}
+@keyframes afSpin{to{transform:rotate(360deg)}}
+.ask-face{position:relative;display:inline-block;border-radius:50%;line-height:0}
+.ask-face img{border-radius:50%}
+.ask-face[data-state=idle] img{animation:afBreath 4.5s ease-in-out infinite}
+.ask-face[data-state=speaking] img{animation:afTalk .9s ease-in-out infinite}
+.ask-face[data-state=listening] img{animation:afListen 1.2s ease-out infinite}
+.ask-face[data-state=thinking]::after{content:'';position:absolute;inset:-5px;border-radius:50%;border:3px solid transparent;border-top-color:#C9A35C;border-right-color:#C9A35C;animation:afSpin 1s linear infinite}
+@media (prefers-reduced-motion:reduce){.ask-face img,.ask-face::after{animation:none!important}}
 .ask-langs{display:flex;gap:4px}
 .ask-langs button{height:32px;min-width:38px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:13px;cursor:pointer}
 .ask-langs button.on{background:#C9A35C;border-color:#C9A35C;color:#04182E}
