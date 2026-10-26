@@ -122,7 +122,9 @@ export async function POST(req: Request) {
 
     if (role === "employee") {
       const pre = await mfa({ serial, email, action: "preauth", ipaddr: ip });
-      if (pre.mode === "push" && pre.txid !== undefined) {
+      // What Duo answered, kept on the row (no secrets) — the first live try fell back to email and nobody could see why.
+      row.matched = "license:" + serial + "|duo:" + String(pre.mode || pre.error || "none");
+      if (pre.mode === "push") {
         const pushed = await mfa({ serial, email, action: "push", txid: pre.txid, ipaddr: ip });
         row.duo_txid = String(pushed.txid || pre.txid);
         await supabaseAdmin.from("finley_web_gate").insert(row);
@@ -154,7 +156,7 @@ export async function POST(req: Request) {
 
     if (action === "duo_status") {
       if (!row.duo_txid) return json({ error: "expired" }, 400);
-      const st = await mfa({ serial: String(row.matched).split(":")[1], email: row.email, action: "status", txid: row.duo_txid, ipaddr: ip });
+      const st = await mfa({ serial: String(row.matched).split("|")[0].split(":")[1], email: row.email, action: "status", txid: row.duo_txid, ipaddr: ip });
       if (st.result === "allow") {
         await supabaseAdmin.from("finley_web_gate").update({ verified_at: new Date().toISOString() }).eq("id", id);
         return json({ pass: passFor(row), role: row.role, name: row.name });
