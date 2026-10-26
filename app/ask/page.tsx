@@ -26,7 +26,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     hello: "Hi! I'm Finley. Ask me anything about buying, refinancing or your mortgage options. Type below, or tap the microphone and talk to me.",
     placeholder: "Type your question…", send: "Send", listening: "Listening… speak now", thinking: "Finley is thinking…",
     mic: "Speak your question", stopMic: "Stop listening", aloud: "Read answers aloud",
-    full: "Start a full pre-qualification", note: "Finley is an AI assistant. Answers are general guidance, not a loan approval, rate quote or commitment. A licensed loan officer confirms everything.",
+    full: "Get pre-qualified now", note: "Finley is an AI assistant. Answers are general guidance, not a loan approval, rate quote or commitment. A licensed loan officer confirms everything.",
     err: "Sorry, I couldn't answer just now. Please try again in a moment.", noMic: "Voice isn't available in this browser. Please type your question.",
   },
   pt: {
@@ -34,7 +34,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     hello: "Oi! Eu sou a Finley. Pergunte o que quiser sobre comprar, refinanciar ou suas opções de financiamento. Escreva abaixo ou toque no microfone e fale comigo.",
     placeholder: "Escreva sua pergunta…", send: "Enviar", listening: "Ouvindo… pode falar", thinking: "A Finley está pensando…",
     mic: "Falar a pergunta", stopMic: "Parar de ouvir", aloud: "Ler as respostas em voz alta",
-    full: "Começar a pré-qualificação completa", note: "A Finley é uma assistente de IA. As respostas são orientações gerais, não uma aprovação, cotação de taxa ou compromisso. Um loan officer licenciado confirma tudo.",
+    full: "Faça sua pré-qualificação agora", note: "A Finley é uma assistente de IA. As respostas são orientações gerais, não uma aprovação, cotação de taxa ou compromisso. Um loan officer licenciado confirma tudo.",
     err: "Desculpe, não consegui responder agora. Tente novamente em instantes.", noMic: "A voz não está disponível neste navegador. Por favor, escreva sua pergunta.",
   },
   es: {
@@ -42,7 +42,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     hello: "¡Hola! Soy Finley. Pregúnteme lo que quiera sobre comprar, refinanciar o sus opciones de préstamo. Escriba abajo o toque el micrófono y hábleme.",
     placeholder: "Escriba su pregunta…", send: "Enviar", listening: "Escuchando… hable ahora", thinking: "Finley está pensando…",
     mic: "Decir su pregunta", stopMic: "Dejar de escuchar", aloud: "Leer las respuestas en voz alta",
-    full: "Comenzar la precalificación completa", note: "Finley es una asistente de IA. Las respuestas son orientación general, no una aprobación, cotización de tasa ni compromiso. Un oficial de préstamos con licencia confirma todo.",
+    full: "Precalifíquese ahora", note: "Finley es una asistente de IA. Las respuestas son orientación general, no una aprobación, cotización de tasa ni compromiso. Un oficial de préstamos con licencia confirma todo.",
     err: "Lo siento, no pude responder ahora. Inténtelo de nuevo en un momento.", noMic: "La voz no está disponible en este navegador. Por favor, escriba su pregunta.",
   },
 };
@@ -74,6 +74,7 @@ const GATE: Record<Lang, Record<string, string>> = {
     e_employee_unknown: "Ese correo no es un acceso de Beyond Financing.", e_denied: "Duo rechazó la solicitud.", e_generic: "Algo salió mal. Inténtelo de nuevo." },
 };
 type Step = "who" | "code" | "duo" | "chat";
+const CTA_SUB: Record<Lang, string> = { en: "About 5 minutes · free, no obligation", pt: "Cerca de 5 minutos · grátis, sem compromisso", es: "Unos 5 minutos · gratis, sin compromiso" };
 const DETACH: Record<Lang, string> = { en: "Detach", pt: "Destacar", es: "Separar" };
 const PASS_KEY = "bf-finley-pass";
 
@@ -368,8 +369,9 @@ export default function AskFinleyPage() {
         <div className="ask-tools">
           <label><input type="checkbox" checked={aloud} onChange={(e) => { setAloud(e.target.checked); if (!e.target.checked && "speechSynthesis" in window) window.speechSynthesis.cancel(); }} /> {t.aloud}</label>
           {!detached && <button type="button" className="ask-link" onClick={detach} title="Keep Finley in her own window">{DETACH[lang]} ⧉</button>}
-          <a href={fullHref}>{t.full} →</a>
         </div>
+        {/* Owner 2026-10-26: "too shy ... a nice attracting button would look better and encourage an application". */}
+        <a className="ask-cta" href={fullHref}><span>{t.full}</span><small>{CTA_SUB[lang]}</small><b aria-hidden="true">→</b></a>
         <p style={S.note}>{t.note}</p>
       </div>
       </>}
@@ -429,6 +431,14 @@ const CSS = `
 .ask-link{background:none;border:0;color:#8A6A2E;text-decoration:underline;font-size:14px;cursor:pointer;align-self:center;width:auto !important}
 .ask-code{height:56px;font-size:28px;letter-spacing:10px;text-align:center;border:1px solid #AEB9C8;border-radius:12px;width:100% !important}
 .ask-duo{font-size:26px;letter-spacing:4px;color:#04182E}
+.ask-cta{display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:12px;margin-top:12px;padding:12px 16px;border-radius:14px;
+  background:linear-gradient(135deg,#C9A35C,#E2C287);color:#04182E;text-decoration:none;box-shadow:0 6px 16px rgba(201,163,92,.35);transition:transform .15s ease,box-shadow .15s ease}
+.ask-cta span{font-size:16px;font-weight:700}
+.ask-cta small{grid-column:1;font-size:12.5px;color:#3A3A2A;margin-top:2px}
+.ask-cta b{grid-row:1 / span 2;grid-column:2;font-size:22px}
+.ask-cta:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(201,163,92,.45)}
+.ask-cta:focus-visible{outline:3px solid #1F5FA8;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.ask-cta{transition:none}.ask-cta:hover{transform:none}}
 .ask-langs{display:flex;gap:4px}
 .ask-langs button{height:32px;min-width:38px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:700;font-size:13px;cursor:pointer}
 .ask-langs button.on{background:#C9A35C;border-color:#C9A35C;color:#04182E}
