@@ -33,7 +33,7 @@ export const CONSENT_CH: Record<string, Record<ConsentChannel, { label: string; 
   },
 };
 export const CONSENT_FOOT: Record<string, string> = {
-  en: "About my inquiry, my loan and Beyond Financing's services, now and in the future. Consent is not a condition of any purchase or loan, and I can turn any of these off anytime (reply STOP or tell Finley).",
-  pt: "Sobre minha consulta, meu financiamento e os serviços da Beyond Financing, agora e no futuro. O consentimento não é condição para nenhuma compra ou empréstimo, e posso desligar qualquer um a qualquer momento (responda STOP ou diga à Finley).",
-  es: "Sobre mi consulta, mi préstamo y los servicios de Beyond Financing, ahora y en el futuro. El consentimiento no es condición para ninguna compra o préstamo, y puedo desactivar cualquiera en cualquier momento (responda STOP o dígaselo a Finley).",
+  en: "About my inquiry, my loan and its status, updates, rate alerts, Beyond Financing's services, and advertising and marketing offers, now and in the future, from Beyond Financing, Finley and its other AI agents, including telemarketing and automated technology. Consent is not a condition of any purchase or loan, and I can turn any of these off anytime (reply STOP or tell Finley).",
+  pt: "Sobre minha consulta, meu financiamento e seu status, atualizações, alertas de taxas, os serviços da Beyond Financing e ofertas de publicidade e marketing, agora e no futuro, da Beyond Financing, da Finley e de seus demais agentes de IA, incluindo telemarketing e tecnologia automatizada. O consentimento não é condição para nenhuma compra ou empréstimo, e posso desligar qualquer um a qualquer momento (responda STOP ou diga à Finley).",
+  es: "Sobre mi consulta, mi préstamo y su estado, actualizaciones, alertas de tasas, los servicios de Beyond Financing y ofertas de publicidad y mercadeo, ahora y en el futuro, de Beyond Financing, Finley y sus demás agentes de IA, incluido el telemercadeo y la tecnología automatizada. El consentimiento no es condición para ninguna compra o préstamo, y puedo desactivar cualquiera en cualquier momento (responda STOP o dígaselo a Finley).",
 };
