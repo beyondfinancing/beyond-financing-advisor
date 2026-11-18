@@ -268,7 +268,8 @@
       if (loSlug && !document.querySelector(".bf-callme")) {
         // The page has more than one "Apply Now" link (one in a hidden menu): use the one actually on screen.
         var ap = [].slice.call(document.querySelectorAll("a[href]")).find(function (a) {
-          return new RegExp("/loan-officer/" + loSlug + "/apply-now/?$").test(a.getAttribute("href") || "") && a.getClientRects().length > 0 && a.getBoundingClientRect().width > 0;
+          // The visible quick link is relative ("nate-hubley/apply-now"); the hidden copy is absolute.
+          return new RegExp("(^|/)" + loSlug + "/apply-now/?$").test(a.getAttribute("href") || "") && a.getClientRects().length > 0 && a.getBoundingClientRect().width > 0;
         });
         if (ap) {
           var b2 = el("button", { type: "button", "class": "bf-callme big", "data-slug": loSlug }, CAP.btn);
