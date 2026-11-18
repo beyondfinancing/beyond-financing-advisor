@@ -16,11 +16,13 @@
   var lang = /portugu|brasil|financiamento|\/pt/.test(path) || htmlLang.indexOf("pt") === 0 ? "pt"
     : /espa[nñ]ol|prestamos|\/es/.test(path) || htmlLang.indexOf("es") === 0 ? "es" : "en";
   var T = {
-    en: { open: "Talk to Finley", hi: "Hi, I'm Finley!", ask: "Questions about a home loan? Ask me.", sub: "Beyond Financing's AI assistant", close: "Close", reach: "How Finley may reach me" },
-    pt: { open: "Fale com a Finley", hi: "Oi, eu sou a Finley!", ask: "Dúvidas sobre financiamento? Pergunte.", sub: "Assistente de IA da Beyond Financing", close: "Fechar", reach: "Como a Finley pode me contatar" },
-    es: { open: "Hable con Finley", hi: "¡Hola, soy Finley!", ask: "¿Preguntas sobre su préstamo? Pregúnteme.", sub: "Asistente de IA de Beyond Financing", close: "Cerrar", reach: "Cómo Finley puede contactarme" },
+    en: { open: "Talk to Finley", hi: "Hi, I'm Finley!", ask: "Tap my photo for a live video, or here to chat.", live: "Live video with Finley", sub: "Beyond Financing's AI assistant", close: "Close", reach: "How Finley may reach me" },
+    pt: { open: "Fale com a Finley", hi: "Oi, eu sou a Finley!", ask: "Toque na minha foto para vídeo ao vivo, ou aqui para conversar.", live: "Vídeo ao vivo com a Finley", sub: "Assistente de IA da Beyond Financing", close: "Fechar", reach: "Como a Finley pode me contatar" },
+    es: { open: "Hable con Finley", hi: "¡Hola, soy Finley!", ask: "Toque mi foto para video en vivo, o aquí para chatear.", live: "Video en vivo con Finley", sub: "Asistente de IA de Beyond Financing", close: "Cerrar", reach: "Cómo Finley puede contactarme" },
   }[lang];
 
+  // Owner 2026-11-17: clicking HER (the photo) opens the live video page (Tavus); the speech bubble still opens the text chat.
+  var LIVE = "https://br.beyondfinancing.com/apply?lang=";
   var FACE = ORIGIN + "/finley-face.jpg?v=4";
   var VID_IDLE = ORIGIN + "/finley-idle.mp4", VID_TALK = ORIGIN + "/finley-talk.mp4";
   function faceHtml(size) {
@@ -67,7 +69,7 @@
     + "#bf-finley-foot a{color:#8A6A2E;text-decoration:underline}"
     + "@media (max-width:600px){#bf-finley-panel{left:0;bottom:0;width:100%;height:100%;border-radius:0;border:0}"
     + "#bf-finley-head{padding-top:max(12px,env(safe-area-inset-top))}#bf-finley-head .who span{display:none}#bf-finley-btn{left:12px;bottom:max(12px,env(safe-area-inset-bottom))}"
-    + "#bf-finley-btn .bf-face img{width:68px!important;height:68px!important}#bf-finley-btn .dot{left:52px}#bf-finley-btn .bub{max-width:170px;padding:8px 12px}#bf-finley-btn .bub span{display:none}}";
+    + "#bf-finley-btn .bf-face img{width:68px!important;height:68px!important}#bf-finley-btn .dot{left:52px}#bf-finley-btn .bub{max-width:170px;padding:8px 12px}#bf-finley-btn .bub span{display:block;font-size:12px}}";
 
   function el(tag, attrs, html) { var e = document.createElement(tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (html) e.innerHTML = html; return e; }
 
@@ -130,7 +132,13 @@
       });
     });
     paintLang();
-    btn.addEventListener("click", function () { setOpen(!panel.classList.contains("open")); });
+    var face = btn.querySelector(".bf-face"); if (face) { face.setAttribute("title", T.live); }
+    btn.addEventListener("click", function (e) {
+      if (e.target && e.target.closest && e.target.closest(".bf-face") && !panel.classList.contains("open")) {
+        window.open(LIVE + lang, "_blank", "noopener"); return;
+      }
+      setOpen(!panel.classList.contains("open"));
+    });
     panel.querySelector("#bf-finley-head .x").addEventListener("click", function () { setOpen(false); btn.focus(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape" && panel.classList.contains("open")) setOpen(false); });
   }
