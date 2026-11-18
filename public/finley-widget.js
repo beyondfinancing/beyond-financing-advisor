@@ -21,7 +21,7 @@
     es: { open: "Hable con Finley", hi: "¡Hola, soy Finley!", ask: "¿Preguntas sobre su préstamo? Pregúnteme.", sub: "Asistente de IA de Beyond Financing", close: "Cerrar", reach: "Cómo Finley puede contactarme" },
   }[lang];
 
-  var FACE = ORIGIN + "/finley-face.jpg?v=2";
+  var FACE = ORIGIN + "/finley-face.jpg?v=3";
   var VID_IDLE = ORIGIN + "/finley-idle.mp4", VID_TALK = ORIGIN + "/finley-talk.mp4";
   function faceHtml(size) {
     return "<span class='bf-face' data-state='idle'><img src='" + FACE + "' alt='' style='width:" + size + "px;height:" + size + "px'>"
