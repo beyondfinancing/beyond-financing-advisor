@@ -47,12 +47,21 @@
   // On a loan officer's own page (/loan-officer/<name>), Finley is THAT loan officer's assistant (owner 2026-11-18) and the
   // call request goes to them (bf-landing matches the slug to the licensed loan officer). New hires work automatically.
   var loSlugM = path.match(/^\/loan-officer\/([a-z0-9-]+)/), loSlug = loSlugM ? loSlugM[1] : "";
-  var loWho = loSlug ? loSlug.split("-").filter(Boolean).map(function (w) { return w.length === 1 ? w.toUpperCase() + "." : w.charAt(0).toUpperCase() + w.slice(1); }).join(" ") : "";
-  if (loWho) {
-    G.en.p = G.en.p.replace("Beyond Financing's AI assistant.", loWho + "'s AI assistant at Beyond Financing.");
-    G.pt.p = G.pt.p.replace("Assistente de IA da Beyond Financing.", "Assistente de IA de " + loWho + " na Beyond Financing.");
-    G.es.p = G.es.p.replace("Asistente de IA de Beyond Financing.", "Asistente de IA de " + loWho + " en Beyond Financing.");
+  function whoOf(slug) { return slug ? slug.split("-").filter(Boolean).map(function (w) { return w.length === 1 ? w.toUpperCase() + "." : w.charAt(0).toUpperCase() + w.slice(1); }).join(" ") : ""; }
+  var BASEP = { en: G.en.p, pt: G.pt.p, es: G.es.p };
+  /** The card's intro line for a loan officer (or the company when none). */
+  function pFor(l, who) {
+    if (!who) return BASEP[l];
+    return l === "pt" ? BASEP.pt.replace("Assistente de IA da Beyond Financing.", "Assistente de IA de " + who + " na Beyond Financing.")
+      : l === "es" ? BASEP.es.replace("Asistente de IA de Beyond Financing.", "Asistente de IA de " + who + " en Beyond Financing.")
+      : BASEP.en.replace("Beyond Financing's AI assistant.", who + "'s AI assistant at Beyond Financing.");
   }
+  G[lang].p = pFor(lang, whoOf(loSlug));
+  // Owner-approved greeting video (2026-11-18, one take). English audio; captions in the page language while muted.
+  var GREET = ORIGIN + "/finley-greeting.mp4";
+  var CAP = { en: { cap: "Hi, I'm Finley! Would you like me to give you a call? I can help you with your application, our website, or any other questions you may have!", snd: "🔊 Tap to hear Finley", btn: "📞 Call me now" },
+    pt: { cap: "Oi, eu sou a Finley! Quer que eu te ligue? Posso ajudar com a sua aplicação, o nosso site ou qualquer outra dúvida!", snd: "🔊 Toque para ouvir a Finley", btn: "📞 Me ligue agora" },
+    es: { cap: "¡Hola, soy Finley! ¿Quiere que le llame? Puedo ayudarle con su solicitud, nuestro sitio web o cualquier otra pregunta.", snd: "🔊 Toque para escuchar a Finley", btn: "📞 Llámeme ahora" } }[lang];
 
   // Owner 2026-11-17: clicking HER (the photo) opens the live video page (Tavus); the speech bubble still opens the text chat.
   var LIVE = "https://br.beyondfinancing.com/apply?lang=";
@@ -116,6 +125,13 @@
     + "#bf-finley-greet label{font-size:13px;font-weight:600}#bf-finley-greet input[type=text],#bf-finley-greet input[type=tel]{height:42px;border:1px solid #C3CCD8;border-radius:8px;padding:0 10px;font:15px 'Public Sans','Segoe UI',sans-serif}"
     + "#bf-finley-greet .consent{font-size:11px;line-height:1.4;color:#5A6A80;max-height:92px;overflow:auto;border:1px solid #E3E8EF;border-radius:8px;padding:6px 8px;background:#F7F9FC}"
     + "#bf-finley-greet .hp{position:absolute;left:-9999px}#bf-finley-greet .msg{font-size:14px;min-height:0}#bf-finley-greet .msg.err{color:#B3261E}"
+    + "#bf-finley-greet .gv{position:relative;margin:-16px -16px 12px;border-radius:14px 14px 0 0;overflow:hidden;background:#04182E;aspect-ratio:16/9}"
+    + "#bf-finley-greet .gv video{display:block;width:100%;height:100%;object-fit:cover}"
+    + "#bf-finley-greet .gv .cap{position:absolute;left:0;right:0;bottom:0;padding:18px 12px 8px;font-size:12.5px;line-height:1.35;color:#fff;background:linear-gradient(0deg,rgba(4,24,46,.85),rgba(4,24,46,0))}"
+    + "#bf-finley-greet .gv .snd{position:absolute;right:8px;top:8px;border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#04182E;font:600 12.5px 'Public Sans','Segoe UI',sans-serif;padding:6px 10px;cursor:pointer}"
+    + "#bf-finley-greet.form .gv{display:none}"
+    + ".bf-callme{display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 0;min-height:44px;padding:0 16px;border:2px solid #C9A35C;border-radius:6px;background:#C9A35C;color:#04182E;font:700 15px 'Public Sans','Segoe UI',sans-serif;cursor:pointer;letter-spacing:.3px;max-width:100%}"
+    + ".bf-callme:hover{filter:brightness(1.05)}.bf-callme.big{width:100%;min-height:52px;margin:6px 0 14px;font-size:16px}"
     + "@media (max-width:600px){#bf-finley-greet{left:16px;right:16px;width:auto;bottom:104px}}"
     + "@media (prefers-reduced-motion:reduce){#bf-finley-greet{transition:none}}";
 
@@ -194,7 +210,10 @@
     /* ---------- FINLEY ON DEMAND: greeter card ---------- */
     var g = G[lang];
     var card = el("div", { id: "bf-finley-greet", role: "dialog", "aria-label": "Finley" },
-      "<button type='button' class='x' aria-label='" + T.close + "'>×</button><h3>" + g.h + "</h3><p>" + g.p + "</p>"
+      "<button type='button' class='x' aria-label='" + T.close + "'>×</button>"
+      + "<div class='gv'><video muted playsinline preload='metadata' poster='" + FACE + "' src='" + GREET + "'></video>"
+      + "<div class='cap'>" + CAP.cap + "</div><button type='button' class='snd'>" + CAP.snd + "</button></div>"
+      + "<h3>" + g.h + "</h3><p class='intro'>" + g.p + "</p>"
       + "<div class='acts'><button type='button' class='call'>" + g.call + "</button><div class='row'><button type='button' class='live'>" + g.live + "</button><button type='button' class='chat'>" + g.chat + "</button></div></div>"
       + "<form novalidate><label for='bf-g-name'>" + g.name + "</label><input id='bf-g-name' type='text' autocomplete='name' maxlength='120'>"
       + "<label for='bf-g-phone'>" + g.phone + "</label><input id='bf-g-phone' type='tel' inputmode='tel' autocomplete='tel-national' maxlength='20'>"
@@ -203,16 +222,56 @@
       + "<div class='acts' style='display:flex'><button type='submit' class='call'>" + g.go + "</button><button type='button' class='back'>" + g.back + "</button></div>"
       + "<div class='msg' role='status' aria-live='polite'></div></form>");
     document.body.appendChild(card);
+    var gv = card.querySelector(".gv video");
     function showCard() {
       if (panel.classList.contains("open")) return;
       var bb = btn.querySelector(".bub"); if (bb) bb.style.visibility = "hidden";
       card.classList.add("show"); requestAnimationFrame(function () { card.classList.add("in"); });
+      // Browsers only allow sound after a tap, so she starts muted with captions; 🔊 replays her with sound.
+      if (gv && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) { try { gv.currentTime = 0; gv.play().catch(function () {}); } catch (e) {} }
     }
-    function hideCard() { card.classList.remove("in"); card.classList.remove("show"); var bb = btn.querySelector(".bub"); if (bb) bb.style.visibility = ""; try { sessionStorage.setItem("bfFinleyGreet", "1"); } catch (e) {} }
+    card.querySelector(".snd").addEventListener("click", function () {
+      if (!gv) return; gv.muted = false; gv.currentTime = 0; gv.play().catch(function () {}); this.style.display = "none";
+    });
+    // Which loan officer this call is for: the page's, or the one whose "Call me now" button was tapped.
+    var callSlug = loSlug;
+    /** Open the call form for a loan officer (owner 2026-11-18: "Call me now ... Finley calls right away, on everyone's page"). */
+    function openCall(slug) {
+      callSlug = slug || loSlug;
+      card.querySelector(".intro").textContent = pFor(lang, whoOf(callSlug));
+      sent = false; var go = card.querySelector("form button[type=submit]"); go.disabled = false; go.textContent = g.go; card.querySelector(".msg").textContent = "";
+      showCard(); card.classList.add("form");
+      var n = card.querySelector("#bf-g-name"); if (n) setTimeout(function () { n.focus(); }, 50);
+    }
+    // "📞 Call me now" under each loan officer's About me (list page) and under the social icons on their own page.
+    function injectCallButtons() {
+      var list = [].slice.call(document.querySelectorAll("a[href]")).filter(function (a) {
+        var h = (a.getAttribute("href") || "").replace(location.origin, "");
+        return /^\/loan-officer\/[a-z0-9-]+\/?$/.test(h) && /about\s*me/i.test(a.textContent || "");
+      });
+      list.forEach(function (a) {
+        if (a.nextElementSibling && a.nextElementSibling.classList && a.nextElementSibling.classList.contains("bf-callme")) return;
+        var slug = (a.getAttribute("href") || "").replace(location.origin, "").split("/")[2];
+        var b = el("button", { type: "button", "class": "bf-callme", "data-slug": slug }, CAP.btn);
+        b.style.width = a.offsetWidth ? a.offsetWidth + "px" : "";
+        b.addEventListener("click", function () { openCall(slug); });
+        a.parentNode.insertBefore(b, a.nextSibling);
+      });
+      if (loSlug && !document.querySelector(".bf-callme")) {
+        var ap = [].slice.call(document.querySelectorAll("a[href]")).find(function (a) { return new RegExp("/loan-officer/" + loSlug + "/apply-now/?$").test(a.getAttribute("href") || ""); });
+        if (ap) {
+          var b2 = el("button", { type: "button", "class": "bf-callme big", "data-slug": loSlug }, CAP.btn);
+          b2.addEventListener("click", function () { openCall(loSlug); });
+          ap.parentNode.insertBefore(b2, ap);
+        }
+      }
+    }
+    if (/^\/loan-officer/.test(path)) { injectCallButtons(); setTimeout(injectCallButtons, 1500); setTimeout(injectCallButtons, 4000); }
+    function hideCard() { try { gv && gv.pause(); } catch (e) {} card.classList.remove("in"); card.classList.remove("show"); var bb = btn.querySelector(".bub"); if (bb) bb.style.visibility = ""; try { sessionStorage.setItem("bfFinleyGreet", "1"); } catch (e) {} }
     card.querySelector(".x").addEventListener("click", hideCard);
     card.querySelector(".live").addEventListener("click", function () { hideCard(); window.open(LIVE + lang, "_blank", "noopener"); });
     card.querySelector(".chat").addEventListener("click", function () { hideCard(); setOpen(true); });
-    card.querySelector(".call").addEventListener("click", function () { card.classList.add("form"); var n = card.querySelector("#bf-g-name"); if (n) n.focus(); });
+    card.querySelector(".call").addEventListener("click", function () { openCall(callSlug); });
     card.querySelector("form .back").addEventListener("click", function () { card.classList.remove("form"); });
     var sent = false;
     card.querySelector("form").addEventListener("submit", function (e) {
@@ -223,7 +282,7 @@
       if (!name || digits.length !== 10) { msg.className = "msg err"; msg.textContent = g.bad; return; }
       go.disabled = true; msg.className = "msg"; msg.textContent = "…";
       fetch(FN, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "finley_live", door: "website", name: name, phone: digits, lang: lang, consent: true,
-        website: card.querySelector(".hp").value, page: location.pathname.slice(0, 120), lo_slug: loSlug }) })
+        website: card.querySelector(".hp").value, page: location.pathname.slice(0, 120), lo_slug: callSlug }) })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (!j || !j.ok) throw new Error("x");
