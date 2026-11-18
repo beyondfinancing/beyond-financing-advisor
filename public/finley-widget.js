@@ -223,12 +223,12 @@
       + "<div class='msg' role='status' aria-live='polite'></div></form>");
     document.body.appendChild(card);
     var gv = card.querySelector(".gv video");
-    function showCard() {
+    function showCard(noPlay) {
       if (panel.classList.contains("open")) return;
       var bb = btn.querySelector(".bub"); if (bb) bb.style.visibility = "hidden";
       card.classList.add("show"); requestAnimationFrame(function () { card.classList.add("in"); });
       // Browsers only allow sound after a tap, so she starts muted with captions; 🔊 replays her with sound.
-      if (gv && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) { try { gv.currentTime = 0; gv.play().catch(function () {}); } catch (e) {} }
+      if (!noPlay && gv && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) { try { gv.currentTime = 0; gv.play().catch(function () {}); } catch (e) {} }
     }
     // Owner 2026-11-18: visitors can always hear her again (our own video, no extra cost). While she plays with sound the button
     // hides; when she finishes she goes back to her first frame (not the faded last one) and "▶ Hear Finley again" returns.
@@ -248,7 +248,9 @@
       callSlug = slug || loSlug;
       card.querySelector(".intro").textContent = pFor(lang, whoOf(callSlug));
       sent = false; var go = card.querySelector("form button[type=submit]"); go.disabled = false; go.textContent = g.go; card.querySelector(".msg").textContent = "";
-      showCard(); card.classList.add("form");
+      // 2026-11-18 glitch: opening the form used to restart her video (with sound after a first listen). Now she stops.
+      try { gv && gv.pause(); } catch (e) {}
+      showCard(true); card.classList.add("form");
       var n = card.querySelector("#bf-g-name"); if (n) setTimeout(function () { n.focus(); }, 50);
     }
     // "📞 Call me now" under each loan officer's About me (list page) and under the social icons on their own page.
