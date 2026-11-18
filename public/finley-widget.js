@@ -44,6 +44,15 @@
       consent: "Autorizo a Beyond Financing, Inc. (NMLS #2394496), a sus oficiales de préstamos, a su asistente de IA Finley y a sus demás agentes de IA a comunicarse conmigo al teléfono y correo electrónico indicados arriba sobre mi consulta, mi solicitud de hipoteca y el estado de mi préstamo, actualizaciones, opciones hipotecarias, alertas de tasas y ofertas de publicidad, mercadeo y promociones. El contacto puede ser por llamada, mensaje de texto (SMS/MMS), WhatsApp o correo electrónico, incluido el telemercadeo. Puede usar tecnología automatizada, marcador automático, mensajes pregrabados o voz artificial o generada por IA, y las llamadas pueden grabarse. Mi consentimiento no es condición para ninguna compra o préstamo. La frecuencia de los mensajes varía. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para cancelar o HELP para obtener ayuda. Puedo retirar mi consentimiento en cualquier momento por cualquier medio razonable. Consulte nuestra Política de Privacidad y Términos." }
   };
   var FN = "https://snqbznqhenomgdoqqbms.supabase.co/functions/v1/bf-landing";
+  // On a loan officer's own page (/loan-officer/<name>), Finley is THAT loan officer's assistant (owner 2026-11-18) and the
+  // call request goes to them (bf-landing matches the slug to the licensed loan officer). New hires work automatically.
+  var loSlugM = path.match(/^\/loan-officer\/([a-z0-9-]+)/), loSlug = loSlugM ? loSlugM[1] : "";
+  var loWho = loSlug ? loSlug.split("-").filter(Boolean).map(function (w) { return w.length === 1 ? w.toUpperCase() + "." : w.charAt(0).toUpperCase() + w.slice(1); }).join(" ") : "";
+  if (loWho) {
+    G.en.p = G.en.p.replace("Beyond Financing's AI assistant.", loWho + "'s AI assistant at Beyond Financing.");
+    G.pt.p = G.pt.p.replace("Assistente de IA da Beyond Financing.", "Assistente de IA de " + loWho + " na Beyond Financing.");
+    G.es.p = G.es.p.replace("Asistente de IA de Beyond Financing.", "Asistente de IA de " + loWho + " en Beyond Financing.");
+  }
 
   // Owner 2026-11-17: clicking HER (the photo) opens the live video page (Tavus); the speech bubble still opens the text chat.
   var LIVE = "https://br.beyondfinancing.com/apply?lang=";
@@ -214,7 +223,7 @@
       if (!name || digits.length !== 10) { msg.className = "msg err"; msg.textContent = g.bad; return; }
       go.disabled = true; msg.className = "msg"; msg.textContent = "…";
       fetch(FN, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "finley_live", door: "website", name: name, phone: digits, lang: lang, consent: true,
-        website: card.querySelector(".hp").value, page: location.pathname.slice(0, 120) }) })
+        website: card.querySelector(".hp").value, page: location.pathname.slice(0, 120), lo_slug: loSlug }) })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (!j || !j.ok) throw new Error("x");
