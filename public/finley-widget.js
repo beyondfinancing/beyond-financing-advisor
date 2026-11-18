@@ -116,7 +116,9 @@
     + "#bf-finley-greet{position:fixed;left:20px;bottom:120px;z-index:2147483002;width:360px;max-width:calc(100vw - 32px);background:#fff;color:#04182E;border:1px solid #D3DAE4;border-radius:14px;"
     + "box-shadow:0 16px 44px rgba(4,24,46,.28);font-family:'Public Sans','Segoe UI',system-ui,sans-serif;padding:16px 16px 14px;display:none;opacity:0;transform:translateY(8px);transition:opacity .25s ease,transform .25s ease}"
     + "#bf-finley-greet.show{display:block}#bf-finley-greet.in{opacity:1;transform:none}"
-    + "#bf-finley-greet .x{position:absolute;right:8px;top:6px;border:0;background:transparent;font-size:22px;line-height:1;color:#6B7A90;cursor:pointer;padding:6px}"
+    + "#bf-finley-greet .x{position:absolute;left:10px;top:10px;z-index:3;display:flex;align-items:center;gap:6px;border:0;border-radius:999px;background:rgba(4,24,46,.88);color:#fff;font:600 12.5px 'Public Sans','Segoe UI',sans-serif;line-height:1;cursor:pointer;padding:7px 11px 7px 9px;box-shadow:0 2px 8px rgba(0,0,0,.25)}"
+    + "#bf-finley-greet .x:hover,#bf-finley-greet .x:focus-visible{background:#04182E;outline:2px solid #C9A24A;outline-offset:1px}"
+    + "#bf-finley-greet .x b{font-size:16px;font-weight:700;line-height:1}"
     + "#bf-finley-greet h3{margin:0 24px 4px 0;font-size:17px;font-weight:700}#bf-finley-greet p{margin:0 0 12px;font-size:14px;line-height:1.45;color:#33445C}"
     + "#bf-finley-greet .acts{display:flex;flex-direction:column;gap:8px}"
     + "#bf-finley-greet .acts button{display:flex;align-items:center;justify-content:center;gap:8px;height:44px;border-radius:10px;font:600 15px 'Public Sans','Segoe UI',sans-serif;cursor:pointer;border:1px solid #D3DAE4;background:#fff;color:#04182E}"
@@ -198,6 +200,7 @@
     paintLang();
     var face = btn.querySelector(".bf-face"); if (face) { face.setAttribute("title", T.live); }
     btn.addEventListener("click", function (e) {
+      if (window.__bfFinleyMin && window.__bfFinleyRestore) { window.__bfFinleyMin = false; window.__bfFinleyRestore(); return; }
       var gc = document.getElementById("bf-finley-greet"); if (gc && gc.classList.contains("show")) { gc.classList.remove("in"); gc.classList.remove("show"); try { sessionStorage.setItem("bfFinleyGreet", "1"); } catch (x) {} }
       if (e.target && e.target.closest && e.target.closest(".bf-face") && !panel.classList.contains("open")) {
         window.open(LIVE + lang, "_blank", "noopener"); return;
@@ -209,8 +212,10 @@
 
     /* ---------- FINLEY ON DEMAND: greeter card ---------- */
     var g = G[lang];
+    // Owner 2026-11-18: a clear Minimize so visitors can see the page; her round photo stays to reopen her.
+    var MIN = { en: { txt: "Minimize", label: "Minimize Finley" }, pt: { txt: "Minimizar", label: "Minimizar a Finley" }, es: { txt: "Minimizar", label: "Minimizar a Finley" } }[lang];
     var card = el("div", { id: "bf-finley-greet", role: "dialog", "aria-label": "Finley" },
-      "<button type='button' class='x' aria-label='" + T.close + "'>×</button>"
+      "<button type='button' class='x' aria-label='" + MIN.label + "' title='" + MIN.label + "'><b>–</b>" + MIN.txt + "</button>"
       + "<div class='gv'><video muted playsinline preload='metadata' poster='" + FACE + "' src='" + GREET + "'></video>"
       + "<div class='cap'>" + CAP.cap + "</div><button type='button' class='snd'>" + CAP.snd + "</button></div>"
       + "<h3>" + g.h + "</h3><p class='intro'>" + g.p + "</p>"
@@ -284,7 +289,8 @@
     }
     if (/^\/loan-officer/.test(path)) { injectCallButtons(); setTimeout(injectCallButtons, 1500); setTimeout(injectCallButtons, 4000); }
     function hideCard() { try { gv && gv.pause(); } catch (e) {} card.classList.remove("in"); card.classList.remove("show"); var bb = btn.querySelector(".bub"); if (bb) bb.style.visibility = ""; try { sessionStorage.setItem("bfFinleyGreet", "1"); } catch (e) {} }
-    card.querySelector(".x").addEventListener("click", hideCard);
+    card.querySelector(".x").addEventListener("click", function () { hideCard(); window.__bfFinleyMin = true; });
+    window.__bfFinleyRestore = function () { if (!panel.classList.contains("open")) showCard(true); };
     card.querySelector(".live").addEventListener("click", function () { hideCard(); window.open(LIVE + lang, "_blank", "noopener"); });
     card.querySelector(".chat").addEventListener("click", function () { hideCard(); setOpen(true); });
     card.querySelector(".call").addEventListener("click", function () { openCall(callSlug); });
