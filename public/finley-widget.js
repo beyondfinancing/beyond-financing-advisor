@@ -230,8 +230,16 @@
       // Browsers only allow sound after a tap, so she starts muted with captions; 🔊 replays her with sound.
       if (gv && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) { try { gv.currentTime = 0; gv.play().catch(function () {}); } catch (e) {} }
     }
-    card.querySelector(".snd").addEventListener("click", function () {
-      if (!gv) return; gv.muted = false; gv.currentTime = 0; gv.play().catch(function () {}); this.style.display = "none";
+    // Owner 2026-11-18: visitors can always hear her again (our own video, no extra cost). While she plays with sound the button
+    // hides; when she finishes she goes back to her first frame (not the faded last one) and "▶ Hear Finley again" returns.
+    var sndBtn = card.querySelector(".snd");
+    var AGAIN = { en: "▶ Hear Finley again", pt: "▶ Ouvir a Finley de novo", es: "▶ Escuchar a Finley otra vez" }[lang];
+    sndBtn.addEventListener("click", function () {
+      if (!gv) return; gv.muted = false; gv.currentTime = 0; gv.play().catch(function () {}); sndBtn.style.display = "none";
+    });
+    if (gv) gv.addEventListener("ended", function () {
+      try { gv.currentTime = 0; } catch (e) {}
+      sndBtn.textContent = AGAIN; sndBtn.style.display = "";
     });
     // Which loan officer this call is for: the page's, or the one whose "Call me now" button was tapped.
     var callSlug = loSlug;
@@ -258,11 +266,16 @@
         a.parentNode.insertBefore(b, a.nextSibling);
       });
       if (loSlug && !document.querySelector(".bf-callme")) {
-        var ap = [].slice.call(document.querySelectorAll("a[href]")).find(function (a) { return new RegExp("/loan-officer/" + loSlug + "/apply-now/?$").test(a.getAttribute("href") || ""); });
+        // The page has more than one "Apply Now" link (one in a hidden menu): use the one actually on screen.
+        var ap = [].slice.call(document.querySelectorAll("a[href]")).find(function (a) {
+          return new RegExp("/loan-officer/" + loSlug + "/apply-now/?$").test(a.getAttribute("href") || "") && a.getClientRects().length > 0 && a.getBoundingClientRect().width > 0;
+        });
         if (ap) {
           var b2 = el("button", { type: "button", "class": "bf-callme big", "data-slug": loSlug }, CAP.btn);
           b2.addEventListener("click", function () { openCall(loSlug); });
-          ap.parentNode.insertBefore(b2, ap);
+          var li = ap.parentElement && ap.parentElement.tagName === "LI" ? ap.parentElement : null;
+          if (li) { var nli = document.createElement("li"); nli.style.listStyle = "none"; nli.appendChild(b2); li.parentNode.insertBefore(nli, li); }
+          else ap.parentNode.insertBefore(b2, ap);
         }
       }
     }
